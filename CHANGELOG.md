@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Floating
+
+- New `grid <rows>:<columns>:<x>:<y>:<width>:<height>` command, after yabai's `--grid`: it floats the focused window and places it on cells of a grid over its display, inside the gaps, gliding there with animations on. `grid 1:2:0:0:1:1` puts it on the left half, `grid 3:3:1:1:1:1` in the centre ninth. `grid --toggle` tiles a window that already floats, so one key goes back and forth. In a `[[rules]]` entry it opens an app's new windows there.
+- The tiling bindings work on floating windows. `move` shifts one by `[floating] move-step` points (50 by default), `resize` grows or shrinks it about its centre, and `fullscreen` fills the display and then puts it back, all inside the gaps. `balance-sizes` and `flatten-workspace-tree` act on the tiles of its workspace. Before, they answered that the window was not tiled.
+
+### Fixes
+
+- `focus` from a floating window looks for the nearest window on that window's display. Before, it looked on the main display, so on another display it found the wrong window or none.
+
 ## 0.18
 
 ### Key bindings

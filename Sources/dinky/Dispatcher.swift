@@ -51,8 +51,15 @@ enum Dispatcher {
         case .layout(let names):
             return layout(names, window: window)
         case .move(let direction):
+            if let reply = floating("move \(direction)", window: window, { coordinator, id in
+                let step = CGFloat(coordinator.config.floating.moveStep)
+                return coordinator.floating(id) { frame, area in FloatingFrame.moved(frame, direction, by: step, within: area) }
+            }) { return reply }
             return tree("move \(direction)") { $0.move(direction) }
         case .joinWith(let direction):
+            if let reply = floating("join-with \(direction)", window: window, { _, _ in
+                "the focused window floats; tile it first"
+            }) { return reply }
             return tree("join-with \(direction)") { $0.join(direction) }
         case .resize(let dimension, let delta):
             let axis: Orientation? = switch dimension {
@@ -60,13 +67,27 @@ enum Dispatcher {
             case .width: .horizontal
             case .height: .vertical
             }
-            return tree("resize \(dimension.rawValue) \(delta)") { $0.resize(by: CGFloat(delta), along: axis) }
+            let name = "resize \(dimension.rawValue) \(delta)"
+            if let reply = floating(name, window: window, { coordinator, id in
+                coordinator.floating(id) { frame, area in FloatingFrame.resized(frame, by: CGFloat(delta), along: axis, within: area) }
+            }) { return reply }
+            return tree(name) { $0.resize(by: CGFloat(delta), along: axis) }
         case .fullscreen:
+            if let reply = floating("fullscreen", window: window, { $0.toggleFloatingFullscreen($1) }) { return reply }
             return tree("fullscreen") { $0.toggleFullscreen(); return true }
+        case .grid(let placement, let toggle):
+            guard let coordinator = AppState.shared.coordinator else { return .error("tiling is not running") }
+            let id = window ?? coordinator.focusedWindow
+            if toggle, coordinator.isFloating(id) == true {
+                coordinator.setFloating(id, false)
+                return .ok("layout tiling")
+            }
+            if let error = coordinator.place(id, on: placement) { return .error("grid: \(error)") }
+            return .ok("grid \(placement)")
         case .flattenWorkspaceTree:
-            return tree("flatten-workspace-tree") { $0.flatten(); return true }
+            return tree("flatten-workspace-tree", wholeSpace: true) { $0.flatten(); return true }
         case .balanceSizes:
-            return tree("balance-sizes") { $0.balanceSizes(); return true }
+            return tree("balance-sizes", wholeSpace: true) { $0.balanceSizes(); return true }
         case .retile:
             guard let coordinator = AppState.shared.coordinator else { return .error("tiling is not running") }
             coordinator.reconcile()
@@ -190,10 +211,26 @@ enum Dispatcher {
 
     // MARK: Layout tree
 
+    /// For a floating window (`window`, else the focused one), the reply of `run`, which does the command's
+    /// floating version and answers nil once done or why not. Nil for any other window, which the tree handles.
+    private static func floating(_ name: String, window: WindowID?,
+                                 _ run: (Coordinator, WindowID) -> String?) -> Reply? {
+        guard let coordinator = AppState.shared.coordinator else { return nil }
+        let id = window ?? coordinator.focusedWindow
+        guard coordinator.isFloating(id) == true else { return nil }
+        if let error = run(coordinator, id) { return .error("\(name): \(error)") }
+        return .ok(name)
+    }
+
     /// Runs a change on the focused window's tree; `change` returns false when there was nothing to do.
-    private static func tree(_ name: String, _ change: (inout Workspace) -> Bool) -> Reply {
+    /// `wholeSpace` commands act on the tree of the focused window's Space even when that window floats.
+    private static func tree(_ name: String, wholeSpace: Bool = false, _ change: (inout Workspace) -> Bool) -> Reply {
         guard let coordinator = AppState.shared.coordinator else { return .error("tiling is not running") }
-        switch coordinator.command(change) {
+        let id = coordinator.focusedWindow
+        let result = wholeSpace && coordinator.isFloating(id) == true
+            ? coordinator.spaceKey(of: id).flatMap { coordinator.command(onSpace: $0, change) }
+            : coordinator.command(change)
+        switch result {
         case nil: return .error("\(name): the focused window is not tiled")
         case false?: return .error("\(name): nothing to do")
         case true?: return .ok(name)

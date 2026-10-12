@@ -72,6 +72,10 @@ extension Command {
             return .layout(layouts)
         case "fullscreen":
             return none ? .fullscreen : nil
+        case "grid":
+            let rest = args.filter { $0 != "--toggle" }
+            guard rest.count == 1, args.count - rest.count <= 1 else { return nil }
+            return try grid(rest[0]).map { .grid($0, toggle: rest.count < args.count) }
         case "flatten-workspace-tree":
             return none ? .flattenWorkspaceTree : nil
         case "balance-sizes":
@@ -168,6 +172,18 @@ extension Command {
             throw CommandError(input: "", message: "wrap-around-all-monitors needs --boundaries all-monitors-outer-frame")
         }
         return .focus(direction, boundaries: boundaries, action: action)
+    }
+
+    /// `rows:columns:x:y:width:height`, six whole numbers. Nil when it is not that shape; throws when it is but the
+    /// span does not fit the grid.
+    private static func grid(_ word: String) throws(CommandError) -> GridPlacement? {
+        let n = word.split(separator: ":", omittingEmptySubsequences: false).compactMap { Int($0) }
+        guard n.count == 6, word.split(separator: ":", omittingEmptySubsequences: false).count == 6 else { return nil }
+        guard let placement = GridPlacement(rows: n[0], columns: n[1], x: n[2], y: n[3], width: n[4], height: n[5]) else {
+            throw CommandError(input: "", message: "the grid needs at least one row and column, and x + width and "
+                + "y + height must fit in its columns and rows")
+        }
+        return placement
     }
 
     private static func followFlag(_ args: [String]) -> (rest: [String], follow: Bool) {

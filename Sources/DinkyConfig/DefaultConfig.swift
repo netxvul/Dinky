@@ -32,6 +32,9 @@ extension Config {
     [scrolling]
     column-width = 0.49             # a new column's share of the display; a lone column fills it
 
+    [floating]
+    move-step = 50                  # points `move` shifts a floating window by
+
     [gaps]
     inner = 8                       # or { horizontal = 8, vertical = 8 }
     outer = 8                       # or { top = 8, bottom = 8, left = 8, right = 8 }

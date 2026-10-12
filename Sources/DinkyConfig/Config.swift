@@ -24,6 +24,7 @@ public struct Config: Equatable {
     public var floatWindowsWithoutFullscreen = true
     public var accordion = Accordion()
     public var scrolling = Scrolling()
+    public var floating = Floating()
     public var gaps = Gaps()
     /// `[display.<pattern>]` overrides, in file order.
     public var displays: [DisplayOverride] = []
@@ -109,6 +110,7 @@ public struct Config: Equatable {
         floatWindowsWithoutFullscreen = try t.bool("float-windows-without-fullscreen") ?? floatWindowsWithoutFullscreen
         accordion = try t.table("accordion").map(Accordion.init) ?? accordion
         scrolling = try t.table("scrolling").map(Scrolling.init) ?? scrolling
+        floating = try t.table("floating").map(Floating.init) ?? floating
         gaps = try t.table("gaps").map { try gaps.applying(GapsPatch($0)) } ?? gaps
         if let displayTable = try t.table("display") {
             for pattern in displayTable.keys {
@@ -208,6 +210,20 @@ public struct Scrolling: Equatable {
     init(_ t: Table) throws {
         columnWidth = try t.double("column-width") ?? columnWidth
         guard (0.1...1).contains(columnWidth) else { throw ConfigError(path: t.path("column-width"), "must be 0.1 to 1") }
+        try t.done()
+    }
+}
+
+/// `[floating]`: what tiling commands do to a floating window.
+public struct Floating: Equatable {
+    /// Points `move` shifts a floating window by.
+    public var moveStep = 50
+
+    public init() {}
+
+    init(_ t: Table) throws {
+        moveStep = try t.int("move-step") ?? moveStep
+        guard (1...1000).contains(moveStep) else { throw ConfigError(path: t.path("move-step"), "must be 1 to 1000") }
         try t.done()
     }
 }

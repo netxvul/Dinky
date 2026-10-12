@@ -57,6 +57,11 @@ final class Coordinator {
     /// moved the windows of Spaces that were not on screen to frames of their own, and a glide from there
     /// would only show the mess.
     private var snap: Set<UInt64> = []
+    /// Where dinky last sent each floating window, so a command pressed again mid-glide starts from where the
+    /// window is going rather than where it is.
+    private(set) var floatingTargets: [WindowID: CGRect] = [:]
+    /// Floating windows filling their display with `fullscreen`, and the frame each had before. In memory only.
+    var filledFrom: [WindowID: CGRect] = [:]
 
     init(displays: DisplayModel, config: Config) {
         self.displays = displays
@@ -195,7 +200,7 @@ final class Coordinator {
         }
     }
 
-    private func gaps(on display: Display) -> DinkyLayout.Gaps {
+    func gaps(on display: Display) -> DinkyLayout.Gaps {
         DinkyLayout.Gaps(config.gaps(for: displays.monitor(display)))
     }
 
@@ -253,6 +258,8 @@ final class Coordinator {
         animator.forget(id)
         heldTabs[id] = nil
         notTabs.remove(id)
+        floatingTargets[id] = nil
+        filledFrom[id] = nil
         guard let placement = placements.removeValue(forKey: id), let space = placement.space,
               !takeOverTile(of: id, in: space) else { return }
         edit(space) { $0.remove(id) }
@@ -366,6 +373,35 @@ final class Coordinator {
         })
         animator.animate(key, from: starts, to: layout.frames, pids: pids, then: write)
     }
+
+    /// Moves a floating window to `frame`: gliding there from where it is when passes glide, then written with
+    /// readback and raised as a pass's windows are.
+    func placeFloating(_ id: WindowID, at frame: CGRect) {
+        guard let window = model.windows[id] else { return }
+        floatingTargets[id] = frame
+        let pids = [id: window.pid]
+        let layout = Layout(frames: [id: frame], order: [id])
+        let write = { [weak self] in
+            guard let self else { return }
+            applier.apply(layout, pids: pids, front: id) { [weak self] results in
+                DispatchQueue.main.async { self?.animator.noteLanded(results) }
+            }
+        }
+        guard animates else { return write() }
+        let info = dinky_window_info(id)
+        animator.animate(Self.floatingKey(id), from: [id: info.exists ? info.frame : window.frame], to: [id: frame],
+                         pids: pids, then: write)
+    }
+
+    /// Where a floating window is, or where it is gliding to.
+    func floatingFrame(of id: WindowID) -> CGRect? {
+        if animator.isAnimating(id), let target = floatingTargets[id] { return target }
+        let info = dinky_window_info(id)
+        return info.exists ? info.frame : model.windows[id]?.frame
+    }
+
+    /// The animator's key for one floating window's glide, apart from every Space ID, which keys a tree's.
+    private static func floatingKey(_ id: WindowID) -> UInt64 { 1 << 63 | UInt64(id) }
 
     /// Whether passes glide windows to their tiles.
     private var animates: Bool {

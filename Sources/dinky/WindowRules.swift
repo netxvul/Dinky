@@ -25,8 +25,9 @@ extension Coordinator {
         var resizable: DarwinBoolean = false
         AXUIElementIsAttributeSettable(element, kAXSizeAttribute as CFString, &resizable)
         let title = axString(element, kAXTitleAttribute) ?? ""
-        // `layout floating` and `layout tiling` decide here, the last one wins. Other rule commands, such as
-        // move-window-to-workspace, run for this window once it is placed.
+        // `layout floating` and `layout tiling` decide here, the last one wins; `grid` floats the window too, so it
+        // is never tiled on its way to its cells. Other rule commands, such as move-window-to-workspace, run for
+        // this window once it is placed.
         var floats: Bool?
         var runsRules = false
         for command in config.commands(for: window, kind: kind, title: title) {
@@ -34,6 +35,7 @@ extension Coordinator {
             case .layout([.floating]): floats = true
             case .layout([.tiling]): floats = false
             default:
+                if case .grid = command { floats = true }
                 runsRules = true
                 DispatchQueue.main.async {
                     let reply = Dispatcher.run(command, window: window.id)

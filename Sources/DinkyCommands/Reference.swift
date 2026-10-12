@@ -32,11 +32,13 @@ extension Command {
             description: "Focus the display in a direction, the next or previous one, or display N as list-monitors numbers it: its most recently focused window, "
                 + "or the display itself when its workspace is empty, so workspace commands act on it."),
         Doc(syntax: "move <left|down|up|right>",
-            description: "Move the focused window in a direction within the layout tree."),
+            description: "Move the focused window in a direction within the layout tree. "
+                + "A floating window moves [floating] move-step points instead, staying on its display."),
         Doc(syntax: "join-with <left|down|up|right>",
-            description: "Put the focused window and its neighbour in a new container."),
+            description: "Put the focused window and its neighbour in a new container. Not for a floating window."),
         Doc(syntax: "resize <smart|width|height> <+N|-N>",
-            description: "Grow or shrink the focused window by N points: smart along its container, width or height along that axis."),
+            description: "Grow or shrink the focused window by N points: smart along its container, width or height along that axis. "
+                + "A floating window grows about its centre, smart in both width and height, staying on its display."),
         Doc(syntax: "layout <tiles|accordion|horizontal|vertical|auto|h_tiles|v_tiles|h_accordion|v_accordion|floating|tiling|scrolling>...",
             description: "Set the layout of the focused window's container, float or tile the window, or switch its workspace to scrolling. "
                 + "tiles and accordion set the mode, horizontal, vertical and auto (follow the container's longer side) "
@@ -45,11 +47,20 @@ extension Command {
                 + "toggles and 'layout tiles accordion scrolling' cycles. "
                 + "An auto container counts as the orientation it follows now."),
         Doc(syntax: "fullscreen",
-            description: "Toggle the focused window filling the workspace. The tree is kept."),
+            description: "Toggle the focused window filling the workspace. The tree is kept. "
+                + "A floating window fills its display and goes back to where it was."),
+        Doc(syntax: "grid [--toggle] <rows>:<columns>:<x>:<y>:<width>:<height>",
+            description: "Float the focused window and glide it onto a grid over its display, as yabai's --grid: "
+                + "the display's visible area, inside the outer gaps, is split into rows by columns cells with the inner gaps "
+                + "between them, and the window takes width by height cells from column x, row y, counted from 0 at the top left. "
+                + "'grid 1:2:0:0:1:1' is the left half, 'grid 3:3:1:1:1:1' the centre ninth. "
+                + "With --toggle, a window that already floats is tiled instead, so one key goes back and forth."),
         Doc(syntax: "flatten-workspace-tree",
-            description: "Put every window on the workspace back into its layout, in order, undoing tree edits. A scrolling workspace keeps its column widths."),
+            description: "Put every window on the workspace back into its layout, in order, undoing tree edits. A scrolling workspace keeps its column widths. "
+                + "With a floating window focused, acts on the tiles of its workspace."),
         Doc(syntax: "balance-sizes",
-            description: "Give every window on the focused workspace an equal share of its container."),
+            description: "Give every window on the focused workspace an equal share of its container. "
+                + "With a floating window focused, acts on the tiles of its workspace."),
         Doc(syntax: "retile",
             description: "Re-read every window and re-apply the layout of every workspace on screen."),
         Doc(syntax: "clear-minimum-sizes",

@@ -129,6 +129,19 @@ ctrl-alt-cmd-s = 'layout tiles accordion scrolling'
 
 </div>
 
+## `[floating]`
+
+What the tiling commands do to a floating window; see
+[Floating windows](commands.md#floating-windows).
+
+<div class="wide-table" markdown="1">
+
+| Key | Default | |
+|---|---|---|
+| `move-step` | `50` | Points `move` shifts a floating window by, from `1` to `1000`. |
+
+</div>
+
 ## `[accordion]`
 
 <div class="wide-table" markdown="1">
@@ -275,8 +288,9 @@ screen float too while `float-windows-without-fullscreen` is on, unless a
 `layout tiling` rule tiles them.
 
 A rule that is exactly `layout floating` or `layout tiling` decides before the
-window is placed, the last one winning. Every other rule command runs once the
-window is placed, on that window.
+window is placed, the last one winning. A `grid` rule floats the window too, so
+it goes straight to its cells without being tiled first. Every other rule
+command runs once the window is placed, on that window.
 
 New windows open on the focused display, whichever display the app picked. A
 rule that moves the window, such as `move-window-to-workspace`, decides where
@@ -298,6 +312,11 @@ it goes instead.
 [[rules]]
 app-id = 'com.apple.Music'
 run = ['layout floating', 'move-window-to-workspace 5']
+
+# Open new Finder windows floating in the centre ninth of the display.
+[[rules]]
+app-id = 'com.apple.finder'
+run = 'grid 3:3:1:1:1:1'
 ```
 
 ## `[mode.<name>]`
@@ -352,6 +371,9 @@ orientation = 'auto'            # auto: run along the container's longer side | 
 
 [scrolling]
 column-width = 0.49             # a new column's share of the display; a lone column fills it
+
+[floating]
+move-step = 50                  # points `move` shifts a floating window by
 
 [gaps]
 inner = 8                       # or { horizontal = 8, vertical = 8 }

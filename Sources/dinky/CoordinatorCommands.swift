@@ -1,3 +1,4 @@
+import CoreGraphics
 import DinkyLayout
 
 // What commands ask of the coordinator: tree commands on the focused window's Space, floating, and
@@ -74,10 +75,65 @@ extension Coordinator {
         guard let placement = placements[id], let window = model.windows[id] else { return false }
         if let space = placement.space { edit(space) { $0.remove(id) } }
         heldTabs[id] = nil
+        filledFrom[id] = nil
         placements[id] = Placement(floating: floating, space: nil)
         track(window)
         flush()
         return true
+    }
+
+    /// Floats a tiled window, then glides it to cells of a grid over its display's visible area, inside the
+    /// display's gaps; the tiles it leaves close up at the same time. Nil once placed, else why not.
+    func place(_ id: WindowID, on grid: GridPlacement) -> String? {
+        guard enabled else { return "dinky is off" }
+        guard let placement = placements[id], model.windows[id] != nil else { return "no window dinky manages is focused" }
+        guard let display = displays.display(ofWindow: id) else { return "window \(id) is on no display" }
+        if !placement.floating { setFloating(id, true) }
+        placeFloating(id, at: grid.frame(in: display.visibleArea, gaps: gaps(on: display)))
+        return nil
+    }
+
+    // MARK: Floating windows
+
+    /// The tiling commands on a floating window: `change` gets where the window is (or is gliding to) and the
+    /// display's visible area inside its gaps, and returns where it goes, or nil to leave it. Nil once done or
+    /// left, else why not.
+    func floating(_ id: WindowID, _ change: (_ frame: CGRect, _ area: CGRect) -> CGRect?) -> String? {
+        guard enabled else { return "dinky is off" }
+        guard placements[id]?.floating == true else { return "the focused window does not float" }
+        guard let display = displays.display(ofWindow: id), let frame = floatingFrame(of: id) else {
+            return "window \(id) is on no display"
+        }
+        if let target = change(frame, gaps(on: display).inset(display.visibleArea)), target != frame {
+            placeFloating(id, at: target)
+        }
+        return nil
+    }
+
+    /// `fullscreen` for a floating window: fill the display, or go back to the frame it had before.
+    func toggleFloatingFullscreen(_ id: WindowID) -> String? {
+        floating(id) { frame, area in
+            let filled = FloatingFrame.filling(area)
+            // By where dinky sent it: an app that snaps to a grid (Terminal) never lands on the frame exactly.
+            if let before = filledFrom[id], floatingTargets[id] == filled {
+                filledFrom[id] = nil
+                return before
+            }
+            filledFrom[id] = frame
+            return filled
+        }
+    }
+
+    /// The tree of the Space a window is on now, tiled or not, for workspace-wide commands. Nil if it has none.
+    func spaceKey(of id: WindowID) -> UInt64? {
+        placements[id]?.space ?? displays.display(ofWindow: id).map(\.currentSpaceID)
+    }
+
+    /// Runs a change on a whole Space's tree and applies it. Nil if the Space has no tree.
+    func command<T>(onSpace key: UInt64, _ change: (inout Workspace) -> T) -> T? {
+        let result = edit(key, change)
+        flush()
+        return result
     }
 
     /// Moves a window dinky just moved to another Space into that Space's tree now, rather than on the next event.

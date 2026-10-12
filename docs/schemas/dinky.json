@@ -77,6 +77,20 @@
         }
       }
     },
+    "floating": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "What tiling commands do to a floating window.",
+      "properties": {
+        "move-step": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "default": 50,
+          "description": "Points `move` shifts a floating window by."
+        }
+      }
+    },
     "accordion": {
       "type": "object",
       "additionalProperties": false,
@@ -278,7 +292,7 @@
     },
     "command": {
       "type": "string",
-      "pattern": "^\\s*(workspace|workspace-back-and-forth|move-window-to-workspace|move-window-to-display|focus|focus-monitor|move|join-with|resize|layout|fullscreen|flatten-workspace-tree|balance-sizes|retile|clear-minimum-sizes|mode|reload-config|enable|list-workspaces|list-windows|list-monitors|list-displays|list-modes|debug-state|exec-and-forget)(\\s.*)?$",
+      "pattern": "^\\s*(workspace|workspace-back-and-forth|move-window-to-workspace|move-window-to-display|focus|focus-monitor|move|join-with|resize|layout|fullscreen|grid|flatten-workspace-tree|balance-sizes|retile|clear-minimum-sizes|mode|reload-config|enable|list-workspaces|list-windows|list-monitors|list-displays|list-modes|debug-state|exec-and-forget)(\\s.*)?$",
       "description": "A dinky command, as `dinky help` lists them: `workspace 3`, `layout floating`, `exec-and-forget open -a Safari`."
     },
     "commands": {

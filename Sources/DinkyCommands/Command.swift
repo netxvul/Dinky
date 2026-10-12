@@ -20,6 +20,9 @@ public enum Command: Equatable, Sendable {
     /// so `layout floating tiling` and `layout horizontal vertical` toggle between the two.
     case layout([LayoutName])
     case fullscreen
+    /// Float the window and give it cells of a grid over its display, as yabai's `--grid`. With `toggle`, a
+    /// floating window is tiled instead.
+    case grid(GridPlacement, toggle: Bool = false)
     case flattenWorkspaceTree
     case balanceSizes
     case retile

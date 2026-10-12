@@ -133,6 +133,12 @@ struct ConfigTests {
         #expect(accordion.orientation == .keep)
     }
 
+    @Test func floating() throws {
+        #expect(Config().floating.moveStep == 50)
+        #expect(try Config.parse("[floating]\nmove-step = 20\n").floating.moveStep == 20)
+        assertError("[floating]\nmove-step = 0\n", path: "floating.move-step", line: 2, contains: "1 to 1000")
+    }
+
     @Test func scrolling() throws {
         #expect(Config().scrolling.columnWidth == 0.49)
         #expect(try Config.parse("[scrolling]\ncolumn-width = 0.5\n").scrolling.columnWidth == 0.5)

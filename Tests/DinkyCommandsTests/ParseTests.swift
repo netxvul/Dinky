@@ -54,6 +54,29 @@ struct ParseTests {
         #expect(try parse("layout tiles accordion scrolling") == .layout([.tiles, .accordion, .scrolling]))
     }
 
+    @Test func grid() throws {
+        #expect(try parse("grid 1:2:0:0:1:1") == .grid(GridPlacement(rows: 1, columns: 2, x: 0, y: 0, width: 1, height: 1)!))
+        #expect(try parse("grid 6:6:1:1:4:4") == .grid(GridPlacement(rows: 6, columns: 6, x: 1, y: 1, width: 4, height: 4)!))
+        let half = GridPlacement(rows: 1, columns: 2, x: 0, y: 0, width: 1, height: 1)!
+        #expect(try parse("grid --toggle 1:2:0:0:1:1") == .grid(half, toggle: true))
+        #expect(try parse("grid 1:2:0:0:1:1 --toggle") == .grid(half, toggle: true))
+    }
+
+    @Test(arguments: ["grid", "grid 1:2:0:0:1", "grid 1:2:0:0:1:1:1", "grid 1:2:0:0:1:x", "grid 1:2::0:1:1",
+                      "grid 1:2:0:0:1:1 extra", "grid 1x2", "grid --toggle", "grid --toggle --toggle 1:2:0:0:1:1"])
+    func `Grid that is not six numbers`(input: String) {
+        #expect(throws: CommandError.self) { try parse(input) }
+    }
+
+    @Test func `Grid span past its cells names the problem`() {
+        do {
+            _ = try parse("grid 2:2:1:0:2:1")
+            Issue.record("parsed")
+        } catch {
+            #expect("\(error)".contains("must fit"))
+        }
+    }
+
     @Test func `Several layouts cycle from the last that describes the window`() {
         let cycle: [LayoutName] = [.tiles, .accordion, .scrolling]
         #expect(LayoutName.next(in: cycle, current: [.tiling, .tiles, .horizontal, .hTiles]) == .accordion)
@@ -115,7 +138,7 @@ struct ParseTests {
     private static let knownGood = [
         "workspace 1", "workspace-back-and-forth", "move-window-to-workspace 2 --follow", "move-window-to-display next",
         "focus left", "focus-monitor next", "move left", "join-with left", "resize smart +10", "layout tiles",
-        "fullscreen", "flatten-workspace-tree", "balance-sizes", "retile", "clear-minimum-sizes", "mode main", "reload-config", "enable on",
+        "fullscreen", "grid 1:2:0:0:1:1", "flatten-workspace-tree", "balance-sizes", "retile", "clear-minimum-sizes", "mode main", "reload-config", "enable on",
         "list-workspaces", "list-windows", "list-monitors", "list-displays", "list-modes", "debug-state", "exec-and-forget true",
     ]
 
