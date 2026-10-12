@@ -71,7 +71,12 @@ extension Config {
     curve = 'spring'                # spring | linear | ease-out-cubic and the other easings.net curves
 
     [drag]
-    placeholders = true             # outline where a dragged tile came from and the tile it will swap with
+    placeholders = true             # outline where a dragged tile came from and show where it will go
+    modifier = 'none'               # alt, ctrl-alt…: held, drag a tile from anywhere in it
+    # preview-border-color = '#7aa2f7'  # where a drop will land; unset follows the system accent colour
+    # preview-fill-color = '#7aa2f74d'  # unset is the border colour at 30%
+    preview-border-width = 3        # points, for the preview and the outlines
+    home-outline = true             # outline where a dragged tile came from; false shows only where it will go
 
     # Which key of each pair bindings answer to: both | left | right. With alt = 'left',
     # right Option still types special characters.

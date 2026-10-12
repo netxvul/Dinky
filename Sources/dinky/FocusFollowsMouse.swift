@@ -179,7 +179,7 @@ final class HoverFocus {
 /// is up or dinky shows a window of its own, such as the update dialog: focusing another window would close
 /// or bury them. dinky's border windows are looked through; the Dock and Notification Center keep
 /// transparent windows over the whole screen at higher levels and are passed over.
-private struct OnScreenWindows {
+struct OnScreenWindows {
     let blocked: Bool
     /// Other apps' visible windows at normal, floating and modal levels, front to back.
     let candidates: [(id: WindowID, rect: CGRect)]

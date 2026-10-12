@@ -45,6 +45,11 @@ final class Coordinator {
     var adopting: Set<WindowID> = []
     /// The tiled window being dragged with the mouse, until the button is released. See Drag.swift.
     var dragging: WindowID?
+    /// Whether the drag was started with `[drag] modifier` held, so dinky moves the window itself and the drag is
+    /// never a resize. See ModifierDrag.swift.
+    var draggingByModifier = false
+    /// What the drag's feedback last showed, for the log.
+    var shownDrop: String?
     lazy var placeholders = DragPlaceholders()
     /// Called when the focused window changes.
     var onFocusChange: (() -> Void)?
@@ -425,7 +430,7 @@ final class Coordinator {
     private static func floatingKey(_ id: WindowID) -> UInt64 { 1 << 63 | UInt64(id) }
 
     /// Whether passes glide windows to their tiles.
-    private var animates: Bool {
+    var animates: Bool {
         config.animations.enabled && config.animations.durationMs > 0
             && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }

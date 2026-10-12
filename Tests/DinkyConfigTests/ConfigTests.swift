@@ -314,6 +314,33 @@ struct ConfigTests {
         assertError("[drag]\nghost = true\n", path: "drag.ghost", line: 2, contains: "unknown key")
     }
 
+    @Test func `Drag modifier`() throws {
+        #expect(Config.default.drag.modifier.isEmpty)
+        #expect(try Config.parse("[drag]\nmodifier = 'alt'\n").drag.modifier == [.alt])
+        #expect(try Config.parse("[drag]\nmodifier = 'ctrl-alt'\n").drag.modifier == [.ctrl, .alt])
+        #expect(try Config.parse("[drag]\nmodifier = 'none'\n").drag.modifier.isEmpty)
+        assertError("[drag]\nmodifier = 'fn'\n", path: "drag.modifier", line: 2, contains: "'none'")
+        assertError("[drag]\nmodifier = 'alt-alt'\n", path: "drag.modifier", line: 2, contains: "'none'")
+        assertError("[drag]\nmodifier = ''\n", path: "drag.modifier", line: 2, contains: "'none'")
+    }
+
+    @Test func `Drag preview style`() throws {
+        let defaults = Config.default.drag
+        #expect(defaults.previewBorderColor == nil)
+        #expect(defaults.previewFillColor == nil)
+        #expect(defaults.previewBorderWidth == 3)
+        #expect(defaults.homeOutline)
+        #expect(try !Config.parse("[drag]\nhome-outline = false\n").drag.homeOutline)
+        assertError("[drag]\nhome-outline = 'no'\n", path: "drag.home-outline", line: 2, contains: "true or false")
+        let drag = try Config.parse("[drag]\npreview-border-color = '#ff0000'\npreview-fill-color = '#00ff0080'\npreview-border-width = 1.5\n").drag
+        #expect(drag.previewBorderColor == Color(red: 1, green: 0, blue: 0))
+        #expect(drag.previewFillColor == Color(red: 0, green: 1, blue: 0, alpha: 128 / 255))
+        #expect(drag.previewBorderWidth == 1.5)
+        assertError("[drag]\npreview-border-color = 'blue'\n", path: "drag.preview-border-color", line: 2, contains: "'blue' is not a colour")
+        assertError("[drag]\npreview-border-width = 21\n", path: "drag.preview-border-width", line: 2, contains: "0 to 20")
+        assertError("[drag]\npreview-border-width = -1\n", path: "drag.preview-border-width", line: 2, contains: "0 to 20")
+    }
+
     @Test func `Modifier sides`() throws {
         #expect(Config.default.modifiers == ModifierSides())
         let config = try Config.parse("[modifiers]\nalt = 'left'\nshift = 'right'\n")

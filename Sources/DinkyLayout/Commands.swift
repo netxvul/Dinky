@@ -164,7 +164,7 @@ extension Workspace {
     }
 
     /// Remove the leaf at `path` without normalizing, shifting `other` if it pointed past the removed sibling.
-    private mutating func detach(_ path: [Int], adjusting other: inout [Int]) {
+    mutating func detach(_ path: [Int], adjusting other: inout [Int]) {
         let level = path.count - 1
         root.modify(at: Array(path.prefix(level))) { $0.remove(at: path[level]) }
         if other.count > level, Array(other.prefix(level)) == Array(path.prefix(level)), other[level] > path[level] {

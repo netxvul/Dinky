@@ -346,12 +346,45 @@ public struct Animations: Equatable {
 public struct Drag: Equatable {
     /// Outline the tile a dragged window came from and the one it will swap with.
     public var placeholders = true
+    /// The modifiers that, held, let the left button drag a tiled window from anywhere in it, not just its title bar.
+    /// Empty, `'none'` in the file, leaves every click to the apps.
+    public var modifier: KeyCombo.Modifiers = []
+    /// The border of the part of a tile a drop will take. Nil follows the system accent colour.
+    public var previewBorderColor: Color?
+    /// Its fill. Nil is the border colour at 30%.
+    public var previewFillColor: Color?
+    /// Points, for the preview and the outlines around it.
+    public var previewBorderWidth = 3.0
+    /// Whether the tile a dragged window came from is outlined. Off, only the feedback over the tile under the
+    /// pointer shows.
+    public var homeOutline = true
 
     public init() {}
 
     init(_ t: Table) throws {
         placeholders = try t.bool("placeholders") ?? placeholders
+        if let raw = try t.string("modifier") { modifier = try Self.modifiers(raw, path: t.path("modifier")) }
+        previewBorderColor = try t.color("preview-border-color") ?? previewBorderColor
+        previewFillColor = try t.color("preview-fill-color") ?? previewFillColor
+        previewBorderWidth = try t.double("preview-border-width") ?? previewBorderWidth
+        homeOutline = try t.bool("home-outline") ?? homeOutline
+        guard (0...20).contains(previewBorderWidth) else {
+            throw ConfigError(path: t.path("preview-border-width"), "must be 0 to 20")
+        }
         try t.done()
+    }
+
+    /// `'none'`, or modifier names joined by `-` as in a key binding, such as `'alt'` or `'ctrl-alt'`.
+    static func modifiers(_ raw: String, path: String) throws -> KeyCombo.Modifiers {
+        if raw == "none" { return [] }
+        var modifiers: KeyCombo.Modifiers = []
+        for word in raw.split(separator: "-", omittingEmptySubsequences: false) {
+            guard let modifier = KeyCombo.Modifiers.names.first(where: { $0.0 == word })?.1, !modifiers.contains(modifier) else {
+                throw ConfigError(path: path, "'\(raw)' is not 'none' or modifiers joined by '-' (alt, ctrl, cmd, shift)")
+            }
+            modifiers.insert(modifier)
+        }
+        return modifiers
     }
 }
 
