@@ -133,6 +133,17 @@ struct ConfigTests {
         #expect(accordion.orientation == .keep)
     }
 
+    @Test func fullscreen() throws {
+        #expect(Config().fullscreen.focusChange == .exit)
+        #expect(Config.default.fullscreen == Fullscreen())
+        #expect(try Config.parse("[fullscreen]\nfocus-change = 'follow'\n").fullscreen.focusChange == .follow)
+        #expect(try Config.parse("[fullscreen]\nfocus-change = 'keep'\n").fullscreen.focusChange == .keep)
+        assertError("[fullscreen]\nfocus-change = 'both'\n", path: "fullscreen.focus-change", line: 2, contains: "'exit', 'follow', 'keep'")
+        #expect(Config().fullscreen.followDelayMs == 0)
+        #expect(try Config.parse("[fullscreen]\nfollow-delay-ms = 200\n").fullscreen.followDelayMs == 200)
+        assertError("[fullscreen]\nfollow-delay-ms = -1\n", path: "fullscreen.follow-delay-ms", line: 2, contains: "0 to 5000")
+    }
+
     @Test func floating() throws {
         #expect(Config().floating.moveStep == 50)
         #expect(try Config.parse("[floating]\nmove-step = 20\n").floating.moveStep == 20)
@@ -289,11 +300,15 @@ struct ConfigTests {
         [animations]
         enabled = false
         duration-ms = 300
+        curve = 'ease-out-cubic'
         [drag]
         placeholders = false
         """)
         #expect(!config.animations.enabled)
         #expect(config.animations.durationMs == 300)
+        #expect(config.animations.curve == .easeOutCubic)
+        #expect(Animations().curve == .spring)
+        assertError("[animations]\ncurve = 'bounce'\n", path: "animations.curve", line: 2, contains: "'ease-out-cubic'")
         #expect(!config.drag.placeholders)
         assertError("[animations]\nduration-ms = -1\n", path: "animations.duration-ms", line: 2, contains: "0 to 1000")
         assertError("[drag]\nghost = true\n", path: "drag.ghost", line: 2, contains: "unknown key")

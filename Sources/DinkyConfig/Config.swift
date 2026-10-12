@@ -25,6 +25,7 @@ public struct Config: Equatable {
     public var accordion = Accordion()
     public var scrolling = Scrolling()
     public var floating = Floating()
+    public var fullscreen = Fullscreen()
     public var gaps = Gaps()
     /// `[display.<pattern>]` overrides, in file order.
     public var displays: [DisplayOverride] = []
@@ -111,6 +112,7 @@ public struct Config: Equatable {
         accordion = try t.table("accordion").map(Accordion.init) ?? accordion
         scrolling = try t.table("scrolling").map(Scrolling.init) ?? scrolling
         floating = try t.table("floating").map(Floating.init) ?? floating
+        fullscreen = try t.table("fullscreen").map(Fullscreen.init) ?? fullscreen
         gaps = try t.table("gaps").map { try gaps.applying(GapsPatch($0)) } ?? gaps
         if let displayTable = try t.table("display") {
             for pattern in displayTable.keys {
@@ -228,6 +230,36 @@ public struct Floating: Equatable {
     }
 }
 
+/// What focusing another window of the workspace does while one is fullscreen. The names match
+/// `DinkyLayout.FullscreenFocus`.
+public enum FullscreenFocusChange: String, CaseIterable {
+    /// Fullscreen ends; the window goes back to its tile.
+    case exit
+    /// The newly focused window goes fullscreen and the other goes back to its tile.
+    case follow
+    /// The newly focused window goes fullscreen too; the other stays fullscreen behind it.
+    case keep
+}
+
+/// `[fullscreen]`: dinky's fullscreen, a window filling its workspace over the tree.
+public struct Fullscreen: Equatable {
+    public var focusChange = FullscreenFocusChange.exit
+    /// With `follow`, how long the newly focused window waits before going fullscreen, so the window it took focus
+    /// from is back in its tile first. 0 swaps them at once.
+    public var followDelayMs = 0
+
+    public init() {}
+
+    init(_ t: Table) throws {
+        focusChange = try t.choice("focus-change") ?? focusChange
+        followDelayMs = try t.int("follow-delay-ms") ?? followDelayMs
+        guard (0...5000).contains(followDelayMs) else {
+            throw ConfigError(path: t.path("follow-delay-ms"), "must be 0 to 5000")
+        }
+        try t.done()
+    }
+}
+
 /// Below the target, or above it as a ring that never covers content or takes clicks.
 public enum BorderOrder: String, CaseIterable {
     case below, above
@@ -278,11 +310,26 @@ public struct FocusFollowsMouse: Equatable {
     }
 }
 
+/// How windows travel: on a spring, or along one of easings.net's timing functions over `duration-ms`, as yabai's
+/// `window_animation_easing`. The names match `DinkyLayout.Easing`.
+public enum AnimationCurve: String, CaseIterable {
+    case spring, linear
+    case easeInSine = "ease-in-sine", easeOutSine = "ease-out-sine", easeInOutSine = "ease-in-out-sine"
+    case easeInQuad = "ease-in-quad", easeOutQuad = "ease-out-quad", easeInOutQuad = "ease-in-out-quad"
+    case easeInCubic = "ease-in-cubic", easeOutCubic = "ease-out-cubic", easeInOutCubic = "ease-in-out-cubic"
+    case easeInQuart = "ease-in-quart", easeOutQuart = "ease-out-quart", easeInOutQuart = "ease-in-out-quart"
+    case easeInQuint = "ease-in-quint", easeOutQuint = "ease-out-quint", easeInOutQuint = "ease-in-out-quint"
+    case easeInExpo = "ease-in-expo", easeOutExpo = "ease-out-expo", easeInOutExpo = "ease-in-out-expo"
+    case easeInCirc = "ease-in-circ", easeOutCirc = "ease-out-circ", easeInOutCirc = "ease-in-out-circ"
+}
+
 /// `[animations]`: windows glide to their tiles instead of jumping. Off while macOS's Reduce Motion is on.
 public struct Animations: Equatable {
     public var enabled = true
-    /// Roughly how long a window takes to reach its tile. 0 jumps, as with animations off.
+    /// Roughly how long a window takes to reach its tile on the spring, exactly how long along an easing. 0 jumps,
+    /// as with animations off.
     public var durationMs = 150
+    public var curve = AnimationCurve.spring
 
     public init() {}
 
@@ -290,6 +337,7 @@ public struct Animations: Equatable {
         enabled = try t.bool("enabled") ?? enabled
         durationMs = try t.int("duration-ms") ?? durationMs
         guard (0...1000).contains(durationMs) else { throw ConfigError(path: t.path("duration-ms"), "must be 0 to 1000") }
+        curve = try t.choice("curve") ?? curve
         try t.done()
     }
 }

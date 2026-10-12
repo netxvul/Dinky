@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import DinkyConfig
+import DinkyLayout
 import TOMLDecoder
 @testable import DinkyCommands
 
@@ -29,6 +30,23 @@ struct SchemaTests {
         let listed = pattern.split(separator: "(")[1].split(separator: ")")[0].split(separator: "|").map(String.init)
         #expect(Set(listed) == Set(Command.all.map(\.name)))
         #expect(listed.count == Command.all.count, "a command is listed twice")
+    }
+
+    /// The config's curve names, the layout engine's easings and the schema's enum are the same list.
+    @Test func `Animation curves agree`() {
+        let configured = Set(AnimationCurve.allCases.map(\.rawValue))
+        #expect(configured == Set(Easing.allCases.map(\.rawValue) + ["spring"]))
+        let properties = Self.schema["properties"] as! [String: [String: Any]]
+        let animations = properties["animations"]!["properties"] as! [String: [String: Any]]
+        #expect(Set(animations["curve"]!["enum"] as! [String]) == configured)
+    }
+
+    @Test func `Fullscreen focus changes agree`() {
+        let configured = FullscreenFocusChange.allCases.map(\.rawValue)
+        #expect(configured.allSatisfy { FullscreenFocus(rawValue: $0) != nil })
+        let properties = Self.schema["properties"] as! [String: [String: Any]]
+        let fullscreen = properties["fullscreen"]!["properties"] as! [String: [String: Any]]
+        #expect(fullscreen["focus-change"]!["enum"] as! [String] == configured)
     }
 
     @Test func `Key combo pattern matches every key name`() throws {
@@ -74,6 +92,10 @@ struct SchemaTests {
         [floating]
         move-step = 20
 
+        [fullscreen]
+        focus-change = 'keep'
+        follow-delay-ms = 200
+
         [gaps]
         inner.horizontal = 4
         inner.vertical = 6
@@ -110,6 +132,7 @@ struct SchemaTests {
         [animations]
         enabled = true
         duration-ms = 100
+        curve = 'ease-in-out-expo'
 
         [drag]
         placeholders = false

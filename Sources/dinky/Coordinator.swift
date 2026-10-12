@@ -94,7 +94,8 @@ final class Coordinator {
 
     func update(config: Config) {
         self.config = config
-        animator.setDuration(ms: config.animations.durationMs)
+        animator.configure(durationMs: config.animations.durationMs,
+                           easing: Easing(rawValue: config.animations.curve.rawValue))
         if config.borders.enabled {
             borders = borders ?? BorderManager(config: config.borders, model: model,
                                                isAnimating: { [unowned self] id in animator.isAnimating(id) })
@@ -196,6 +197,8 @@ final class Coordinator {
             workspaces[key]!.accordionPadding = CGFloat(config.accordion.padding)
             workspaces[key]!.autoOrientAccordions = config.accordion.orientation == .auto
             workspaces[key]!.columnWidth = config.scrolling.columnWidth
+            workspaces[key]!.fullscreenFocus = fullscreenFocus
+            workspaces[key]!.fullscreenFollowsLater = config.fullscreen.followDelayMs > 0
             workspaces[key]!.setAlgorithm(workspaces[key]!.chosenAlgorithm ?? algorithm(settings(for: key)))
         }
     }
@@ -306,20 +309,38 @@ final class Coordinator {
                                         autoOrientAccordions: config.accordion.orientation == .auto,
                                         algorithm: algorithm(settings))
             workspaces[key]!.columnWidth = config.scrolling.columnWidth
+            workspaces[key]!.fullscreenFocus = fullscreenFocus
+            workspaces[key]!.fullscreenFollowsLater = config.fullscreen.followDelayMs > 0
             workspaces[key]!.walls = walls(of: display)
         }
         return key
+    }
+
+    /// What focusing another window does to fullscreen, from `[fullscreen] focus-change`.
+    private var fullscreenFocus: FullscreenFocus {
+        FullscreenFocus(rawValue: config.fullscreen.focusChange.rawValue) ?? .exit
     }
 
     /// Runs `change` on a tree and marks it dirty if its layout changed. Returns what `change` returned.
     @discardableResult
     func edit<T>(_ key: UInt64, _ change: (inout Workspace) -> T) -> T? {
         guard var workspace = workspaces[key] else { return nil }
-        let before = workspace.layout()
+        let before = workspace.layout(), pending = workspace.pendingFullscreen
         let result = change(&workspace)
         workspaces[key] = workspace
         if workspace.layout() != before { dirty.insert(key) }
+        if let waiting = workspace.pendingFullscreen, waiting != pending { promoteLater(waiting, in: key) }
         return result
+    }
+
+    /// With `[fullscreen] focus-change = 'follow'` and a delay: the window that took focus from a fullscreen one
+    /// goes fullscreen once the delay is up, if it still has focus and is still waiting.
+    private func promoteLater(_ id: WindowID, in key: UInt64) {
+        let delay = Double(config.fullscreen.followDelayMs) / 1000
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, edit(key, { $0.promotePendingFullscreen(id) }) == true else { return }
+            flush()
+        }
     }
 
     // MARK: Applying

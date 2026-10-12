@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fullscreen
+
+- New `[fullscreen] focus-change` says what Cmd-Tab, a click or `focus` onto another window of the workspace does while one is fullscreen: `'exit'` ends fullscreen, as before; `'follow'` makes the newly focused window fullscreen and puts the other back in its tile; `'keep'` makes it fullscreen too. `fullscreen` again ends it for every window. With `'follow'`, `follow-delay-ms` makes the newly focused window wait until the other is back in its tile.
+
+### Animations
+
+- New `[animations] curve` picks how windows travel: `'spring'`, as before, or one of the [easings.net](https://easings.net) timing functions yabai offers, such as `'ease-out-cubic'`, run over exactly `duration-ms`. `'linear'` and the `ease-in-`, `ease-out-` and `ease-in-out-` forms of `sine`, `quad`, `cubic`, `quart`, `quint`, `expo` and `circ` are there.
+
 ### Floating
 
 - New `grid <rows>:<columns>:<x>:<y>:<width>:<height>` command, after yabai's `--grid`: it floats the focused window and places it on cells of a grid over its display, inside the gaps, gliding there with animations on. `grid 1:2:0:0:1:1` puts it on the left half, `grid 3:3:1:1:1:1` in the centre ninth. `grid --toggle` tiles a window that already floats, so one key goes back and forth. In a `[[rules]]` entry it opens an app's new windows there.

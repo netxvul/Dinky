@@ -77,6 +77,26 @@
         }
       }
     },
+    "fullscreen": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "dinky's fullscreen, a window filling its workspace over the tree.",
+      "properties": {
+        "focus-change": {
+          "type": "string",
+          "enum": ["exit", "follow", "keep"],
+          "default": "exit",
+          "description": "What focusing another window of the workspace does while one is fullscreen: exit ends fullscreen, follow makes the newly focused window fullscreen in its place, keep makes it fullscreen too."
+        },
+        "follow-delay-ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5000,
+          "default": 0,
+          "description": "With focus-change = 'follow', how long the newly focused window waits before going fullscreen, so the other window is back in its tile first. 0 swaps them at once."
+        }
+      }
+    },
     "floating": {
       "type": "object",
       "additionalProperties": false,
@@ -175,7 +195,20 @@
           "minimum": 0,
           "maximum": 1000,
           "default": 150,
-          "description": "Roughly how long a window takes to arrive. 0 jumps."
+          "description": "Roughly how long a window takes to arrive on the spring, exactly how long along an easing. 0 jumps."
+        },
+        "curve": {
+          "type": "string",
+          "enum": ["spring", "linear",
+                   "ease-in-sine", "ease-out-sine", "ease-in-out-sine",
+                   "ease-in-quad", "ease-out-quad", "ease-in-out-quad",
+                   "ease-in-cubic", "ease-out-cubic", "ease-in-out-cubic",
+                   "ease-in-quart", "ease-out-quart", "ease-in-out-quart",
+                   "ease-in-quint", "ease-out-quint", "ease-in-out-quint",
+                   "ease-in-expo", "ease-out-expo", "ease-in-out-expo",
+                   "ease-in-circ", "ease-out-circ", "ease-in-out-circ"],
+          "default": "spring",
+          "description": "How windows travel: on a spring, or along an easings.net timing function over duration-ms."
         }
       }
     },

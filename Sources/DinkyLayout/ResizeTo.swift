@@ -11,7 +11,7 @@ extension Workspace {
     /// False when nothing changed.
     @discardableResult
     public mutating func resize(_ id: WindowID, to size: CGSize, moving edges: Set<Direction> = []) -> Bool {
-        guard fullscreen == nil else { return false }
+        guard fullscreenWindows.isEmpty else { return false }
         var changed = false
         for axis in [Orientation.horizontal, .vertical] {
             guard let frame = tiledLayout().frames[id] else { return false }

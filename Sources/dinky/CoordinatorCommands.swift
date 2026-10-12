@@ -52,7 +52,7 @@ extension Coordinator {
     func layoutName(of id: WindowID) -> String {
         guard let key = placements[id]?.space, let workspace = workspaces[key],
               let container = workspace.container(of: id), let axis = workspace.containerAxis(of: id) else { return "floating" }
-        if workspace.fullscreen == id { return "fullscreen" }
+        if workspace.fullscreenWindows.contains(id) { return "fullscreen" }
         return (axis == .horizontal ? "h_" : "v_") + (container.mode == .accordion ? "accordion" : "tiles")
     }
 

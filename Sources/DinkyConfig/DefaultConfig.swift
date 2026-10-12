@@ -35,6 +35,10 @@ extension Config {
     [floating]
     move-step = 50                  # points `move` shifts a floating window by
 
+    [fullscreen]
+    focus-change = 'exit'           # focusing another window: exit | follow (it takes over) | keep (both fullscreen)
+    follow-delay-ms = 0             # with follow, wait this long for the other window to be back in its tile
+
     [gaps]
     inner = 8                       # or { horizontal = 8, vertical = 8 }
     outer = 8                       # or { top = 8, bottom = 8, left = 8, right = 8 }
@@ -64,6 +68,7 @@ extension Config {
     [animations]
     enabled = true                  # windows glide to their tiles; off while Reduce Motion is on
     duration-ms = 150               # roughly how long a window takes to arrive
+    curve = 'spring'                # spring | linear | ease-out-cubic and the other easings.net curves
 
     [drag]
     placeholders = true             # outline where a dragged tile came from and the tile it will swap with

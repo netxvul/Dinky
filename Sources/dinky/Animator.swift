@@ -1,11 +1,11 @@
 import AppKit
 import DinkyLayout
 
-// Glides windows to their tiles. Each window rides a spring from where it is to its tile, stepped on every frame
-// of the main display and written through the applier's per-app queues without readback. Once a tree's windows
-// have arrived, its pass finishes as an unanimated one would: the full write with readback, retry and raises.
-// A new pass mid-flight retargets the springs, so windows curve to their new tiles instead of restarting.
-// Main thread only.
+// Glides windows to their tiles. Each window rides a spring, or an easing over a fixed time, from where it is to its
+// tile, stepped on every frame of the main display and written through the applier's per-app queues without
+// readback. Once a tree's windows have arrived, its pass finishes as an unanimated one would: the full write with
+// readback, retry and raises. A new pass mid-flight retargets the windows: on the spring they curve to their new
+// tiles, keeping their speed; an easing starts over from where they are. Main thread only.
 final class Animator: NSObject {
     private struct Entry {
         var animation: FrameAnimation
@@ -22,7 +22,7 @@ final class Animator: NSObject {
     /// When a frame was last stepped, on the wall clock, so a display link that stopped firing is noticed.
     private var lastStepAt = CACurrentMediaTime()
     private var watchdog: Timer?
-    private var spring = Spring(response: 0.15, damping: 0.9)
+    private var curve = AnimationCurve.spring(Spring(response: 0.15, damping: 0.9))
     private var timeout = 1.0
     /// Where windows came to rest the last time they were written unanimated, by the frame they were asked for.
     /// An app that snaps to a grid (Terminal) or keeps a minimum size never reaches its tile exactly, and
@@ -39,11 +39,11 @@ final class Animator: NSObject {
                                                queue: .main) { [weak self] _ in self?.screensChanged() }
     }
 
-    /// How long a window takes to arrive, roughly.
-    func setDuration(ms: Int) {
-        let response = Double(ms) / 1000
-        spring = Spring(response: response, damping: 0.9)
-        timeout = max(1, 4 * response)
+    /// How long a window takes to arrive, roughly on the spring and exactly along an easing; nil for the spring.
+    func configure(durationMs ms: Int, easing: Easing?) {
+        let duration = Double(ms) / 1000
+        curve = easing.map { .eased($0, duration: duration) } ?? .spring(Spring(response: duration, damping: 0.9))
+        timeout = max(1, 4 * duration)
     }
 
     /// Whether dinky is moving the window right now, so its frame changes are not the user's.
@@ -142,7 +142,7 @@ final class Animator: NSObject {
         lastStepAt = CACurrentMediaTime()
         var jobs: [FrameJob] = [], arrived: [WindowID] = []
         for (id, entry) in entries {
-            let done = entries[id]!.animation.step(spring, dt: dt, timeout: timeout)
+            let done = entries[id]!.animation.step(curve, dt: dt, timeout: timeout)
             jobs.append(FrameJob(pid: entry.pid, id: id, frame: entries[id]!.animation.frame))
             if done { entries[id] = nil; arrived.append(id) }
         }

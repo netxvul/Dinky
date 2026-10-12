@@ -48,6 +48,8 @@ extension Command {
                 + "An auto container counts as the orientation it follows now."),
         Doc(syntax: "fullscreen",
             description: "Toggle the focused window filling the workspace. The tree is kept. "
+                + "[fullscreen] focus-change says whether focusing another window ends it, hands it over or adds that window; "
+                + "turning it off ends it for every window. "
                 + "A floating window fills its display and goes back to where it was."),
         Doc(syntax: "grid [--toggle] <rows>:<columns>:<x>:<y>:<width>:<height>",
             description: "Float the focused window and glide it onto a grid over its display, as yabai's --grid: "

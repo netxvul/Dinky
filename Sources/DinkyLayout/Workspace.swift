@@ -12,6 +12,12 @@ public enum FixedExpansion: Equatable, Sendable {
     case rows, columns, accordion
 }
 
+/// What focusing another window of the workspace does while one is fullscreen: end fullscreen, hand it to the
+/// newly focused window, or show that one fullscreen too.
+public enum FullscreenFocus: String, Equatable, Sendable {
+    case exit, follow, keep
+}
+
 /// One Space's tiling state: the tree, focus, fullscreen and the geometry settings used to lay it out.
 public struct Workspace: Equatable, Sendable {
     /// The Space's visible rect, top-left origin.
@@ -26,11 +32,18 @@ public struct Workspace: Equatable, Sendable {
     public internal(set) var root: Container
     /// The focused window, if any.
     public internal(set) var focused: WindowID?
-    /// Whether the focused window is shown fullscreen over the tree. Focusing another window or any layout
-    /// command ends it.
-    var isFullscreen = false
-    /// The window shown fullscreen over the tree, if any.
-    public var fullscreen: WindowID? { isFullscreen ? focused : nil }
+    /// Windows shown fullscreen over the tree, most recently focused first. When there are any, the focused window
+    /// is the first. Focusing another window does what `fullscreenFocus` says; any layout command ends fullscreen.
+    public internal(set) var fullscreenWindows: [WindowID] = []
+    /// What focusing another window does while one is fullscreen.
+    public var fullscreenFocus = FullscreenFocus.exit
+    /// With `follow`, whether the newly focused window waits until the coordinator promotes it, so the window it took
+    /// focus from is back in its tile first. Off, it goes fullscreen at once.
+    public var fullscreenFollowsLater = false
+    /// The focused window waiting to go fullscreen with `fullscreenFollowsLater`. See `promotePendingFullscreen`.
+    public internal(set) var pendingFullscreen: WindowID?
+    /// The window shown fullscreen in front, if any: the focused one.
+    public var fullscreen: WindowID? { fullscreenWindows.first }
     /// Sizes windows refused to go below. Tiles grow to them when their siblings can give the space.
     public var minimumSizes: [WindowID: CGSize] = [:]
     /// Scrolling: the width of a new column, as a share of the width inside the outer gaps.
@@ -118,11 +131,18 @@ public struct Workspace: Equatable, Sendable {
             root = Self.fixedRoot(rows: rows, columns: columns)
         }
         columnWidths[id] = nil
+        let wasFullscreen = fullscreenWindows.contains(id)
         if focused == id {
-            isFullscreen = false
             focused = nil
-            if let next = root.mostRecentWindow ?? windows.first { focus(next) }
+            // Focus moves on as fullscreen says first: with `follow` the next window takes over the screen, at once
+            // when the fullscreen window has gone, since there is nothing to wait for.
+            if let next = root.mostRecentWindow ?? windows.first {
+                focus(next)
+                if wasFullscreen { _ = promotePendingFullscreen(next) }
+            }
         }
+        fullscreenWindows.removeAll { $0 == id }
+        if pendingFullscreen == id { pendingFullscreen = nil }
     }
 
     static var emptyCell: Node { .container(Container(.horizontal)) }
@@ -250,21 +270,33 @@ public struct Workspace: Equatable, Sendable {
         guard let path = root.path(of: old), !contains(new) else { return }
         root.modify(at: Array(path.dropLast())) { $0.replace(at: path.last!, with: .window(new)) }
         if focused == old { focused = new }
+        fullscreenWindows = fullscreenWindows.map { $0 == old ? new : $0 }
+        if pendingFullscreen == old { pendingFullscreen = new }
         minimumSizes[old] = nil
         columnWidths[new] = columnWidths.removeValue(forKey: old)
     }
 
     /// Undo every tree edit: the windows go back into the configured layout, in order, with equal ratios.
     public mutating func flatten() {
-        isFullscreen = false
+        endFullscreen()
         rebuild()
     }
 
-    /// Focus a window and mark it most recent along its path, so accordions show it on top.
-    /// Ends fullscreen unless it is the fullscreen window.
+    /// Focus a window and mark it most recent along its path, so accordions show it on top. While a window is
+    /// fullscreen, focusing another ends fullscreen, hands it over or adds the window, as `fullscreenFocus` says.
     public mutating func focus(_ id: WindowID) {
         guard let path = root.path(of: id) else { return }
-        if focused != id { isFullscreen = false }
+        if focused != id, !fullscreenWindows.isEmpty || pendingFullscreen != nil {
+            pendingFullscreen = nil
+            switch fullscreenFocus {
+            case .exit: fullscreenWindows = []
+            case .follow where fullscreenFollowsLater:
+                fullscreenWindows = []
+                pendingFullscreen = id
+            case .follow: fullscreenWindows = [id]
+            case .keep: fullscreenWindows = [id] + fullscreenWindows.filter { $0 != id }
+            }
+        }
         focused = id
         for depth in path.indices {
             root.modify(at: Array(path.prefix(depth))) { $0.active = path[depth] }
@@ -322,7 +354,7 @@ public struct Workspace: Equatable, Sendable {
 
     /// Give every container in the tree equal ratios.
     public mutating func balanceSizes() {
-        isFullscreen = false
+        endFullscreen()
         root.balance()
         for id in columnWidths.keys { columnWidths[id] = columnWidth }
         if let focused { reveal(focused) }
@@ -364,7 +396,7 @@ public struct Workspace: Equatable, Sendable {
     /// so the container is not merged into its parent halfway. With `autoOrientAccordions`, a container becoming
     /// an accordion turns `auto` unless a command chose its orientation.
     public mutating func setLayout(_ mode: LayoutMode?, _ orientation: ContainerOrientation?) {
-        isFullscreen = false
+        endFullscreen()
         // The strip itself stays a row of columns; a window alone in its column has no container to change.
         guard let focused, let path = root.path(of: focused), !(isScrolling && path.count == 1) else { return }
         root.modify(at: Array(path.dropLast())) { c in
@@ -380,20 +412,38 @@ public struct Workspace: Equatable, Sendable {
         normalize()
     }
 
-    /// Toggle fullscreen for the focused window. The tree is not changed.
+    /// Toggle fullscreen for the focused window. Turning it off ends it for every window, so the tiles show again;
+    /// a window waiting to go fullscreen counts as fullscreen. The tree is not changed.
     public mutating func toggleFullscreen() {
-        if focused != nil { isFullscreen.toggle() }
+        guard let focused else { return }
+        let on = fullscreenWindows.isEmpty && pendingFullscreen == nil
+        endFullscreen()
+        if on { fullscreenWindows = [focused] }
     }
 
-    /// Frames and stacking for every window. A fullscreen window covers the bounds minus outer gaps and comes first.
-    /// Scrolled-out windows are parked where macOS lets them be, see `parked(_:)`.
+    /// Shows the window waiting to go fullscreen, if it is still `id` and focused. False when there is nothing to do:
+    /// focus moved on, or fullscreen ended meanwhile.
+    public mutating func promotePendingFullscreen(_ id: WindowID) -> Bool {
+        guard pendingFullscreen == id, focused == id else { return false }
+        pendingFullscreen = nil
+        fullscreenWindows = [id]
+        return true
+    }
+
+    /// No window fullscreen, nor waiting to be.
+    mutating func endFullscreen() {
+        fullscreenWindows = []
+        pendingFullscreen = nil
+    }
+
+    /// Frames and stacking for every window. Fullscreen windows cover the bounds minus outer gaps and come first,
+    /// the focused one in front. Scrolled-out windows are parked where macOS lets them be, see `parked(_:)`.
     public func layout() -> Layout {
         var result = tiledLayout()
         if isScrolling { result.frames = result.frames.mapValues(parked) }
-        if let fullscreen {
-            result.frames[fullscreen] = gaps.inset(bounds)
-            result.order = [fullscreen] + result.order.filter { $0 != fullscreen }
-        }
+        let shown = fullscreenWindows.filter { result.frames[$0] != nil }
+        for id in shown { result.frames[id] = gaps.inset(bounds) }
+        result.order = shown + result.order.filter { !shown.contains($0) }
         return result
     }
 

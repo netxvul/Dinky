@@ -129,6 +129,37 @@ ctrl-alt-cmd-s = 'layout tiles accordion scrolling'
 
 </div>
 
+## `[fullscreen]`
+
+`fullscreen` makes the focused window fill its workspace over the tree. This
+table says what happens when another window of the same workspace takes focus,
+by Cmd-Tab, a click, `focus`, a new window or the fullscreen window closing.
+
+<div class="wide-table" markdown="1">
+
+| Key | Default | |
+|---|---|---|
+| `focus-change` | `'exit'` | `'exit'`: fullscreen ends and the window goes back to its tile. `'follow'`: the newly focused window goes fullscreen and the other goes back to its tile. `'keep'`: the newly focused window goes fullscreen too, and the other stays fullscreen behind it. |
+| `follow-delay-ms` | `0` | With `'follow'`, how long the newly focused window waits in its tile before going fullscreen, from `0` to `5000`, so the window it took over from is back in its tile first. `0` swaps them at the same time. About `duration-ms` waits for the glide back; a little more lets it settle. |
+
+</div>
+
+With a delay, focusing yet another window while one waits hands the wait on to
+that window, and `fullscreen` during the wait ends it. When the fullscreen
+window closes, the next one goes fullscreen at once, since nothing has to move
+back.
+
+With `'keep'`, every window focused while one is fullscreen joins it, the
+focused one in front. `fullscreen` again, or any layout command, ends
+fullscreen for all of them. Floating windows and other workspaces are not
+affected.
+
+```toml
+[fullscreen]
+focus-change = 'follow'
+follow-delay-ms = 200   # the other window glides back first
+```
+
 ## `[floating]`
 
 What the tiling commands do to a floating window; see
@@ -228,9 +259,29 @@ gaps.outer.top = 44
 | Key | Default | |
 |---|---|---|
 | `enabled` | `true` | Windows glide to their tiles instead of jumping. Off while macOS's Reduce Motion is on. |
-| `duration-ms` | `150` | Roughly how long a window takes to arrive, up to 1000. `0` jumps. |
+| `duration-ms` | `150` | Roughly how long a window takes to arrive on the spring, exactly how long along an easing, up to 1000. `0` jumps. |
+| `curve` | `'spring'` | How windows travel; see below. |
 
 </div>
+
+`curve = 'spring'` puts each window on a spring that settles without bouncing.
+A command pressed again mid-glide bends the motion towards the new place,
+keeping its speed.
+
+Any other value is a timing function from [easings.net](https://easings.net),
+as yabai's `window_animation_easing` offers, run over exactly `duration-ms`:
+`'linear'`, or `'ease-in-'`, `'ease-out-'` or `'ease-in-out-'` followed by
+`sine`, `quad`, `cubic`, `quart`, `quint`, `expo` or `circ`, such as
+`'ease-out-cubic'`. Ease-out curves start fast and slow down into place, which
+suits windows best; ease-in curves start slowly. From `sine` to `expo` each is
+steeper than the last. A command pressed again mid-glide starts the curve over
+from where the window is.
+
+```toml
+[animations]
+duration-ms = 250
+curve = 'ease-out-quart'
+```
 
 ## `[drag]`
 
@@ -375,6 +426,10 @@ column-width = 0.49             # a new column's share of the display; a lone co
 [floating]
 move-step = 50                  # points `move` shifts a floating window by
 
+[fullscreen]
+focus-change = 'exit'           # focusing another window: exit | follow (it takes over) | keep (both fullscreen)
+follow-delay-ms = 0             # with follow, wait this long for the other window to be back in its tile
+
 [gaps]
 inner = 8                       # or { horizontal = 8, vertical = 8 }
 outer = 8                       # or { top = 8, bottom = 8, left = 8, right = 8 }
@@ -404,6 +459,7 @@ accordion-edges = true          # resting on a peeking accordion edge focuses th
 [animations]
 enabled = true                  # windows glide to their tiles; off while Reduce Motion is on
 duration-ms = 150               # roughly how long a window takes to arrive
+curve = 'spring'                # spring | linear | ease-out-cubic and the other easings.net curves
 
 [drag]
 placeholders = true             # outline where a dragged tile came from and the tile it will swap with

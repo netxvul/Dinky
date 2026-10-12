@@ -43,7 +43,7 @@ extension Workspace {
     /// tiles that way, does nothing. The scrolling layout moves columns instead, see `moveInStrip`.
     @discardableResult
     public mutating func move(_ direction: Direction) -> Bool {
-        isFullscreen = false
+        endFullscreen()
         return isScrolling ? moveInStrip(direction) : moveInTree(direction)
     }
 
@@ -101,7 +101,7 @@ extension Workspace {
     /// across the axis, else into a new container wrapping the neighbour. Adapted from AeroSpace's join-with.
     @discardableResult
     public mutating func join(_ direction: Direction) -> Bool {
-        isFullscreen = false
+        endFullscreen()
         return isScrolling ? joinInStrip(direction) : joinInTree(direction)
     }
 
@@ -136,7 +136,7 @@ extension Workspace {
     /// In the scrolling layout, a width or smart resize changes the column's width.
     @discardableResult
     public mutating func resize(by delta: CGFloat, along axis: Orientation? = nil) -> Bool {
-        isFullscreen = false
+        endFullscreen()
         if isScrolling, axis != .vertical { return resizeColumn(by: delta) }
         guard let focused, var path = root.path(of: focused) else { return false }
         let layout = tiledLayout()
