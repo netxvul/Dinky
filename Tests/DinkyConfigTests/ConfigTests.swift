@@ -314,16 +314,6 @@ struct ConfigTests {
         assertError("[drag]\nghost = true\n", path: "drag.ghost", line: 2, contains: "unknown key")
     }
 
-    @Test func `Drag modifier`() throws {
-        #expect(Config.default.drag.modifier.isEmpty)
-        #expect(try Config.parse("[drag]\nmodifier = 'alt'\n").drag.modifier == [.alt])
-        #expect(try Config.parse("[drag]\nmodifier = 'ctrl-alt'\n").drag.modifier == [.ctrl, .alt])
-        #expect(try Config.parse("[drag]\nmodifier = 'none'\n").drag.modifier.isEmpty)
-        assertError("[drag]\nmodifier = 'fn'\n", path: "drag.modifier", line: 2, contains: "'none'")
-        assertError("[drag]\nmodifier = 'alt-alt'\n", path: "drag.modifier", line: 2, contains: "'none'")
-        assertError("[drag]\nmodifier = ''\n", path: "drag.modifier", line: 2, contains: "'none'")
-    }
-
     @Test func `Drag preview style`() throws {
         let defaults = Config.default.drag
         #expect(defaults.previewBorderColor == nil)

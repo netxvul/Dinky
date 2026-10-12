@@ -136,7 +136,6 @@ struct SchemaTests {
 
         [drag]
         placeholders = false
-        modifier = 'ctrl-alt'
         preview-border-color = '#7aa2f7'
         preview-fill-color = '#7aa2f74d'
         preview-border-width = 2.5

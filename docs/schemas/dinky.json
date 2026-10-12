@@ -222,12 +222,6 @@
           "default": true,
           "description": "While you drag a tiled window, outline the tile it came from, and show over the tile under the pointer the part the window will take."
         },
-        "modifier": {
-          "type": "string",
-          "pattern": "^(none|(alt|ctrl|cmd|shift)(-(alt|ctrl|cmd|shift))*)$",
-          "default": "none",
-          "description": "Modifiers that, held, drag a tiled window from anywhere in it, not just its title bar, such as 'alt' or 'ctrl-alt'. 'none' turns it off."
-        },
         "preview-border-color": { "$ref": "#/definitions/color", "description": "Border of the part of the tile a dragged window will take. Unset, the system accent colour." },
         "preview-fill-color": { "$ref": "#/definitions/color", "description": "Fill of that part. Unset, the border colour at 30%." },
         "home-outline": { "type": "boolean", "default": true, "description": "Outline the tile a dragged window came from. false shows only the feedback over the tile under the pointer." },

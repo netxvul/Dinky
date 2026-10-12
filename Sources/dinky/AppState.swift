@@ -34,7 +34,6 @@ final class AppState {
     let recovery = Recovery()
     private let hooks = Hooks()
     private let hoverFocus = HoverFocus()
-    private let modifierDrag = ModifierDrag()
     private var watcher: ConfigWatcher?
 
     private init() {
@@ -67,7 +66,6 @@ final class AppState {
         hooks.start()
         recovery.start(model: coordinator.model, applier: coordinator.applier)
         hoverFocus.update(config: config.focusFollowsMouse)
-        modifierDrag.update(config: config.drag, sides: config.modifiers)
     }
 
     /// The one enable transition. Off stops tiling and puts every window back where it was before dinky
@@ -104,7 +102,6 @@ final class AppState {
                 coordinator.update(config: config)
                 numbers.arrange()
                 hoverFocus.update(config: config.focusFollowsMouse)
-                modifierDrag.update(config: config.drag, sides: config.modifiers)
             }
             applyStartAtLogin(config.startAtLogin)
         case .failure(let error):

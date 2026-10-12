@@ -45,9 +45,6 @@ final class Coordinator {
     var adopting: Set<WindowID> = []
     /// The tiled window being dragged with the mouse, until the button is released. See Drag.swift.
     var dragging: WindowID?
-    /// Whether the drag was started with `[drag] modifier` held, so dinky moves the window itself and the drag is
-    /// never a resize. See ModifierDrag.swift.
-    var draggingByModifier = false
     /// What the drag's feedback last showed, for the log.
     var shownDrop: String?
     lazy var placeholders = DragPlaceholders()

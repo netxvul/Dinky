@@ -296,16 +296,11 @@ scrolling layout, dropping left
 or right of a tile makes the window a column of its own there. A fixed layout's
 grid only swaps. Dropped anywhere else, the window goes back.
 
-With `modifier` set, holding it lets you drag a tiled window from anywhere in it,
-not just its title bar, as yabai's `mouse_modifier` does. Hold the modifier and
-click without moving to leave the window where it is.
-
 <div class="wide-table" markdown="1">
 
 | Key | Default | |
 |---|---|---|
 | `placeholders` | `true` | While you drag a tiled window, outline the tile it came from, and show over the tile under the pointer the part the window will take. |
-| `modifier` | `'none'` | Modifiers that, held, drag a tiled window from anywhere in it, not just its title bar: `'alt'`, `'ctrl-alt'` or any of `alt`, `ctrl`, `cmd` and `shift` joined by `-`. The click goes to dinky, not the app. `'none'` turns it off. |
 | `preview-border-color` | accent colour | The border of the part of the tile the window will take: `'#rrggbb'` or `'#rrggbbaa'`. Unset, it follows the accent colour in System Settings. The faint outline of the whole tile around a half is this colour at 40%. |
 | `preview-fill-color` | border at 30% | The fill of that part, `'#rrggbbaa'` for a translucent one such as `'#7aa2f74d'`. |
 | `preview-border-width` | `3` | Points, from `0` to `20`, for the preview and the outlines of the tiles. |
@@ -479,7 +474,6 @@ curve = 'spring'                # spring | linear | ease-out-cubic and the other
 
 [drag]
 placeholders = true             # outline where a dragged tile came from and show where it will go
-modifier = 'none'               # alt, ctrl-alt…: held, drag a tile from anywhere in it
 # preview-border-color = '#7aa2f7'  # where a drop will land; unset follows the system accent colour
 # preview-fill-color = '#7aa2f74d'  # unset is the border colour at 30%
 preview-border-width = 3        # points, for the preview and the outlines
