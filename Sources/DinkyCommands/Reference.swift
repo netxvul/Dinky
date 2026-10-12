@@ -65,6 +65,12 @@ extension Command {
         Doc(syntax: "balance-sizes",
             description: "Give every window on the focused workspace an equal share of its container. "
                 + "With a floating window focused, acts on the tiles of its workspace."),
+        Doc(syntax: "rotate <90|180|270>",
+            description: "Turn the focused workspace's tiles clockwise by that many degrees, as yabai's space --rotate: "
+                + "a quarter turn makes a row a column and a column a row. Not for fixed or scrolling layouts."),
+        Doc(syntax: "mirror <x-axis|y-axis>",
+            description: "Flip the focused workspace's tiles, as yabai's space --mirror: y-axis swaps left and right, "
+                + "x-axis top and bottom. Not for fixed or scrolling layouts."),
         Doc(syntax: "retile",
             description: "Re-read every window and re-apply the layout of every workspace on screen."),
         Doc(syntax: "clear-minimum-sizes",

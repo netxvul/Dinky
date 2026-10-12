@@ -88,6 +88,10 @@ enum Dispatcher {
             return tree("flatten-workspace-tree", wholeSpace: true) { $0.flatten(); return true }
         case .balanceSizes:
             return tree("balance-sizes", wholeSpace: true) { $0.balanceSizes(); return true }
+        case .rotate(let rotation):
+            return rearrange("rotate \(rotation.rawValue)") { $0.rotate(rotation) }
+        case .mirror(let axis):
+            return rearrange("mirror \(axis.rawValue)") { $0.mirror(axis) }
         case .retile:
             guard let coordinator = AppState.shared.coordinator else { return .error("tiling is not running") }
             coordinator.reconcile()
@@ -239,6 +243,19 @@ enum Dispatcher {
         case false?: return .error("\(name): nothing to do")
         case true?: return .ok(name)
         }
+    }
+
+    /// `rotate` and `mirror` on the focused workspace's tree, which fixed and scrolling layouts refuse.
+    private static func rearrange(_ name: String, _ change: @escaping (inout Workspace) -> Bool) -> Reply {
+        var refused = false
+        let reply = tree(name, wholeSpace: true) { workspace in
+            guard workspace.rearranges else {
+                refused = true
+                return false
+            }
+            return change(&workspace)
+        }
+        return refused ? .error("\(name): not supported in a fixed or scrolling layout") : reply
     }
 
     /// Applies the layout after the last that describes the window now (see `LayoutName.next`): floating or tiling

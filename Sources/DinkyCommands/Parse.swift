@@ -80,6 +80,10 @@ extension Command {
             return none ? .flattenWorkspaceTree : nil
         case "balance-sizes":
             return none ? .balanceSizes : nil
+        case "rotate":
+            return one.flatMap { Int($0) }.flatMap(Rotation.init(rawValue:)).map { .rotate($0) }
+        case "mirror":
+            return one.flatMap(MirrorAxis.init(rawValue:)).map { .mirror($0) }
         case "retile":
             return none ? .retile : nil
         case "clear-minimum-sizes":

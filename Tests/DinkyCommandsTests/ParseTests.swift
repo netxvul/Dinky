@@ -35,6 +35,17 @@ struct ParseTests {
         #expect(try parse("join-with \(word)") == .joinWith(dir))
     }
 
+    @Test func `Rotate and mirror`() throws {
+        #expect(try parse("rotate 90") == .rotate(.quarter))
+        #expect(try parse("rotate 180") == .rotate(.half))
+        #expect(try parse("rotate 270") == .rotate(.threeQuarters))
+        #expect(try parse("mirror x-axis") == .mirror(.xAxis))
+        #expect(try parse("mirror y-axis") == .mirror(.yAxis))
+        for bad in ["rotate", "rotate 45", "rotate 90 180", "mirror", "mirror z-axis", "mirror x"] {
+            #expect(throws: (any Error).self, "\(bad)") { try parse(bad) }
+        }
+    }
+
     @Test func resize() throws {
         #expect(try parse("resize smart -50") == .resize(.smart, by: -50))
         #expect(try parse("resize smart +50") == .resize(.smart, by: 50))
@@ -141,7 +152,7 @@ struct ParseTests {
     private static let knownGood = [
         "workspace 1", "workspace-back-and-forth", "move-window-to-workspace 2 --follow", "move-window-to-display next",
         "focus left", "focus-monitor next", "move left", "join-with left", "resize smart +10", "layout tiles",
-        "fullscreen", "grid 1:2:0:0:1:1", "flatten-workspace-tree", "balance-sizes", "retile", "clear-minimum-sizes", "mode main", "reload-config", "enable on",
+        "fullscreen", "grid 1:2:0:0:1:1", "flatten-workspace-tree", "balance-sizes", "rotate 90", "mirror y-axis", "retile", "clear-minimum-sizes", "mode main", "reload-config", "enable on",
         "list-workspaces", "list-windows", "list-monitors", "list-displays", "list-modes", "debug-state", "exec-and-forget true",
     ]
 

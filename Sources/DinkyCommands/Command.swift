@@ -25,6 +25,10 @@ public enum Command: Equatable, Sendable {
     case grid(GridPlacement, toggle: Bool = false)
     case flattenWorkspaceTree
     case balanceSizes
+    /// Turn the focused workspace's tree clockwise, as yabai's `space --rotate`.
+    case rotate(Rotation)
+    /// Flip the focused workspace's tree across an axis, as yabai's `space --mirror`.
+    case mirror(MirrorAxis)
     case retile
     case clearMinimumSizes
     case mode(String)

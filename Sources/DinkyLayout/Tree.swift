@@ -108,6 +108,13 @@ public struct Container: Equatable, Sendable {
         ratios = new
     }
 
+    /// The children in the other order, each keeping its ratio, the active one still active.
+    mutating func reverse() {
+        children.reverse()
+        ratios.reverse()
+        if !children.isEmpty { active = children.count - 1 - activeIndex }
+    }
+
     /// Equal ratios here and in every container below.
     mutating func balance() {
         ratios = children.map { _ in 1 / Double(children.count) }
