@@ -10,6 +10,7 @@ struct ParseTests {
         #expect(try parse("workspace 3") == .workspace(.number(3)))
         #expect(try parse("workspace prev") == .workspace(.prev))
         #expect(try parse("workspace next") == .workspace(.next))
+        #expect(try parse("workspace recent") == .workspace(.recent))
         #expect(try parse("workspace-back-and-forth") == .workspaceBackAndForth)
     }
 
@@ -18,11 +19,13 @@ struct ParseTests {
         #expect(try parse("move-window-to-workspace 3 --follow") == .moveWindowToWorkspace(.number(3), follow: true))
         #expect(try parse("move-window-to-workspace --follow next") == .moveWindowToWorkspace(.next, follow: true))
         #expect(try parse("move-window-to-workspace prev") == .moveWindowToWorkspace(.prev, follow: false))
+        #expect(try parse("move-window-to-workspace recent --follow") == .moveWindowToWorkspace(.recent, follow: true))
     }
 
     @Test func `Move window to display`() throws {
         #expect(try parse("move-window-to-display next") == .moveWindowToDisplay(.next, follow: false))
         #expect(try parse("move-window-to-display prev --follow") == .moveWindowToDisplay(.prev, follow: true))
+        #expect(try parse("move-window-to-display recent") == .moveWindowToDisplay(.recent, follow: false))
     }
 
     @Test(arguments: [("left", Direction.left), ("down", .down), ("up", .up), ("right", .right)])
@@ -181,7 +184,7 @@ struct ParseErrorTests {
     @Test func `Bad arguments name string and syntax`() {
         let m = message("workspace zero")
         #expect(m.contains("'workspace zero'"), "\(m)")
-        #expect(m.contains("workspace <number|prev|next>"), "\(m)")
+        #expect(m.contains("workspace <number|prev|next|recent>"), "\(m)")
     }
 
     @Test(arguments: ["", "   ", "workspace", "workspace 0", "workspace -1", "workspace 1 2", "focus sideways",

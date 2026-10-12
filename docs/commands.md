@@ -14,12 +14,12 @@ prints it.
 
 | Command | |
 |---|---|
-| `workspace <n\|prev\|next>` | Show a workspace and focus its display. `prev`/`next` step through the focused display's and don't wrap. |
-| `workspace-back-and-forth` | Switch to the previous workspace. |
-| `move-window-to-workspace <n\|prev\|next> [--follow]` | Move the focused window, and with `--follow` go too. |
-| `move-window-to-display <next\|prev> [--follow]` | Move the focused window to another display's workspace. |
+| `workspace <n\|prev\|next\|recent>` | Show a workspace and focus its display. `prev`/`next` step through the focused display's and don't wrap. `recent` is the workspace focused before the current one, on any display, as yabai's `recent`; again, it goes back. |
+| `workspace-back-and-forth` | Switch to the previous workspace of the focused display. |
+| `move-window-to-workspace <n\|prev\|next\|recent> [--follow]` | Move the focused window, and with `--follow` go too. |
+| `move-window-to-display <next\|prev\|recent> [--follow]` | Move the focused window to another display's workspace. `recent` is the display focused before the focused one. |
 | `focus <left\|down\|up\|right> [--boundaries <b>] [--boundaries-action <a>]` | Focus the nearest window. `--boundaries` is `workspace` (default) or `all-monitors-outer-frame`, which continues onto the next display. `--boundaries-action` is `stop` (default), `fail`, `wrap-around-the-workspace` (`--wrap-around`) or `wrap-around-all-monitors`, which needs `all-monitors-outer-frame`. |
-| `focus-monitor <left\|down\|up\|right\|next\|prev\|n>` | Focus a display. |
+| `focus-monitor <left\|down\|up\|right\|next\|prev\|recent\|n>` | Focus a display. `recent` is the one focused before the focused one. |
 | `move <left\|down\|up\|right>` | Move the focused window in the tree. A floating window moves `[floating] move-step` points; see [Floating windows](#floating-windows). |
 | `join-with <left\|down\|up\|right>` | Put the focused window and its neighbour in a new container. |
 | `resize <smart\|width\|height> <+n\|-n>` | Resize by n points. A floating window grows about its centre. |

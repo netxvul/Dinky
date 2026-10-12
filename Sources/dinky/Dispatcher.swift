@@ -135,7 +135,8 @@ enum Dispatcher {
     }
 
     /// The workspace a target names. `prev` and `next` step through the focused display's workspaces in number
-    /// order, without wrapping, from the one it shows or is switching to, so rapid requests add up.
+    /// order, without wrapping, from the one it shows or is switching to, so rapid requests add up. `recent` is the
+    /// workspace focused before the current one, on any display.
     private static func resolve(_ target: WorkspaceTarget) throws(Refusal) -> Int {
         let model = AppState.shared.displays
         let numbers = AppState.shared.numbers
@@ -143,6 +144,9 @@ enum Dispatcher {
         switch target {
         case .number(let n):
             guard (1...numbers.count).contains(n) else { throw Refusal("no workspace \(n), there are \(numbers.count)") }
+            return n
+        case .recent:
+            guard let n = model.recentSpace.flatMap(numbers.number(of:)) else { throw Refusal("no recent workspace") }
             return n
         case .prev, .next:
             guard let display = model.focusedDisplay(), let current = numbers.number(of: targetSpaceID(on: display)) else {
@@ -267,15 +271,24 @@ enum Dispatcher {
 
     // MARK: Windows
 
-    /// Moves a window to the current Space of the next or previous display (wrapping around), into that
-    /// Space's tree. A floating window keeps its offset from the display's corner. Untested with two displays.
+    /// Moves a window to the current Space of the next or previous display (wrapping around), or of the display
+    /// focused before the focused one, into that Space's tree. A floating window keeps its offset from the
+    /// display's corner. Untested with two displays.
     private static func moveWindowToDisplay(_ target: DisplayTarget, follow: Bool, window wid: WindowID) -> Reply {
         let model = AppState.shared.displays
         model.reconcile()
         guard wid != 0, let from = model.display(ofWindow: wid) else { return .error("no focused window") }
         let displays = model.displays
         guard displays.count > 1, let i = displays.firstIndex(of: from) else { return .error("no other display") }
-        let n = (i + (target == .next ? 1 : -1) + displays.count) % displays.count
+        let n: Int
+        if target == .recent {
+            guard let recent = model.recentDisplay, recent != from, let at = displays.firstIndex(of: recent) else {
+                return .error("no recent display")
+            }
+            n = at
+        } else {
+            n = (i + (target == .next ? 1 : -1) + displays.count) % displays.count
+        }
         let to = displays[n]
         if let reply = relocate(wid, to: to.currentSpaceID, on: to, destination: "display \(n + 1)", follow: follow) {
             return reply

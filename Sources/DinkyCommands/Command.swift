@@ -41,14 +41,16 @@ public enum Command: Equatable, Sendable {
     case execAndForget(String)
 }
 
-/// A 1-based workspace number on the focused display, or its neighbour.
+/// A 1-based workspace number on the focused display, its neighbour, or the workspace focused before the current
+/// one on any display, as yabai's `recent`.
 public enum WorkspaceTarget: Equatable, Sendable {
     case number(Int)
-    case prev, next
+    case prev, next, recent
 }
 
+/// The next or previous display in display order, or the one focused before the focused one.
 public enum DisplayTarget: String, Equatable, Sendable {
-    case prev, next
+    case prev, next, recent
 }
 
 /// Where `focus` looks: the focused workspace's tree, or on across displays up to their outer frame.
@@ -65,11 +67,12 @@ public enum BoundariesAction: String, Equatable, Sendable {
     case wrapAroundAllMonitors = "wrap-around-all-monitors"
 }
 
-/// A display relative to the focused one: in a direction by frame, or next and previous in display order.
+/// A display relative to the focused one: in a direction by frame, next and previous in display order, or the one
+/// focused before it.
 public enum MonitorTarget: String, Equatable, Sendable {
-    case left, right, up, down, next, prev
+    case left, right, up, down, next, prev, recent
 
-    /// The direction for left, right, up and down; nil for next and prev.
+    /// The direction for left, right, up and down; nil for next, prev and recent.
     public var direction: Direction? { Direction(rawValue) }
 }
 

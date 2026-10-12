@@ -15,6 +15,10 @@
 - New `grid <rows>:<columns>:<x>:<y>:<width>:<height>` command, after yabai's `--grid`: it floats the focused window and places it on cells of a grid over its display, inside the gaps, gliding there with animations on. `grid 1:2:0:0:1:1` puts it on the left half, `grid 3:3:1:1:1:1` in the centre ninth. `grid --toggle` tiles a window that already floats, so one key goes back and forth. In a `[[rules]]` entry it opens an app's new windows there.
 - The tiling bindings work on floating windows. `move` shifts one by `[floating] move-step` points (50 by default), `resize` grows or shrinks it about its centre, and `fullscreen` fills the display and then puts it back, all inside the gaps. `balance-sizes` and `flatten-workspace-tree` act on the tiles of its workspace. Before, they answered that the window was not tiled.
 
+### Workspaces and displays
+
+- New `recent` target, after yabai's: `workspace recent` shows the workspace focused before the current one, on any display, and `focus-monitor recent` focuses the display focused before the focused one; again, either goes back. `move-window-to-workspace recent` and `move-window-to-display recent` send the focused window there, with `--follow` too. `workspace-back-and-forth` still goes back on the focused display.
+
 ### Drag
 
 - Dropping a dragged tile works like yabai's insert feedback. In the middle of the tile under the pointer the two swap, as before; towards an edge that tile splits in two, side by side or one above the other, and the dragged window takes the half on that side. While you drag, an accent border with a translucent fill over that tile shows the part the window will take; a swap is drawn heavier and lights up the dragged window's own tile too, where the other window will go. In the scrolling layout, left and right make the window a column of its own; a fixed layout's grid only swaps.

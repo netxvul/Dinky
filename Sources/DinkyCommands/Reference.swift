@@ -12,15 +12,17 @@ extension Command {
     }
 
     public static let all: [Doc] = [
-        Doc(syntax: "workspace <number|prev|next>",
+        Doc(syntax: "workspace <number|prev|next|recent>",
             description: "Show a workspace (a native Space), numbered from 1 across displays, and focus its display. "
-                + "prev and next step through the focused display's workspaces."),
+                + "prev and next step through the focused display's workspaces; recent is the workspace focused before "
+                + "the current one, on any display."),
         Doc(syntax: "workspace-back-and-forth",
             description: "Switch to the workspace that was focused before the current one."),
-        Doc(syntax: "move-window-to-workspace <number|prev|next> [--follow]",
+        Doc(syntax: "move-window-to-workspace <number|prev|next|recent> [--follow]",
             description: "Move the focused window to a workspace. With --follow, switch there too."),
-        Doc(syntax: "move-window-to-display <next|prev> [--follow]",
-            description: "Move the focused window to the next or previous display's current workspace. With --follow, focus it there."),
+        Doc(syntax: "move-window-to-display <next|prev|recent> [--follow]",
+            description: "Move the focused window to the current workspace of the next or previous display, or of the one "
+                + "focused before the focused one. With --follow, focus it there."),
         Doc(syntax: "focus <left|down|up|right> [--boundaries workspace|all-monitors-outer-frame] "
                 + "[--boundaries-action stop|fail|wrap-around-the-workspace|wrap-around-all-monitors]",
             description: "Focus the neighbouring window in a direction in the layout tree. At the workspace edge, "
@@ -28,8 +30,8 @@ extension Command {
                 + "at its near edge. At the last edge, --boundaries-action stops (the default), fails, wraps to the far "
                 + "side of the workspace, or, with all-monitors-outer-frame, to the display at the far side. "
                 + "--wrap-around is short for --boundaries-action wrap-around-the-workspace. Never switches workspace."),
-        Doc(syntax: "focus-monitor <left|down|up|right|next|prev|N>",
-            description: "Focus the display in a direction, the next or previous one, or display N as list-monitors numbers it: its most recently focused window, "
+        Doc(syntax: "focus-monitor <left|down|up|right|next|prev|recent|N>",
+            description: "Focus the display in a direction, the next or previous one, the one focused before it, or display N as list-monitors numbers it: its most recently focused window, "
                 + "or the display itself when its workspace is empty, so workspace commands act on it."),
         Doc(syntax: "move <left|down|up|right>",
             description: "Move the focused window in a direction within the layout tree. "

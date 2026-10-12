@@ -40,6 +40,10 @@ extension Dispatcher {
         let model = AppState.shared.displays
         model.reconcile()
         guard let from = model.focusedDisplay() else { return .error("no display") }
+        if target == .recent {
+            guard let recent = model.recentDisplay, recent != from else { return .error("no recent display") }
+            return focus(recent, window: AppState.shared.coordinator?.workspace(on: recent)?.focused)
+        }
         let line = target.direction.map { displays(inLineWith: from, $0.orientation, model.displays) }
             ?? model.displays.sorted { ($0.frame.minX, $0.frame.minY) < ($1.frame.minX, $1.frame.minY) }
         let forward = target.direction?.isForward ?? (target == .next)

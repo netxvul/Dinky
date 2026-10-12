@@ -35,11 +35,12 @@ struct FocusParseTests {
     }
 
     @Test func `Focus monitor`() throws {
-        for word in ["left", "right", "up", "down", "next", "prev"] {
+        for word in ["left", "right", "up", "down", "next", "prev", "recent"] {
             #expect(try parse("focus-monitor \(word)") == .focusMonitor(MonitorTarget(rawValue: word)!))
         }
         #expect(MonitorTarget.up.direction == .up)
         #expect(MonitorTarget.next.direction == nil)
+        #expect(MonitorTarget.recent.direction == nil)
         #expect(throws: (any Error).self) { try parse("focus-monitor") }
         #expect(throws: (any Error).self) { try parse("focus-monitor main") }
         #expect(try parse("focus-monitor 2") == .focusMonitorNumber(2))

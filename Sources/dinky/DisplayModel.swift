@@ -1,4 +1,5 @@
 import AppKit
+import DinkyLayout
 import DinkyPrivate
 
 // Fans the one process-wide WindowServer callback out to every model that wants events.
@@ -37,7 +38,8 @@ struct Display: Equatable {
     let currentSpaceID: UInt64
 }
 
-// Displays, their Spaces, the current and previous Space per display, and which display has focus.
+// Displays, their Spaces, the current and previous Space per display, which display has focus, and the Space and
+// display focused before the focused ones, across all displays, for `recent`.
 // Refreshed from WindowServer Space events, screen reconfiguration, a poll and `reconcile()`. Main thread only.
 final class DisplayModel {
     private(set) var displays: [Display] = []
@@ -48,7 +50,11 @@ final class DisplayModel {
     private var observers: [(DisplayModel) -> Void] = []
     /// The UUID of a display `focus-monitor` focused without a window to focus there. It stands in for the
     /// focused window's display until focus next changes.
-    var focusOverride: String?
+    var focusOverride: String? { didSet { noteFocus() } }
+    /// The focused Space and the one before it, on any display. A swipe's Spaces on the way do not count.
+    private var focusedSpaces = Recent<UInt64>()
+    /// The focused display's UUID and the one before it.
+    private var focusedDisplays = Recent<String>()
 
     /// Reads the displays and follows their changes from then on. Call once.
     func start() {
@@ -73,6 +79,7 @@ final class DisplayModel {
 
     /// Re-reads every display from WindowServer. Records previous Spaces and publishes if anything changed.
     func reconcile() {
+        defer { noteFocus() }
         let fresh = readDisplays()
         // Also when nothing else changed: a swipe that gave up settles where it already was.
         for display in fresh {
@@ -88,6 +95,8 @@ final class DisplayModel {
         // A disconnected display takes its history with it.
         previousSpaceIDs = previousSpaceIDs.filter { uuid, _ in fresh.contains { $0.uuid == uuid } }
         settledSpaceIDs = settledSpaceIDs.filter { uuid, _ in fresh.contains { $0.uuid == uuid } }
+        focusedDisplays.forget { uuid in !fresh.contains { $0.uuid == uuid } }
+        focusedSpaces.forget { space in !fresh.contains { $0.spaces.contains(space) } }
         displays = fresh
         observers.forEach { $0(self) }
     }
@@ -123,6 +132,23 @@ final class DisplayModel {
     /// The Space the display was on before its current one.
     func previousSpace(on display: Display) -> UInt64? {
         previousSpaceIDs[display.uuid]
+    }
+
+    /// Takes in the focused display and the Space it has settled on. Called when focus or the Spaces change.
+    func noteFocus() {
+        guard let display = focusedDisplay() else { return }
+        focusedDisplays.note(display.uuid)
+        if let space = settledSpaceIDs[display.uuid] { focusedSpaces.note(space) }
+    }
+
+    /// The Space focused before the focused one, on any display, if it still exists.
+    var recentSpace: UInt64? {
+        focusedSpaces.previous.flatMap { space in display(containingSpace: space) == nil ? nil : space }
+    }
+
+    /// The display focused before the focused one, if it is still connected.
+    var recentDisplay: Display? {
+        focusedDisplays.previous.flatMap { uuid in displays.first { $0.uuid == uuid } }
     }
 
     private func readDisplays() -> [Display] {

@@ -142,6 +142,7 @@ extension Command {
         switch word {
         case "prev": return .prev
         case "next": return .next
+        case "recent": return .recent
         default:
             guard let n = Int(word), n >= 1 else { return nil }
             return .number(n)
