@@ -44,6 +44,13 @@ func mainWindowID(of pid: pid_t) -> UInt32 {
     return axElement(app, kAXMainWindowAttribute).map(axWindowID) ?? 0
 }
 
+/// The app's focused window, wherever it is. 0 if it has none.
+func focusedWindowID(of pid: pid_t) -> UInt32 {
+    let app = AXUIElementCreateApplication(pid)
+    AXUIElementSetMessagingTimeout(app, 0.25)
+    return axElement(app, kAXFocusedWindowAttribute).map(axWindowID) ?? 0
+}
+
 func frontWindowID() -> UInt32 {
     guard let app = NSWorkspace.shared.frontmostApplication else { return 0 }
     var value: CFTypeRef?

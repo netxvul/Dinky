@@ -1,4 +1,5 @@
 import AppKit
+import DinkyLayout
 import DinkyPrivate
 
 // Follows app activation (Cmd-Tab, Dock click) to the display and Space of the app's window when the
@@ -78,6 +79,7 @@ func installActivationFollower() {
         guard !isArrivalActivation() else { return log("activate \(name): not followed, macOS activated it on arrival") }
         activated(app.processIdentifier, name: name, previous: previous)
     }
+    watchFloatingClicks()
 }
 
 // Remembers the owner of each window that closes, as an app losing a window. Call once, with the coordinator's
@@ -106,10 +108,13 @@ private func activated(_ pid: pid_t, name: String, previous: pid_t) {
     guard let here = AppState.shared.displays.focusedDisplay()?.currentSpaceID else {
         return log("activate \(name): not followed, no focused display")
     }
+    refreshWindows(of: pid)
     guard !windowSpaces(of: pid).contains(here) else { return log("activate \(name): stayed, it has a window here") }
+    guard !mouseOverWindow(of: pid) else { return log("activate \(name): stayed, it was clicked in a window here") }
     let activatedAt = uptime()
     let activation = activations
     DispatchQueue.main.asyncAfter(deadline: .now() + .nanoseconds(Int(windowGrace))) {
+        refreshWindows(of: pid)
         if activation != activations {
             log("activate \(name): not followed, another app was activated")
         } else if lastSpaceChangeAt >= activatedAt {
@@ -122,6 +127,14 @@ private func activated(_ pid: pid_t, name: String, previous: pid_t) {
             follow(pid, name: name)
         }
     }
+}
+
+// Re-reads the app's windows before deciding on them. A window shown again can come without an event that says so:
+// IINA leaving picture in picture shows its player again, and the model still had it hidden, so the app looked to
+// have no window anywhere.
+private func refreshWindows(of pid: pid_t) {
+    guard let model = AppState.shared.coordinator?.model else { return }
+    for window in model.windows.values where window.pid == pid { model.refresh(window.id) }
 }
 
 private func log(_ message: String) {
@@ -151,6 +164,96 @@ private func hasWindowOnScreen(_ pid: pid_t) -> Bool {
     !normalWindows(of: pid, [.optionOnScreenOnly]).isEmpty
 }
 
+// Whether the mouse is over one of the app's windows on screen, in front of any other: a click there activated it.
+// A picture in picture video floats on every Space and is no normal window, so its app looks to have no window here,
+// and following it would switch to its main window's Space on every click into the video.
+private func mouseOverWindow(of pid: pid_t) -> Bool {
+    windowUnderMouse(levels: 0...Int(CGWindowLevelForKey(.floatingWindow)))?.pid == pid
+}
+
+// The frontmost window under the mouse at `levels`, as the window server lists them.
+private func windowUnderMouse(levels: ClosedRange<Int>) -> ScreenWindow? {
+    guard let point = CGEvent(source: nil)?.location else { return nil }
+    let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+    let windows = info.compactMap { w -> ScreenWindow? in
+        guard let layer = w[kCGWindowLayer as String] as? Int, levels.contains(layer),
+              (w[kCGWindowAlpha as String] as? Double ?? 0) > 0, let owner = w[kCGWindowOwnerPID as String] as? pid_t,
+              let id = w[kCGWindowNumber as String] as? UInt32, let bounds = w[kCGWindowBounds as String] as? NSDictionary,
+              let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return nil }
+        return ScreenWindow(id: id, pid: owner, layer: layer, frame: frame)
+    }
+    return windowAt(point, in: windows)
+}
+
+/// The floating window the button went down in, while it is down, and the normal windows shown then.
+private var floatingClick: (window: ScreenWindow, shown: Set<UInt32>)?
+/// Whether a check after the last floating click already followed, so the later checks leave it be.
+private var followedClick = false
+
+// Leaving picture in picture takes the video back to its window wherever that is, on the mouse up. A browser's video
+// floats in the browser's own window: the click activated the browser on the mouse down, which was not followed since
+// the click landed in a window here, and back to tab then makes the tab's window key. macOS's own picture in picture,
+// which IINA and Safari use, floats in a window of its own process, above the floating level, and leaving it shows the
+// player's window again without activating its app. Either way no activation comes to follow. So a click in a window
+// above the normal level that closes it is followed to a normal window that shows again on another Space, or to the
+// key window of the app it belonged to on another Space. A click into the video keeps it open, and its close button
+// shows no window and leaves no normal window key. The key window before the click is no guide: an app activated by
+// the click still names the window it last had key until the click lands.
+private func watchFloatingClicks() {
+    NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { event in
+        guard AppState.shared.enabled, AppState.shared.config.followAppActivation else { return }
+        if event.type == .leftMouseDown {
+            // Below the Dock, whose window over the whole screen never closes.
+            let levels = 1...Int(CGWindowLevelForKey(.dockWindow)) - 1
+            let known = AppState.shared.coordinator?.model.windows.values ?? [:].values
+            floatingClick = windowUnderMouse(levels: levels).flatMap { w in
+                w.pid == getpid() ? nil : (w, Set(known.filter(\.isNormal).map(\.id)))
+            }
+            return
+        }
+        guard let click = floatingClick else { return }
+        floatingClick = nil
+        followedClick = false
+        // The video closes and its window shows or turns key a moment after the mouse up.
+        for delay in [150, 400, 800] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(delay)) { followAfterClick(click, last: delay == 800) }
+        }
+    }
+}
+
+// Follows to a normal window shown since the click, on another Space, or else to the clicked window's app's key window
+// on another Space, once the clicked window is gone. Logs why not on the last check.
+private func followAfterClick(_ click: (window: ScreenWindow, shown: Set<UInt32>), last: Bool) {
+    guard !followedClick, !windowExists(click.window.id) else { return }
+    AppState.shared.coordinator?.model.reconcile()
+    let elsewhere = { (wid: UInt32) -> Bool in
+        let space = dinky_window_space_id(wid)
+        return AppState.shared.displays.display(containingSpace: space).map { $0.currentSpaceID != space } ?? false
+    }
+    let known = AppState.shared.coordinator?.model.windows ?? [:]
+    let pid = click.window.pid
+    let target: (pid: pid_t, window: UInt32, why: String)?
+    if let shown = known.values.first(where: { $0.isNormal && !click.shown.contains($0.id) && elsewhere($0.id) }) {
+        target = (shown.pid, shown.id, "showed window \(shown.id) again")
+    } else if NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
+              case let key = focusedWindowID(of: pid), known[key]?.isNormal == true, elsewhere(key) {
+        target = (pid, key, "made window \(key) key")
+    } else {
+        target = nil
+    }
+    guard let target else {
+        return last ? log("floating window \(click.window.id) closed: stayed, no window showed or turned key on another Space") : ()
+    }
+    followedClick = true
+    let name = NSRunningApplication(processIdentifier: target.pid)?.localizedName ?? "?"
+    log("activate \(name): floating window \(click.window.id) closed and \(target.why) on another Space")
+    follow(target.pid, name: name, preferring: target.window)
+}
+
+private func windowExists(_ id: UInt32) -> Bool {
+    !(CGWindowListCopyWindowInfo(.optionIncludingWindow, id) as? [[String: Any]] ?? []).isEmpty
+}
+
 // Only the windows the window model tracks as normal count, so an app's hidden helper windows, which can sit
 // on any Space, don't. The window server's list supplies the front-to-back order.
 func normalWindows(of pid: pid_t, _ options: CGWindowListOption) -> [UInt32] {
@@ -163,14 +266,14 @@ func normalWindows(of pid: pid_t, _ options: CGWindowListOption) -> [UInt32] {
     }
 }
 
-// Switches to the Space of the app's main window, the one Cmd-Tab brings forward, or else of its frontmost one.
+// Switches to the Space of `preferred` or the app's main window, the one Cmd-Tab brings forward, or else of its frontmost one.
 // The window server's order across Spaces is not the order the app last used its windows in, so on its own it can
 // pick another Space than the window the app makes key. Once there, brings the window forward.
-private func follow(_ pid: pid_t, name: String) {
+private func follow(_ pid: pid_t, name: String, preferring preferred: UInt32? = nil) {
     let model = AppState.shared.displays
     guard uptime() >= pausedUntil else { return log("activate \(name): not followed, following is paused") }
     let windows = normalWindows(of: pid, [.optionAll])
-    let main = mainWindowID(of: pid)
+    let main = preferred ?? mainWindowID(of: pid)
     let candidates = windows.contains(main) ? [main] + windows : windows
     guard let (window, space, display) = candidates.lazy.compactMap({ wid -> (UInt32, UInt64, Display)? in
         let sid = dinky_window_space_id(wid)
