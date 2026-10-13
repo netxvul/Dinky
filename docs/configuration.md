@@ -290,8 +290,9 @@ scrolling layout its column takes the new width. Drag the window itself and
 drop it on another tile, and the tile under the pointer shows where it will go,
 as yabai's insert feedback does: in the middle of the tile the two swap, and
 towards an edge the tile splits in two, side by side or one above the other,
-with the window in the half on that side. A swap is drawn heavier, and the
-dragged window's own tile lights up too, where the other window will go. In the
+with the window in the half on that side. A swap is filled more strongly, with
+the same border, and the dragged window's own tile lights up too, where the
+other window will go. In the
 scrolling layout, dropping left
 or right of a tile makes the window a column of its own there. A fixed layout's
 grid only swaps. Dropped anywhere else, the window goes back.
@@ -303,7 +304,7 @@ grid only swaps. Dropped anywhere else, the window goes back.
 | `placeholders` | `true` | While you drag a tiled window, outline the tile it came from, and show over the tile under the pointer the part the window will take. |
 | `preview-border-color` | accent colour | The border of the part of the tile the window will take: `'#rrggbb'` or `'#rrggbbaa'`. Unset, it follows the accent colour in System Settings. The faint outline of the whole tile around a half is this colour at 40%. |
 | `preview-fill-color` | border at 30% | The fill of that part, `'#rrggbbaa'` for a translucent one such as `'#7aa2f74d'`. |
-| `preview-border-width` | `3` | Points, from `0` to `20`, for the preview and the outlines of the tiles. |
+| `preview-border-width` | `3` | Points, from `0` to `20`, for every border while you drag: the preview, a swap's, and the outlines of the tiles. |
 | `home-outline` | `true` | Outline the tile the window came from in grey while you drag. `false` shows only the feedback over the tile under the pointer. |
 
 </div>

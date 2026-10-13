@@ -9,8 +9,8 @@ import DinkyLayout
 // above it to be seen. Borderless panels that never take focus or clicks. They move between tiles and halves,
 // gliding briefly when animations are on; nothing reflows until the drop. `[drag]` can set the preview's colours
 // and the width of every outline, and turn the home outline off; the faint tile outline follows the preview's border.
-// A swap is drawn heavier than a split, and lights up the dragged window's own tile too, where the other window will
-// go: the dragged window mostly covers the tile it would swap with.
+// A swap is filled more strongly than a split, at the same border width, and lights up the dragged window's own tile
+// too, where the other window will go: the dragged window mostly covers the tile it would swap with.
 final class DragPlaceholders {
     private lazy var home = Self.panel(PlaceholderView(stroke: .secondaryLabelColor.withAlphaComponent(0.45),
                                                        fill: .secondaryLabelColor.withAlphaComponent(0.06)))
@@ -22,7 +22,7 @@ final class DragPlaceholders {
                                                            fill: .controlAccentColor.withAlphaComponent(0.45)))
     private var style: Drag?
     private var splitLook = Look(stroke: .controlAccentColor, fill: .controlAccentColor.withAlphaComponent(0.3), width: 3)
-    private var swapLook = Look(stroke: .controlAccentColor, fill: .controlAccentColor.withAlphaComponent(0.45), width: 6)
+    private var swapLook = Look(stroke: .controlAccentColor, fill: .controlAccentColor.withAlphaComponent(0.45), width: 3)
 
     private struct Look {
         var stroke: NSColor
@@ -81,9 +81,8 @@ final class DragPlaceholders {
         let fill = drag.previewFillColor.map(Self.nsColor) ?? border.withAlphaComponent(border.alphaComponent * 0.3)
         let width = CGFloat(drag.previewBorderWidth)
         splitLook = Look(stroke: border, fill: fill, width: width)
-        // A swap: a heavier border and a stronger fill than a split.
-        swapLook = Look(stroke: border, fill: fill.withAlphaComponent(min(fill.alphaComponent * 1.5, 0.6)),
-                        width: max(width + 3, 4))
+        // A swap: a stronger fill than a split, with the same border, so every outline is `preview-border-width` wide.
+        swapLook = Look(stroke: border, fill: fill.withAlphaComponent(min(fill.alphaComponent * 1.5, 0.6)), width: width)
         view(swapHome).set(stroke: swapLook.stroke, fill: swapLook.fill, width: swapLook.width)
         view(tile).set(stroke: border.withAlphaComponent(border.alphaComponent * 0.4), fill: .clear, width: width)
         view(home).set(stroke: .secondaryLabelColor.withAlphaComponent(0.45),

@@ -225,7 +225,7 @@
         "preview-border-color": { "$ref": "#/definitions/color", "description": "Border of the part of the tile a dragged window will take. Unset, the system accent colour." },
         "preview-fill-color": { "$ref": "#/definitions/color", "description": "Fill of that part. Unset, the border colour at 30%." },
         "home-outline": { "type": "boolean", "default": true, "description": "Outline the tile a dragged window came from. false shows only the feedback over the tile under the pointer." },
-        "preview-border-width": { "type": "number", "minimum": 0, "maximum": 20, "default": 3, "description": "Points, for the preview and the outlines of the tiles." }
+        "preview-border-width": { "type": "number", "minimum": 0, "maximum": 20, "default": 3, "description": "Points, for every border while you drag: the preview, a swap's, and the outlines of the tiles." }
       }
     },
     "modifiers": {

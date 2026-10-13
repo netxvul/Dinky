@@ -26,8 +26,8 @@
 
 ### Drag
 
-- Dropping a dragged tile works like yabai's insert feedback. In the middle of the tile under the pointer the two swap, as before; towards an edge that tile splits in two, side by side or one above the other, and the dragged window takes the half on that side. While you drag, an accent border with a translucent fill over that tile shows the part the window will take; a swap is drawn heavier and lights up the dragged window's own tile too, where the other window will go. In the scrolling layout, left and right make the window a column of its own; a fixed layout's grid only swaps.
-- `[drag] preview-border-color`, `preview-fill-color` and `preview-border-width` set how the drop's feedback looks, as yabai's `insert_feedback_color`. Unset, the border follows the system accent colour and the fill is it at 30%. `home-outline = false` drops the grey outline of the tile the window came from.
+- Dropping a dragged tile works like yabai's insert feedback. In the middle of the tile under the pointer the two swap, as before; towards an edge that tile splits in two, side by side or one above the other, and the dragged window takes the half on that side. While you drag, an accent border with a translucent fill over that tile shows the part the window will take; a swap is filled more strongly and lights up the dragged window's own tile too, where the other window will go. In the scrolling layout, left and right make the window a column of its own; a fixed layout's grid only swaps.
+- `[drag] preview-border-color`, `preview-fill-color` and `preview-border-width` set how the drop's feedback looks, `preview-border-width` for every border including a swap's, as yabai's `insert_feedback_color`. Unset, the border follows the system accent colour and the fill is it at 30%. `home-outline = false` drops the grey outline of the tile the window came from.
 
 ### Fixes
 
