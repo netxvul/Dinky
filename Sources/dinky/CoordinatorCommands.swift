@@ -76,6 +76,7 @@ extension Coordinator {
         if let space = placement.space { edit(space) { $0.remove(id) } }
         heldTabs[id] = nil
         filledFrom[id] = nil
+        griddedFrom[id] = nil
         placements[id] = Placement(floating: floating, space: nil)
         track(window)
         flush()
@@ -121,6 +122,26 @@ extension Coordinator {
             }
             filledFrom[id] = frame
             return filled
+        }
+    }
+
+    /// Whether the window is on a `float = true` workspace, where nothing it does can tile it.
+    func workspaceFloats(_ id: WindowID) -> Bool {
+        model.windows[id].map { settings(for: $0.spaceID).float } ?? false
+    }
+
+    /// `grid --toggle` for a window of a `float = true` workspace, which cannot go back to a tile: place it on the
+    /// grid, or put it back where it was when it is still where the grid sent it.
+    func toggleGrid(_ id: WindowID, on grid: GridPlacement) -> String? {
+        guard let display = displays.display(ofWindow: id) else { return "window \(id) is on no display" }
+        let placed = grid.frame(in: display.visibleArea, gaps: gaps(on: display))
+        return floating(id) { frame, _ in
+            if let before = griddedFrom[id], floatingTargets[id] == placed {
+                griddedFrom[id] = nil
+                return before
+            }
+            griddedFrom[id] = frame
+            return placed
         }
     }
 

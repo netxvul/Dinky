@@ -75,8 +75,13 @@ struct ConfigTests {
         expand = 'accordion'
         [workspace.3]
         layout = 'accordion'
+        [workspace.4]
+        float = true
         """)
         #expect(!config.settings(forWorkspace: 1).tiling)
+        #expect(!config.settings(forWorkspace: 1).float)
+        #expect(config.settings(forWorkspace: 4).float)
+        assertError("[workspace.2]\nfloat = 'yes'\n", path: "workspace.2.float", line: 2, contains: "expected true or false")
         let fixed = config.settings(forWorkspace: 2)
         #expect(fixed.tiling)
         #expect(fixed.layout == .fixed)

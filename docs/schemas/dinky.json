@@ -44,6 +44,7 @@
         "additionalProperties": false,
         "properties": {
           "tiling": { "type": "boolean" },
+          "float": { "type": "boolean", "default": false, "description": "Float every window on the workspace, whatever tiling says. A window floated here keeps floating on other workspaces." },
           "layout": { "type": "string", "enum": ["tiles", "dwindle", "accordion", "fixed", "scrolling"] },
           "columns": { "type": "integer", "minimum": 1, "default": 1, "description": "Reserved columns for a fixed layout." },
           "rows": { "type": "integer", "minimum": 1, "default": 1, "description": "Reserved rows for a fixed layout." },

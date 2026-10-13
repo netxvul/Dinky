@@ -21,6 +21,7 @@
 ### Workspaces and displays
 
 - New `recent` target, after yabai's: `workspace recent` shows the workspace focused before the current one, on any display, and `focus-monitor recent` focuses the display focused before the focused one; again, either goes back. `move-window-to-workspace recent` and `move-window-to-display recent` send the focused window there, with `--follow` too. `workspace-back-and-forth` still goes back on the focused display.
+- New `[workspace.<number>] float = true` floats every window on that workspace, those opened there and those moved there, so `move`, `resize`, `fullscreen` and `cycle-size` work on them from the first press. With `tiling = false` alone, dinky leaves the workspace's windows alone and those bindings answer that the window is not tiled. A window floated this way keeps floating wherever it goes. There, `grid --toggle` puts a window back where it was before the grid placed it, instead of tiling it.
 
 ### Rotate and mirror
 

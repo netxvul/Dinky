@@ -146,6 +146,8 @@ public enum ExpansionKind: String, CaseIterable {
 /// A workspace's tiling settings: a `[workspace.N]` table with omitted keys taken from the top-level settings.
 public struct WorkspaceSettings: Equatable {
     public var tiling: Bool
+    /// Every window on the workspace floats, whatever `tiling` says.
+    public var float = false
     public var layout: LayoutKind
     public var rows = 1
     public var columns = 1
@@ -158,6 +160,7 @@ public struct WorkspaceSettings: Equatable {
 
     init(_ t: Table, tiling: Bool, layout: LayoutKind) throws {
         self.tiling = try t.bool("tiling") ?? tiling
+        float = try t.bool("float") ?? float
         self.layout = try t.choice("layout") ?? layout
         let columns: Int? = try t.int("columns")
         let rows: Int? = try t.int("rows")

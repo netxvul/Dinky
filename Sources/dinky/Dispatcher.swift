@@ -85,6 +85,11 @@ enum Dispatcher {
             guard let coordinator = AppState.shared.coordinator else { return .error("tiling is not running") }
             let id = window ?? coordinator.focusedWindow
             if toggle, coordinator.isFloating(id) == true {
+                // A float workspace would float the window again at once, so the toggle goes back to its frame instead.
+                if coordinator.workspaceFloats(id) {
+                    if let error = coordinator.toggleGrid(id, on: placement) { return .error("grid: \(error)") }
+                    return .ok("grid --toggle \(placement)")
+                }
                 coordinator.setFloating(id, false)
                 return .ok("layout tiling")
             }

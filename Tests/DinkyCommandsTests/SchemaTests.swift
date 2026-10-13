@@ -85,6 +85,7 @@ struct SchemaTests {
 
         [workspace.2]
         tiling = true
+        float = false
         layout = 'fixed'
         columns = 2
         rows = 2

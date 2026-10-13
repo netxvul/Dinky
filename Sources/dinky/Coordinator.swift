@@ -64,6 +64,8 @@ final class Coordinator {
     private(set) var floatingTargets: [WindowID: CGRect] = [:]
     /// Floating windows filling their display with `fullscreen`, and the frame each had before. In memory only.
     var filledFrom: [WindowID: CGRect] = [:]
+    /// Windows of `float = true` workspaces that `grid --toggle` placed, and the frame each had before. In memory only.
+    var griddedFrom: [WindowID: CGRect] = [:]
 
     init(displays: DisplayModel, config: Config) {
         self.displays = displays
@@ -240,6 +242,7 @@ final class Coordinator {
             placements[window.id] = Placement(floating: classification.floating, space: nil)
             if !classification.runsRules, adopt(window) { return }
         }
+        if !placements[window.id]!.floating, settings(for: window.spaceID).float { float(window.id) }
         guard !adopting.contains(window.id), !placements[window.id]!.floating else { return }
         let old = placements[window.id]!.space
         if let old, window.isMinimized || !window.isOrderedIn, takeOverTile(of: window.id, in: old) {
@@ -255,6 +258,14 @@ final class Coordinator {
         placements[window.id]!.space = new
     }
 
+    /// Floats a window that reached a `float = true` workspace, out of the tree it was tiled in. It floats from then
+    /// on, wherever it goes, as `layout floating` would leave it.
+    private func float(_ id: WindowID) {
+        if let space = placements[id]?.space { edit(space) { $0.remove(id) } }
+        heldTabs[id] = nil
+        placements[id] = Placement(floating: true, space: nil)
+    }
+
     private func forget(_ id: WindowID) {
         attempts[id] = nil
         adoptTargets[id] = nil
@@ -265,6 +276,7 @@ final class Coordinator {
         notTabs.remove(id)
         floatingTargets[id] = nil
         filledFrom[id] = nil
+        griddedFrom[id] = nil
         guard let placement = placements.removeValue(forKey: id), let space = placement.space,
               !takeOverTile(of: id, in: space) else { return }
         edit(space) { $0.remove(id) }

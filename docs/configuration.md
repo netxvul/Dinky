@@ -42,6 +42,7 @@ numbered workspace.
 | Key | Default | |
 |---|---|---|
 | `tiling` | `default-tiling` | Whether the workspace tiles. |
+| `float` | `false` | Float every window on the workspace, as `layout floating` does, so `move`, `resize`, `fullscreen` and `cycle-size` work on them from the first press. A window floated here keeps floating on other workspaces. `grid --toggle` puts a window back where it was instead of tiling it. |
 | `layout` | `default-layout` | Its layout, with the same values. |
 | `columns`, `rows` | `1` | A fixed layout's template. |
 | `expand` | `'columns'` | What a fixed layout does when every cell is taken. |
