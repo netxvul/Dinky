@@ -20,9 +20,9 @@ prints it.
 | `move-window-to-display <next\|prev\|recent> [--follow]` | Move the focused window to another display's workspace. `recent` is the display focused before the focused one. |
 | `focus <left\|down\|up\|right> [--boundaries <b>] [--boundaries-action <a>]` | Focus the nearest window. `--boundaries` is `workspace` (default) or `all-monitors-outer-frame`, which continues onto the next display. `--boundaries-action` is `stop` (default), `fail`, `wrap-around-the-workspace` (`--wrap-around`) or `wrap-around-all-monitors`, which needs `all-monitors-outer-frame`. |
 | `focus-monitor <left\|down\|up\|right\|next\|prev\|recent\|n>` | Focus a display. `recent` is the one focused before the focused one. |
-| `move <left\|down\|up\|right>` | Move the focused window in the tree. A floating window moves `[floating] move-step` points; see [Floating windows](#floating-windows). |
+| `move <left\|down\|up\|right> [<points>] [--floating-only]` | Move the focused window in the tree. A floating window moves that many points, `[floating] move-step` without a number; see [Floating windows](#floating-windows). |
 | `join-with <left\|down\|up\|right>` | Put the focused window and its neighbour in a new container. |
-| `resize <smart\|width\|height> <+n\|-n>` | Resize by n points. A floating window grows about its centre. |
+| `resize <smart\|width\|height> <+n\|-n> [--floating-only]` | Resize by n points. A floating window grows about its centre, or its top-left corner with `[floating] resize-anchor`. |
 | `layout <tiles\|accordion\|horizontal\|vertical\|auto\|h_tiles\|v_tiles\|h_accordion\|v_accordion\|floating\|tiling\|scrolling>...` | Set the container's layout, float/tile the window, or switch the workspace to [scrolling](configuration.md#scrolling); a container layout switches it back. Given several, applies the one after the current one, so `layout floating tiling` toggles and `layout tiles accordion scrolling` cycles. Acts on the focused window, tiling it first if it floats, so it does nothing on an empty workspace. |
 | `fullscreen` | Toggle filling the workspace (not macOS full screen). [`[fullscreen] focus-change`](configuration.md#fullscreen) says what focusing another window does meanwhile. A floating window fills its display, then goes back. |
 | `grid [--toggle] <rows>:<columns>:<x>:<y>:<width>:<height>` | Float the focused window and glide it onto a grid over its display, as yabai's `--grid`. `--toggle` tiles a floating window instead. See [Grid](#grid). |
@@ -54,8 +54,8 @@ size it. With animations on, it glides.
 | Command | On a floating window |
 |---|---|
 | `focus <direction>` | The nearest window on its display whose centre lies that way. |
-| `move <direction>` | Moves it [`[floating] move-step`](configuration.md#floating) points, 50 by default, the same size. It stops at the edge of the display's visible area, inside the outer gaps. |
-| `resize width\|height <+n\|-n>` | Grows or shrinks it by n points along that axis, about its centre, so a centred window stays centred. |
+| `move <direction> [<points>]` | Moves it that many points, or [`[floating] move-step`](configuration.md#floating) (50 by default) without a number, the same size. It stops at the edge of the display's visible area, inside the outer gaps. A tile ignores the number. |
+| `resize width\|height <+n\|-n>` | Grows or shrinks it by n points along that axis, about its centre, so a centred window stays centred, or from its top-left corner with [`[floating] resize-anchor = 'top-left'`](configuration.md#floating). |
 | `resize smart <+n\|-n>` | The same, in both width and height. |
 | `cycle-size <percent>...` | Centres it at the next of the sizes, that share of the visible area's width and height inside the outer gaps. |
 | `fullscreen` | Fills the display's visible area inside the outer gaps, as fullscreen does for a tile. Again, it goes back to where it was. The place is remembered until dinky quits. |
@@ -65,6 +65,24 @@ size it. With animations on, it glides.
 A resized window is no smaller than 100 by 100 points nor larger than the
 visible area, and stays inside it. Apps that refuse a size, such as Safari
 below its minimum width, keep the size they accept.
+
+`--floating-only` on `move` and `resize` leaves a window that does not float
+alone, so keys meant for floating windows never rearrange the tiles when a tile
+has focus. A mode for adjusting floating windows can use it throughout:
+
+```toml
+[mode.main]
+alt-g = ['layout floating', 'mode floating']
+
+[mode.floating]
+h = 'move left --floating-only'
+l = 'move right --floating-only'
+ctrl-h = 'move left 10 --floating-only'
+ctrl-l = 'move right 10 --floating-only'
+shift-h = 'resize width -50 --floating-only'
+shift-l = 'resize width +50 --floating-only'
+esc = 'mode main'
+```
 
 ## Grid
 

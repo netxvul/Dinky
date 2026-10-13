@@ -33,7 +33,8 @@ extension Config {
     column-width = 0.49             # a new column's share of the display; a lone column fills it
 
     [floating]
-    move-step = 50                  # points `move` shifts a floating window by
+    move-step = 50                  # points `move` shifts a floating window by, unless the binding gives a number
+    resize-anchor = 'center'        # what stays put when `resize` sizes a floating window: center | top-left
 
     [fullscreen]
     focus-change = 'exit'           # focusing another window: exit | follow (it takes over) | keep (both fullscreen)

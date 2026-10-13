@@ -216,16 +216,27 @@ public struct Scrolling: Equatable {
     }
 }
 
+/// Which point of a floating window stays put when `resize` changes its size. The names match
+/// `DinkyLayout.ResizeAnchor`.
+public enum FloatingResizeAnchor: String, CaseIterable {
+    /// It grows and shrinks about its centre.
+    case center
+    /// Its top-left corner stays: it grows to the right and down.
+    case topLeft = "top-left"
+}
+
 /// `[floating]`: what tiling commands do to a floating window.
 public struct Floating: Equatable {
-    /// Points `move` shifts a floating window by.
+    /// Points `move` shifts a floating window by when the command gives no number.
     public var moveStep = 50
+    public var resizeAnchor = FloatingResizeAnchor.center
 
     public init() {}
 
     init(_ t: Table) throws {
         moveStep = try t.int("move-step") ?? moveStep
         guard (1...1000).contains(moveStep) else { throw ConfigError(path: t.path("move-step"), "must be 1 to 1000") }
+        resizeAnchor = try t.choice("resize-anchor") ?? resizeAnchor
         try t.done()
     }
 }

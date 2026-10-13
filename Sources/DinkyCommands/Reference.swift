@@ -33,14 +33,17 @@ extension Command {
         Doc(syntax: "focus-monitor <left|down|up|right|next|prev|recent|N>",
             description: "Focus the display in a direction, the next or previous one, the one focused before it, or display N as list-monitors numbers it: its most recently focused window, "
                 + "or the display itself when its workspace is empty, so workspace commands act on it."),
-        Doc(syntax: "move <left|down|up|right>",
+        Doc(syntax: "move <left|down|up|right> [<points>] [--floating-only]",
             description: "Move the focused window in a direction within the layout tree. "
-                + "A floating window moves [floating] move-step points instead, staying on its display."),
+                + "A floating window moves that many points instead, [floating] move-step without a number, staying on its display; "
+                + "a tile ignores the number. With --floating-only, a window that does not float is left alone."),
         Doc(syntax: "join-with <left|down|up|right>",
             description: "Put the focused window and its neighbour in a new container. Not for a floating window."),
-        Doc(syntax: "resize <smart|width|height> <+N|-N>",
+        Doc(syntax: "resize <smart|width|height> <+N|-N> [--floating-only]",
             description: "Grow or shrink the focused window by N points: smart along its container, width or height along that axis. "
-                + "A floating window grows about its centre, smart in both width and height, staying on its display."),
+                + "A floating window grows about its centre, or its top-left corner with [floating] resize-anchor = 'top-left', "
+                + "smart in both width and height, staying on its display. "
+                + "With --floating-only, a window that does not float is left alone."),
         Doc(syntax: "layout <tiles|accordion|horizontal|vertical|auto|h_tiles|v_tiles|h_accordion|v_accordion|floating|tiling|scrolling>...",
             description: "Set the layout of the focused window's container, float or tile the window, or switch its workspace to scrolling. "
                 + "tiles and accordion set the mode, horizontal, vertical and auto (follow the container's longer side) "

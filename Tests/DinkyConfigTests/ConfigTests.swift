@@ -148,6 +148,9 @@ struct ConfigTests {
         #expect(Config().floating.moveStep == 50)
         #expect(try Config.parse("[floating]\nmove-step = 20\n").floating.moveStep == 20)
         assertError("[floating]\nmove-step = 0\n", path: "floating.move-step", line: 2, contains: "1 to 1000")
+        #expect(Config().floating.resizeAnchor == .center)
+        #expect(try Config.parse("[floating]\nresize-anchor = 'top-left'\n").floating.resizeAnchor == .topLeft)
+        assertError("[floating]\nresize-anchor = 'corner'\n", path: "floating.resize-anchor", line: 2, contains: "'center', 'top-left'")
     }
 
     @Test func scrolling() throws {

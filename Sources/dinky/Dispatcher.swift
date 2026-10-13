@@ -50,18 +50,20 @@ enum Dispatcher {
             return focusMonitor(number: n)
         case .layout(let names):
             return layout(names, window: window)
-        case .move(let direction):
-            if let reply = floating("move \(direction)", window: window, { coordinator, id in
-                let step = CGFloat(coordinator.config.floating.moveStep)
+        case .move(let direction, let points, let floatingOnly):
+            let name = "move \(direction)" + (points.map { " \($0)" } ?? "")
+            if let reply = floating(name, window: window, { coordinator, id in
+                let step = CGFloat(points ?? coordinator.config.floating.moveStep)
                 return coordinator.floating(id) { frame, area in FloatingFrame.moved(frame, direction, by: step, within: area) }
             }) { return reply }
-            return tree("move \(direction)") { $0.move(direction) }
+            if floatingOnly { return .ok("\(name): the focused window does not float") }
+            return tree(name) { $0.move(direction) }
         case .joinWith(let direction):
             if let reply = floating("join-with \(direction)", window: window, { _, _ in
                 "the focused window floats; tile it first"
             }) { return reply }
             return tree("join-with \(direction)") { $0.join(direction) }
-        case .resize(let dimension, let delta):
+        case .resize(let dimension, let delta, let floatingOnly):
             let axis: Orientation? = switch dimension {
             case .smart: nil
             case .width: .horizontal
@@ -69,8 +71,12 @@ enum Dispatcher {
             }
             let name = "resize \(dimension.rawValue) \(delta)"
             if let reply = floating(name, window: window, { coordinator, id in
-                coordinator.floating(id) { frame, area in FloatingFrame.resized(frame, by: CGFloat(delta), along: axis, within: area) }
+                let anchor = ResizeAnchor(rawValue: coordinator.config.floating.resizeAnchor.rawValue) ?? .center
+                return coordinator.floating(id) { frame, area in
+                    FloatingFrame.resized(frame, by: CGFloat(delta), along: axis, within: area, anchor: anchor)
+                }
             }) { return reply }
+            if floatingOnly { return .ok("\(name): the focused window does not float") }
             return tree(name) { $0.resize(by: CGFloat(delta), along: axis) }
         case .fullscreen:
             if let reply = floating("fullscreen", window: window, { $0.toggleFloatingFullscreen($1) }) { return reply }

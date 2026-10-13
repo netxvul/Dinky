@@ -41,6 +41,14 @@ struct SchemaTests {
         #expect(Set(animations["curve"]!["enum"] as! [String]) == configured)
     }
 
+    @Test func `Resize anchors agree`() {
+        let configured = FloatingResizeAnchor.allCases.map(\.rawValue)
+        #expect(configured.allSatisfy { ResizeAnchor(rawValue: $0) != nil })
+        let properties = Self.schema["properties"] as! [String: [String: Any]]
+        let floating = properties["floating"]!["properties"] as! [String: [String: Any]]
+        #expect(floating["resize-anchor"]!["enum"] as! [String] == configured)
+    }
+
     @Test func `Fullscreen focus changes agree`() {
         let configured = FullscreenFocusChange.allCases.map(\.rawValue)
         #expect(configured.allSatisfy { FullscreenFocus(rawValue: $0) != nil })
@@ -91,6 +99,7 @@ struct SchemaTests {
 
         [floating]
         move-step = 20
+        resize-anchor = 'top-left'
 
         [fullscreen]
         focus-change = 'keep'

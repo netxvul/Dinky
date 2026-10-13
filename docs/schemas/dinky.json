@@ -107,7 +107,13 @@
           "minimum": 1,
           "maximum": 1000,
           "default": 50,
-          "description": "Points `move` shifts a floating window by."
+          "description": "Points `move` shifts a floating window by, unless the binding gives a number."
+        },
+        "resize-anchor": {
+          "type": "string",
+          "enum": ["center", "top-left"],
+          "default": "center",
+          "description": "What stays put when `resize` sizes a floating window: its centre, or its top-left corner so it grows right and down."
         }
       }
     },

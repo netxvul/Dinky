@@ -59,13 +59,19 @@ extension Command {
             if let n = one.flatMap({ Int($0) }) { return n >= 1 ? .focusMonitorNumber(n) : nil }
             return one.flatMap(MonitorTarget.init(rawValue:)).map { .focusMonitor($0) }
         case "move":
-            return one.flatMap(Direction.init).map { .move($0) }
+            let (rest, floatingOnly) = flag("--floating-only", in: args)
+            guard (1...2).contains(rest.count), let direction = Direction(rest[0]) else { return nil }
+            guard rest.count == 2 else { return .move(direction, floatingOnly: floatingOnly) }
+            guard rest[1].allSatisfy({ $0.isASCII && $0.isNumber }), let points = Int(rest[1]), (1...10_000).contains(points)
+            else { return nil }
+            return .move(direction, points: points, floatingOnly: floatingOnly)
         case "join-with":
             return one.flatMap(Direction.init).map { .joinWith($0) }
         case "resize":
-            guard args.count == 2, let dimension = ResizeDimension(rawValue: args[0]),
-                  args[1].hasPrefix("+") || args[1].hasPrefix("-"), let delta = Int(args[1]) else { return nil }
-            return .resize(dimension, by: delta)
+            let (rest, floatingOnly) = flag("--floating-only", in: args)
+            guard rest.count == 2, let dimension = ResizeDimension(rawValue: rest[0]),
+                  rest[1].hasPrefix("+") || rest[1].hasPrefix("-"), let delta = Int(rest[1]) else { return nil }
+            return .resize(dimension, by: delta, floatingOnly: floatingOnly)
         case "layout":
             let layouts = args.compactMap(LayoutName.init(rawValue:))
             guard !none, layouts.count == args.count else { return nil }
@@ -203,5 +209,11 @@ extension Command {
 
     private static func followFlag(_ args: [String]) -> (rest: [String], follow: Bool) {
         (args.filter { $0 != "--follow" }, args.contains("--follow"))
+    }
+
+    /// The arguments without `name`, and whether it was there. Given twice, it is left in to fail the parse.
+    private static func flag(_ name: String, in args: [String]) -> (rest: [String], present: Bool) {
+        guard args.filter({ $0 == name }).count == 1 else { return (args, false) }
+        return (args.filter { $0 != name }, true)
     }
 }

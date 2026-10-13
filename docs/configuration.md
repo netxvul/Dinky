@@ -169,7 +169,8 @@ What the tiling commands do to a floating window; see
 
 | Key | Default | |
 |---|---|---|
-| `move-step` | `50` | Points `move` shifts a floating window by, from `1` to `1000`. |
+| `move-step` | `50` | Points `move` shifts a floating window by, from `1` to `1000`, when the binding gives no number, as `move left 10` does. |
+| `resize-anchor` | `'center'` | What stays put when `resize` sizes a floating window: `'center'`, so a centred window stays centred, or `'top-left'`, so it grows to the right and down and shrinks from there. Either way it stays on the display, so one against the right edge grows to the left. |
 
 </div>
 
@@ -436,7 +437,8 @@ orientation = 'auto'            # auto: run along the container's longer side | 
 column-width = 0.49             # a new column's share of the display; a lone column fills it
 
 [floating]
-move-step = 50                  # points `move` shifts a floating window by
+move-step = 50                  # points `move` shifts a floating window by, unless the binding gives a number
+resize-anchor = 'center'        # what stays put when `resize` sizes a floating window: center | top-left
 
 [fullscreen]
 focus-change = 'exit'           # focusing another window: exit | follow (it takes over) | keep (both fullscreen)

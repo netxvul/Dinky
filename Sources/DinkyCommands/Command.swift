@@ -13,9 +13,12 @@ public enum Command: Equatable, Sendable {
     case focusMonitor(MonitorTarget)
     /// `focus-monitor N`: the display numbered N by `list-monitors`, from 1.
     case focusMonitorNumber(Int)
-    case move(Direction)
+    /// Move the focused window in a direction: in the tree, or a floating window by `points`, `[floating] move-step`
+    /// when nil. With `floatingOnly`, a window that does not float is left alone.
+    case move(Direction, points: Int? = nil, floatingOnly: Bool = false)
     case joinWith(Direction)
-    case resize(ResizeDimension, by: Int)
+    /// With `floatingOnly`, a window that does not float is left alone.
+    case resize(ResizeDimension, by: Int, floatingOnly: Bool = false)
     /// One layout, or several to cycle through: the first that does not describe the current state wins,
     /// so `layout floating tiling` and `layout horizontal vertical` toggle between the two.
     case layout([LayoutName])

@@ -51,6 +51,22 @@ struct ParseTests {
         #expect(try parse("resize smart +50") == .resize(.smart, by: 50))
         #expect(try parse("resize width +10") == .resize(.width, by: 10))
         #expect(try parse("resize height -20") == .resize(.height, by: -20))
+        #expect(try parse("resize width -10 --floating-only") == .resize(.width, by: -10, floatingOnly: true))
+        #expect(try parse("resize --floating-only height +10") == .resize(.height, by: 10, floatingOnly: true))
+    }
+
+    @Test func `Move with points and floating-only`() throws {
+        #expect(try parse("move left 10") == .move(.left, points: 10))
+        #expect(try parse("move up --floating-only") == .move(.up, floatingOnly: true))
+        #expect(try parse("move right 25 --floating-only") == .move(.right, points: 25, floatingOnly: true))
+        #expect(try parse("move --floating-only down 5") == .move(.down, points: 5, floatingOnly: true))
+    }
+
+    @Test(arguments: ["move left 0", "move left -10", "move left +10", "move left 1.5", "move left ten", "move left 10 20",
+                      "move 10", "move left --floating-only --floating-only", "resize width +10 --floating",
+                      "resize width +10 --floating-only --floating-only"])
+    func `Bad move and resize arguments`(input: String) {
+        #expect(throws: CommandError.self) { try parse(input) }
     }
 
     @Test func layout() throws {

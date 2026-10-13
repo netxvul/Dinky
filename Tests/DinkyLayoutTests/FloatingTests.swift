@@ -42,6 +42,19 @@ struct FloatingTests {
         #expect(FloatingFrame.resized(rect(400, 230, 150, 120), by: -100, along: nil, within: area) == rect(425, 240, 100, 100))
     }
 
+    @Test func `Resize from the top-left corner grows right and down`() {
+        let frame = rect(400, 230, 300, 200)
+        #expect(FloatingFrame.resized(frame, by: 50, along: .horizontal, within: area, anchor: .topLeft) == rect(400, 230, 350, 200))
+        #expect(FloatingFrame.resized(frame, by: -50, along: .vertical, within: area, anchor: .topLeft) == rect(400, 230, 300, 150))
+        #expect(FloatingFrame.resized(frame, by: 50, along: nil, within: area, anchor: .topLeft) == rect(400, 230, 350, 250))
+    }
+
+    @Test func `Resize from the top-left corner against the right edge grows left`() {
+        // Right edge at 1010: growing by 100 would cross it, so the window slides left to stay inside.
+        #expect(FloatingFrame.resized(rect(710, 230, 300, 200), by: 100, along: .horizontal, within: area, anchor: .topLeft)
+            == rect(610, 230, 400, 200))
+    }
+
     @Test func `Filling takes the whole area`() {
         #expect(FloatingFrame.filling(area) == area)
         #expect(FloatingFrame.filling(rect(10.4, 30.6, 999.2, 600)) == rect(10, 31, 1000, 600))

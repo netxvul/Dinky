@@ -2,6 +2,13 @@ import CoreGraphics
 
 // Where tiling commands put a floating window. `area` is the display's visible area inside its outer gaps;
 // results are kept inside it and edges are rounded to whole points. Top-left origin, as AX uses.
+
+/// The point of a floating window that stays put while `resize` changes its size.
+public enum ResizeAnchor: String, Equatable, Sendable {
+    case center
+    case topLeft = "top-left"
+}
+
 public enum FloatingFrame {
     /// The smallest a floating window is resized to.
     public static let minimumSize = CGSize(width: 100, height: 100)
@@ -18,15 +25,21 @@ public enum FloatingFrame {
         return inside(moved, area)
     }
 
-    /// `frame` grown by `delta` points (shrunk when negative) about its centre: in width, height, or with no
-    /// axis both. No smaller than `minimumSize`, no larger than `area`, and kept inside it.
-    public static func resized(_ frame: CGRect, by delta: CGFloat, along axis: Orientation?, within area: CGRect) -> CGRect {
+    /// `frame` grown by `delta` points (shrunk when negative) about `anchor`: in width, height, or with no axis both.
+    /// No smaller than `minimumSize`, no larger than `area`, and kept inside it, so a window against an edge grows
+    /// away from it.
+    public static func resized(_ frame: CGRect, by delta: CGFloat, along axis: Orientation?, within area: CGRect,
+                               anchor: ResizeAnchor = .center) -> CGRect {
         func extent(_ current: CGFloat, minimum: CGFloat, maximum: CGFloat, changes: Bool) -> CGFloat {
             min(max(changes ? current + delta : current, min(minimum, maximum)), maximum)
         }
         let width = extent(frame.width, minimum: minimumSize.width, maximum: area.width, changes: axis != .vertical)
         let height = extent(frame.height, minimum: minimumSize.height, maximum: area.height, changes: axis != .horizontal)
-        return inside(CGRect(x: frame.midX - width / 2, y: frame.midY - height / 2, width: width, height: height), area)
+        let origin = switch anchor {
+        case .center: CGPoint(x: frame.midX - width / 2, y: frame.midY - height / 2)
+        case .topLeft: frame.origin
+        }
+        return inside(CGRect(origin: origin, size: CGSize(width: width, height: height)), area)
     }
 
     /// The frame a floating window fills the display with: all of `area`, as fullscreen gives a tile.
