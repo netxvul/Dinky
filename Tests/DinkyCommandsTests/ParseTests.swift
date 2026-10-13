@@ -82,6 +82,16 @@ struct ParseTests {
         #expect(throws: CommandError.self) { try parse(input) }
     }
 
+    @Test func `Cycle size`() throws {
+        #expect(try parse("cycle-size 50% 30% 60%") == .cycleSize([50, 30, 60]))
+        #expect(try parse("cycle-size 50 100") == .cycleSize([50, 100]))
+    }
+
+    @Test(arguments: ["cycle-size", "cycle-size 0%", "cycle-size 101%", "cycle-size 50% x", "cycle-size 50.5%", "cycle-size %"])
+    func `Cycle size that is not percentages`(input: String) {
+        #expect(throws: CommandError.self) { try parse(input) }
+    }
+
     @Test func `Grid span past its cells names the problem`() {
         do {
             _ = try parse("grid 2:2:1:0:2:1")
@@ -152,7 +162,7 @@ struct ParseTests {
     private static let knownGood = [
         "workspace 1", "workspace-back-and-forth", "move-window-to-workspace 2 --follow", "move-window-to-display next",
         "focus left", "focus-monitor next", "move left", "join-with left", "resize smart +10", "layout tiles",
-        "fullscreen", "grid 1:2:0:0:1:1", "flatten-workspace-tree", "balance-sizes", "rotate 90", "mirror y-axis", "retile", "clear-minimum-sizes", "mode main", "reload-config", "enable on",
+        "fullscreen", "grid 1:2:0:0:1:1", "cycle-size 50% 30% 60%", "flatten-workspace-tree", "balance-sizes", "rotate 90", "mirror y-axis", "retile", "clear-minimum-sizes", "mode main", "reload-config", "enable on",
         "list-workspaces", "list-windows", "list-monitors", "list-displays", "list-modes", "debug-state", "exec-and-forget true",
     ]
 

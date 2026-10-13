@@ -26,6 +26,7 @@ prints it.
 | `layout <tiles\|accordion\|horizontal\|vertical\|auto\|h_tiles\|v_tiles\|h_accordion\|v_accordion\|floating\|tiling\|scrolling>...` | Set the container's layout, float/tile the window, or switch the workspace to [scrolling](configuration.md#scrolling); a container layout switches it back. Given several, applies the one after the current one, so `layout floating tiling` toggles and `layout tiles accordion scrolling` cycles. Acts on the focused window, tiling it first if it floats, so it does nothing on an empty workspace. |
 | `fullscreen` | Toggle filling the workspace (not macOS full screen). [`[fullscreen] focus-change`](configuration.md#fullscreen) says what focusing another window does meanwhile. A floating window fills its display, then goes back. |
 | `grid [--toggle] <rows>:<columns>:<x>:<y>:<width>:<height>` | Float the focused window and glide it onto a grid over its display, as yabai's `--grid`. `--toggle` tiles a floating window instead. See [Grid](#grid). |
+| `cycle-size <percent>...` | Step the focused window to the next of these sizes, as percentages of its display. A floating window is centred at that width and height; a tile or scrolling column takes that width. See [Cycle size](#cycle-size). |
 | `flatten-workspace-tree` | Put every window back into the workspace's layout, in order, undoing tree edits. A scrolling workspace keeps its column widths. |
 | `balance-sizes` | Give every window an equal share. |
 | `rotate <90\|180\|270>` | Turn the workspace's tiles clockwise, as yabai's `space --rotate`: a quarter turn makes a row a column, its first window on top, and a column a row, its top window on the right; a half turn reverses everything. A container set to `auto` keeps the turned axis as its orientation. Not for fixed or scrolling layouts. |
@@ -56,6 +57,7 @@ size it. With animations on, it glides.
 | `move <direction>` | Moves it [`[floating] move-step`](configuration.md#floating) points, 50 by default, the same size. It stops at the edge of the display's visible area, inside the outer gaps. |
 | `resize width\|height <+n\|-n>` | Grows or shrinks it by n points along that axis, about its centre, so a centred window stays centred. |
 | `resize smart <+n\|-n>` | The same, in both width and height. |
+| `cycle-size <percent>...` | Centres it at the next of the sizes, that share of the visible area's width and height inside the outer gaps. |
 | `fullscreen` | Fills the display's visible area inside the outer gaps, as fullscreen does for a tile. Again, it goes back to where it was. The place is remembered until dinky quits. |
 | `balance-sizes`, `flatten-workspace-tree` | Act on the tiles of its workspace. |
 | `join-with <direction>` | An error: a floating window has no neighbour in the tree. Tile it first. |
@@ -112,6 +114,26 @@ f = ['grid 1:1:0:0:1:1', 'mode main']
 c = ['grid 6:6:1:1:4:4', 'mode main']
 t = ['layout tiling', 'mode main']
 ```
+
+## Cycle size
+
+`cycle-size <percent>...` steps the focused window through a list of sizes,
+given as percentages of its display: each press picks the size after the one
+the window has now, wrapping, or the first when it has none of them. A size
+within 2% counts, for apps that snap to a grid or keep a minimum size.
+
+```toml
+[mode.main]
+alt-c = 'cycle-size 50% 30% 60%'
+```
+
+| Window | What changes |
+|---|---|
+| Floating | Centred on its display at that share of the visible area's width and height, inside the outer gaps. |
+| Tile | Its width, along the nearest container whose tiles sit side by side; its siblings give or take the difference as `resize width` has them. A window with no side-by-side neighbour has nothing to resize. |
+| Scrolling column | The column's width, as a share of the screen. A lone column always fills the screen. |
+
+Heights of tiles and columns stay. A window stays floating or tiled.
 
 ## Command line
 

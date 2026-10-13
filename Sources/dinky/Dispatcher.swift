@@ -84,6 +84,15 @@ enum Dispatcher {
             }
             if let error = coordinator.place(id, on: placement) { return .error("grid: \(error)") }
             return .ok("grid \(placement)")
+        case .cycleSize(let percents):
+            let shares = percents.map { Double($0) / 100 }
+            let name = "cycle-size " + percents.map { "\($0)%" }.joined(separator: " ")
+            if let reply = floating(name, window: window, { coordinator, id in
+                coordinator.floating(id) { frame, area in
+                    FloatingFrame.centered(SizeCycle.next(after: Double(frame.width / area.width), in: shares), in: area)
+                }
+            }) { return reply }
+            return tree(name) { $0.cycleWidth(through: shares) }
         case .flattenWorkspaceTree:
             return tree("flatten-workspace-tree", wholeSpace: true) { $0.flatten(); return true }
         case .balanceSizes:

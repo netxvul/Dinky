@@ -23,6 +23,9 @@ public enum Command: Equatable, Sendable {
     /// Float the window and give it cells of a grid over its display, as yabai's `--grid`. With `toggle`, a
     /// floating window is tiled instead.
     case grid(GridPlacement, toggle: Bool = false)
+    /// Step the focused window to the next of these sizes, percentages of its display: a floating window
+    /// centred at that width and height, a tile or scrolling column at that width.
+    case cycleSize([Int])
     case flattenWorkspaceTree
     case balanceSizes
     /// Turn the focused workspace's tree clockwise, as yabai's `space --rotate`.

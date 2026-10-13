@@ -59,6 +59,11 @@ extension Command {
                 + "between them, and the window takes width by height cells from column x, row y, counted from 0 at the top left. "
                 + "'grid 1:2:0:0:1:1' is the left half, 'grid 3:3:1:1:1:1' the centre ninth. "
                 + "With --toggle, a window that already floats is tiled instead, so one key goes back and forth."),
+        Doc(syntax: "cycle-size <percent>...",
+            description: "Step the focused window to the next of these sizes, as percentages of its display, such as "
+                + "'cycle-size 50% 30% 60%': the size after the one it has now, or the first. A floating window is centred "
+                + "at that width and height of the display's visible area, inside the outer gaps. A tile takes that width "
+                + "along its nearest side-by-side container, and a scrolling column that width; heights stay."),
         Doc(syntax: "flatten-workspace-tree",
             description: "Put every window on the workspace back into its layout, in order, undoing tree edits. A scrolling workspace keeps its column widths. "
                 + "With a floating window focused, acts on the tiles of its workspace."),

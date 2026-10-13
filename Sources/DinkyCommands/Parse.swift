@@ -76,6 +76,10 @@ extension Command {
             let rest = args.filter { $0 != "--toggle" }
             guard rest.count == 1, args.count - rest.count <= 1 else { return nil }
             return try grid(rest[0]).map { .grid($0, toggle: rest.count < args.count) }
+        case "cycle-size":
+            let percents = args.compactMap(percent)
+            guard !none, percents.count == args.count else { return nil }
+            return .cycleSize(percents)
         case "flatten-workspace-tree":
             return none ? .flattenWorkspaceTree : nil
         case "balance-sizes":
@@ -189,6 +193,12 @@ extension Command {
                 + "y + height must fit in its columns and rows")
         }
         return placement
+    }
+
+    /// A whole percentage from 1 to 100, written with or without `%`.
+    private static func percent(_ word: String) -> Int? {
+        guard let n = Int(word.hasSuffix("%") ? String(word.dropLast()) : word), (1...100).contains(n) else { return nil }
+        return n
     }
 
     private static func followFlag(_ args: [String]) -> (rest: [String], follow: Bool) {
