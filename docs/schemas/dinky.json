@@ -64,6 +64,12 @@
       "default": true,
       "description": "Float windows that can't go full screen, such as Finder's copy progress, About This Mac and Calculator. A `layout tiling` rule tiles one anyway."
     },
+    "menu-bar-icon": {
+      "type": "string",
+      "enum": ["blocks", "text", "none"],
+      "default": "blocks",
+      "description": "blocks shows a block per display with the workspace it shows, the focused display's filled. text shows the focused display's workspace number. none hides it."
+    },
     "scrolling": {
       "type": "object",
       "additionalProperties": false,

@@ -57,6 +57,11 @@ struct SchemaTests {
         #expect(fullscreen["focus-change"]!["enum"] as! [String] == configured)
     }
 
+    @Test func `Menu bar icons agree`() {
+        let properties = Self.schema["properties"] as! [String: [String: Any]]
+        #expect(properties["menu-bar-icon"]!["enum"] as! [String] == MenuBarIcon.allCases.map(\.rawValue))
+    }
+
     @Test func `Key combo pattern matches every key name`() throws {
         let pattern = definitions["keyCombo"]!["pattern"] as! String
         let regex = try NSRegularExpression(pattern: pattern)
@@ -78,6 +83,7 @@ struct SchemaTests {
         default-tiling = true
         follow-app-activation = false
         float-windows-without-fullscreen = false
+        menu-bar-icon = 'text'
 
         [workspace-to-display]
         1 = 'main'

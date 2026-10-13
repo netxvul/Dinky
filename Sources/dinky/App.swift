@@ -3,8 +3,8 @@ import DinkyConfig
 import DinkyPrivate
 import Sparkle
 
-// `dinky app`: a menu bar item showing the focused display's workspace number, with commands as menu
-// items, and the socket the CLI talks to.
+// `dinky app`: a menu bar item showing each display's workspace, or the focused display's number, with commands
+// as menu items, and the socket the CLI talks to.
 func runApp() -> Int32 {
     guard !appIsRunning() else {
         fputs("dinky: already running (\(socketPath))\n", stderr)
@@ -22,6 +22,8 @@ final class DinkyApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     /// Other tiling window managers seen running at the last refresh.
     private var otherTilers: [String] = []
+    /// The blocks the menu bar item's image was last drawn from, so a refresh that changes nothing draws nothing.
+    private var shownBlocks: MenuBarBlocks?
     private var socket: SocketServer?
     private let onboarding = Onboarding()
     private var signals: [DispatchSourceSignal] = []
@@ -52,6 +54,7 @@ final class DinkyApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func start() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .bold)
+        statusItem.button?.imagePosition = .imageLeft
         statusItem.menu = NSMenu()
         statusItem.menu?.delegate = self
         _ = AppState.shared.hotkeys.start()
@@ -72,14 +75,33 @@ final class DinkyApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func refresh() {
         let state = AppState.shared
-        let workspace = state.displays.focusedDisplay().flatMap(state.numbers.current(on:))
+        let focused = state.displays.focusedDisplay()
         let tilers = runningOtherTilers()
         if tilers != otherTilers {
             otherTilers = tilers
             if !tilers.isEmpty { print("app: \(otherTilersWarning(tilers))") }
         }
         let trouble = state.configError != nil || !otherTilers.isEmpty
-        statusItem.button?.title = (workspace.map { "\($0)" } ?? "?") + (trouble ? "!" : "")
+        let mark = trouble ? "!" : ""
+        statusItem.isVisible = state.config.menuBarIcon != .none
+        switch state.config.menuBarIcon {
+        case .none:
+            shownBlocks = nil
+            statusItem.button?.image = nil
+            statusItem.button?.title = ""
+        case .blocks:
+            let blocks = MenuBarBlocks(displays: state.displays.displays, focused: focused, number: state.numbers.current(on:))
+            if blocks != shownBlocks {
+                shownBlocks = blocks
+                statusItem.button?.image = blocks.image()
+            }
+            statusItem.button?.title = mark
+        case .text:
+            shownBlocks = nil
+            statusItem.button?.image = nil
+            let workspace = focused.flatMap(state.numbers.current(on:))
+            statusItem.button?.title = (workspace.map { "\($0)" } ?? "?") + mark
+        }
         statusItem.button?.appearsDisabled = !state.enabled
     }
 

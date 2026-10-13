@@ -22,6 +22,8 @@ public struct Config: Equatable {
     public var followAppActivation = true
     /// Float standard windows whose fullscreen button is missing or disabled, as AeroSpace does.
     public var floatWindowsWithoutFullscreen = true
+    /// What the menu bar item shows.
+    public var menuBarIcon = MenuBarIcon.blocks
     public var accordion = Accordion()
     public var scrolling = Scrolling()
     public var floating = Floating()
@@ -109,6 +111,7 @@ public struct Config: Equatable {
         }
         followAppActivation = try t.bool("follow-app-activation") ?? followAppActivation
         floatWindowsWithoutFullscreen = try t.bool("float-windows-without-fullscreen") ?? floatWindowsWithoutFullscreen
+        menuBarIcon = try t.choice("menu-bar-icon") ?? menuBarIcon
         accordion = try t.table("accordion").map(Accordion.init) ?? accordion
         scrolling = try t.table("scrolling").map(Scrolling.init) ?? scrolling
         floating = try t.table("floating").map(Floating.init) ?? floating
@@ -272,6 +275,12 @@ public struct Fullscreen: Equatable {
         }
         try t.done()
     }
+}
+
+/// A block per display with its workspace number, the focused display's filled, the focused display's
+/// workspace number as text, or nothing, hiding the item (the CLI still works).
+public enum MenuBarIcon: String, CaseIterable {
+    case blocks, text, none
 }
 
 /// Below the target, or above it as a ring that never covers content or takes clicks.

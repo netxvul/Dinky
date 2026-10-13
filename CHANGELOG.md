@@ -23,6 +23,10 @@
 - New `recent` target, after yabai's: `workspace recent` shows the workspace focused before the current one, on any display, and `focus-monitor recent` focuses the display focused before the focused one; again, either goes back. `move-window-to-workspace recent` and `move-window-to-display recent` send the focused window there, with `--follow` too. `workspace-back-and-forth` still goes back on the focused display.
 - New `[workspace.<number>] float = true` floats every window on that workspace, those opened there and those moved there, so `move`, `resize`, `fullscreen` and `cycle-size` work on them from the first press. With `tiling = false` alone, dinky leaves the workspace's windows alone and those bindings answer that the window is not tiled. A window floated this way keeps floating wherever it goes. There, `grid --toggle` puts a window back where it was before the grid placed it, instead of tiling it.
 
+### Menu bar
+
+- The menu bar item shows a block per display, left to right, with the workspace it shows: filled for the focused display, outlined for the others, with corner marks for a full-screen Space, after DeskPeek. `menu-bar-icon = 'text'` brings back the focused display's number. `'none'` hides it.
+
 ### Rotate and mirror
 
 - New `rotate <90|180|270>` and `mirror <x-axis|y-axis>` commands, after yabai's `space --rotate` and `--mirror`. `rotate` turns the workspace's tiles clockwise: a quarter turn makes a row a column and a column a row; a half turn reverses everything. `mirror y-axis` swaps left and right, `x-axis` top and bottom. Sizes move with their windows. Fixed and scrolling layouts answer that they are not supported.

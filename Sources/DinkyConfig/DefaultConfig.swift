@@ -14,6 +14,7 @@ extension Config {
     default-tiling = true           # false leaves workspaces untiled unless overridden
     follow-app-activation = true    # Cmd-Tab and Dock clicks switch Spaces the fast way
     float-windows-without-fullscreen = true   # progress windows, About, Calculator and the like float
+    menu-bar-icon = 'blocks'        # blocks (one per display, focused filled) | text (the focused display's number) | none (hidden)
 
     # Example: only tile workspace 2 in a fixed 2x3 template.
     # Empty cells stay empty; a seventh window adds a column by default.
