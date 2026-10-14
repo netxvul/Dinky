@@ -79,6 +79,37 @@ extension Config {
     preview-border-width = 3        # points, for the preview and the outlines
     home-outline = true             # outline where a dragged tile came from; false shows only where it will go
 
+    # A glass capsule naming the new layout or mode for a moment.
+    [hud]
+    enabled = true
+    position = 'bottom'             # bottom (above the Dock) | top (below the menu bar)
+    duration-ms = 1200              # how long it stays, 100 to 10000
+    offset = 16                     # points from the Dock or menu bar
+    on-layout-change = true         # after the layout command
+    on-mode-change = true           # when the binding mode changes
+    on-workspace-change = true      # the new workspace's layout when a display moves to another workspace
+
+    # Hold the modifier alone for a glass capsule of the workspace's windows at the pointer; move across to pick
+    # one, release to focus it.
+    [window-switcher]
+    modifier = 'none'               # none (off) | alt | ctrl | cmd | shift
+    delay-ms = 200                  # how long it is held alone before the capsule shows, 0 to 2000
+    layouts = ['scrolling', 'tiles']  # where it shows: scrolling | tiles | accordion | fixed
+    corner-radius = 52              # points, 0 to 80; about 70 or more makes the row's ends round
+    tiles-style = 'map'             # tiles and fixed: map (their tiles, picked in two dimensions) | row
+
+    # Hold the modifier alone for a glass capsule of the workspaces at the pointer, each drawn small in its layout;
+    # move across to pick one, release to switch to it.
+    [workspace-switcher]
+    modifier = 'none'               # none (off) | alt | ctrl | cmd | shift; not the same as [window-switcher]'s
+    delay-ms = 200                  # how long it is held alone before the capsule shows, 0 to 2000
+    displays = 'all'                # all (a group per display) | pointer (the display under the pointer)
+    show-empty = true               # cards for workspaces without windows
+    exclude = []                    # workspace numbers left out
+    card-height = 85                # points, 60 to 200; the width follows each display's proportions
+    thumbnails = 'windows'          # windows (pictures, need Screen Recording) | icons (app icons) | schematic (a fixed picture of the layout)
+    # corner-radius = 18            # points, 0 to 80; [window-switcher]'s when left out
+
     # Which key of each pair bindings answer to: both | left | right. With alt = 'left',
     # right Option still types special characters.
     [modifiers]

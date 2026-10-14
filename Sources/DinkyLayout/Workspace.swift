@@ -440,7 +440,7 @@ public struct Workspace: Equatable, Sendable {
     /// the focused one in front. Scrolled-out windows are parked where macOS lets them be, see `parked(_:)`.
     public func layout() -> Layout {
         var result = tiledLayout()
-        if isScrolling { result.frames = result.frames.mapValues(parked) }
+        if isScrolling { result.frames = parked(result.frames) }
         let shown = fullscreenWindows.filter { result.frames[$0] != nil }
         for id in shown { result.frames[id] = gaps.inset(bounds) }
         result.order = shown + result.order.filter { !shown.contains($0) }

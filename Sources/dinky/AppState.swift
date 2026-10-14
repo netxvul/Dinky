@@ -9,6 +9,10 @@ final class AppState {
     /// Runs each binding's commands in order through the dispatcher. Started by the app once
     /// Accessibility is granted.
     let hotkeys = HotkeyEngine { commands in
+        // A binding that uses a switcher's modifier is the modifier at work for something else, unless it is the
+        // switcher's own command, which steps its pick.
+        if !commands.contains("window-switcher") { WindowSwitcher.shared.dismiss() }
+        if !commands.contains("workspace-switcher") { WorkspaceSwitcher.shared.dismiss() }
         for command in commands {
             let reply = Dispatcher.run(command)
             if !reply.ok { fputs("\(command): \(reply.text)\n", stderr) }
@@ -38,6 +42,7 @@ final class AppState {
 
     private init() {
         hotkeys.load(modes: config.modes, sides: config.modifiers)
+        hotkeys.yields = { WindowSwitcher.shared.takes($0) || WorkspaceSwitcher.shared.takes($0) }
     }
 
     /// Loads `~/.config/dinky/dinky.toml`, writing the default config there first if it is missing.
@@ -66,6 +71,8 @@ final class AppState {
         hooks.start()
         recovery.start(model: coordinator.model, applier: coordinator.applier)
         hoverFocus.update(config: config.focusFollowsMouse)
+        WindowSwitcher.shared.update(config: config)
+        WorkspaceSwitcher.shared.update(config: config)
     }
 
     /// The one enable transition. Off stops tiling and puts every window back where it was before dinky
@@ -102,6 +109,8 @@ final class AppState {
                 coordinator.update(config: config)
                 numbers.arrange()
                 hoverFocus.update(config: config.focusFollowsMouse)
+                WindowSwitcher.shared.update(config: config)
+                WorkspaceSwitcher.shared.update(config: config)
             }
             applyStartAtLogin(config.startAtLogin)
         case .failure(let error):

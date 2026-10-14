@@ -299,6 +299,8 @@ final class Coordinator {
         if id != lastFocused {
             // Before the override goes: a new window can take focus before it shows. See Adoption.swift.
             displayBeforeFocus = displays.focusedDisplay(window: lastFocused)?.uuid
+            WindowSwitcher.shared.focusLeft(lastFocused)
+            WorkspaceSwitcher.shared.focusLeft(lastFocused)
             lastFocused = id
             // Only a window takes focus from a display focused without one, not an app with no window here.
             if id != 0 { displays.focusOverride = nil }

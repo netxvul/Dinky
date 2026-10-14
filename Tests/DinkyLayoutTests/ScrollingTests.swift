@@ -99,6 +99,49 @@ struct ScrollingGeometryTests {
         #expect(layout.order == [2, 1, 3, 4])
     }
 
+    @Test func `At a wall scrolled out windows hide wholly behind the column in view nearest it`() {
+        var ws = strip(4, gaps: Gaps(all: 10), walls: [.left, .right])
+        ws.focus(2)
+        var frames = ws.layout().frames
+        #expect(frames[2]!.minX == -10)
+        #expect(frames[1] == frames[2], "none of it in the outer gap")
+        #expect(frames[4] == frames[3])
+        ws.minimumSizes[1] = CGSize(width: 600, height: 0)
+        frames = ws.layout().frames
+        #expect(frames[1]!.minX == frames[2]!.minX && frames[1]!.width == 600, "grows away from the wall")
+    }
+
+    @Test func `At a wall scrolled out windows hide behind a column of several too`() {
+        var ws = strip(5, gaps: Gaps(all: 10), walls: [.left, .right])
+        ws.focus(3)
+        ws.join(.left)
+        #expect(shape(ws.root) == "h[1 v[2 3] 4 5]")
+        let frames = ws.layout().frames
+        #expect(frames[1] == frames[2], "not between 2 and 3")
+    }
+
+    @Test func `The focused column stays in view when a column left of it closes`() {
+        var ws = strip(5)
+        ws.focus(3)
+        #expect(ws.isInView(3))
+        ws.remove(1)
+        #expect(ws.isInView(3))
+        #expect(lefts(ws) == [-500, 0, 500, 1000])
+    }
+
+    @Test func `The focused column stays in view when the display narrows`() {
+        var ws = strip(4)
+        ws.focus(2)
+        ws.bounds = rect(-peek, 0, 500 + 2 * peek, 600)
+        #expect(ws.isInView(2))
+    }
+
+    @Test func `The focused column stays in view when a column left of it grows to its minimum`() {
+        var ws = strip(3)
+        ws.minimumSizes[1] = CGSize(width: 900, height: 0)
+        #expect(ws.isInView(3))
+    }
+
     @Test func `Partly visible columns stay where the strip puts them`() {
         var ws = strip(3, width: 0.4)
         ws.focus(1)

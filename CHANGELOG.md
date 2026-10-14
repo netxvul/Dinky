@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### HUD
+
+- A capsule of Liquid Glass names the new layout, such as `h_accordion` or `scrolling`, after the `layout` command, and the new binding mode when it changes, for a moment on the focused display. The new `[hud]` table places it above the Dock (`position = 'bottom'`, the default) or below the menu bar (`'top'`), `offset` points away, keeps it up for `duration-ms` (1200 by default), and turns it off for either change with `on-layout-change` or `on-mode-change`, or entirely with `enabled = false`.
+- When a display moves to another workspace, the capsule shows there the workspace's number and layout, such as `2 · v_accordion`. `[hud] on-workspace-change = false` turns it off.
+
+### Switcher
+
+- New `[window-switcher]`: set `modifier` to `'alt'`, `'ctrl'`, `'cmd'` or `'shift'`, hold it on its own over a workspace, and after `delay-ms` (200 by default) a glass capsule of the workspace's windows shows over the pointer, the focused one under it, in strip order on a scrolling workspace and tree order on an accordion one; move the pointer across to pick one. On a tiles or fixed workspace it is a map of the workspace over the pointer, each tile where it is; move onto one to pick it, or set `tiles-style = 'row'` for a row there too. Release the modifier to focus the window picked; Esc or any other key closes it. `layouts` picks where it shows, `['scrolling', 'tiles']` by default, with `'accordion'` and `'fixed'` too; `corner-radius` rounds the capsule. Thumbnails need Screen Recording, asked for the first time it shows; without it the capsule shows app icons. `[modifiers]` decides which key of the pair counts.
+- New `[workspace-switcher]`: hold its own `modifier` on its own and a glass capsule of the workspaces shows over the pointer, a card per workspace drawn small in its layout with the windows where they are: an accordion's neighbours peeking out, a fixed workspace's empty cells, a scrolling workspace's columns in view with a count of those parked either side. Move across to pick one and release to switch to it. Each card has its display's proportions; with more than one display, `displays = 'all'` (the default) shows every display's workspaces, a named group per display, and `'pointer'` only the display under the pointer's. `show-empty`, `exclude`, `card-height`, `thumbnails = 'icons'` or `'schematic'` (a fixed picture of each workspace's layout, whatever its windows) and `corner-radius` tune it. It can't share `[window-switcher]`'s modifier.
+- New `window-switcher` and `workspace-switcher` commands show either capsule from a key binding, in the middle of the display under the pointer: the arrows or h, j, k, l and Tab move the pick, Return or Space takes it, Esc closes it, the binding again steps to the next one, and letting go of the binding's modifiers takes the pick, as Cmd-Tab does.
+
 ### Fullscreen
 
 - New `[fullscreen] focus-change` says what Cmd-Tab, a click or `focus` onto another window of the workspace does while one is fullscreen: `'exit'` ends fullscreen, as before; `'follow'` makes the newly focused window fullscreen and puts the other back in its tile; `'keep'` makes it fullscreen too. `fullscreen` again ends it for every window. With `'follow'`, `follow-delay-ms` makes the newly focused window wait until the other is back in its tile.
@@ -40,6 +51,8 @@
 
 - `focus` from a floating window looks for the nearest window on that window's display. Before, it looked on the main display, so on another display it found the wrong window or none.
 - Clicking a picture in picture video, a browser's, IINA's or any other app's, no longer switches to the workspace of the app's window. The video floats on every Space and is no tile, so `follow-app-activation` took the click for a Cmd-Tab to an app with no window here. Leaving picture in picture, with a browser's "back to tab" or the button that takes the video back to IINA's window, still goes to that window's workspace: a click that closes a floating window and shows a window again, or turns its app's window key, on another Space is followed.
+- In the scrolling layout, a column scrolled out towards another display hides wholly behind the column in view nearest that display, in the place of its biggest window. Before, it stopped flush at the display's edge and showed in the outer gap, so the column in view looked as if it floated over it.
+- In the scrolling layout, the focused column stays in view when a column left of it closes or moves to another workspace, grows to a window's minimum width, or when the display or gaps change. Before, the strip kept its scroll position, and the focused column could end up parked off screen.
 
 ## 0.18
 

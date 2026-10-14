@@ -96,6 +96,10 @@ extension Command {
             return one.flatMap(MirrorAxis.init(rawValue:)).map { .mirror($0) }
         case "retile":
             return none ? .retile : nil
+        case "window-switcher":
+            return none ? .windowSwitcher : nil
+        case "workspace-switcher":
+            return none ? .workspaceSwitcher : nil
         case "clear-minimum-sizes":
             return none ? .clearMinimumSizes : nil
         case "mode":

@@ -57,6 +57,16 @@ final class Table {
         return strings
     }
 
+    /// A list of integers, e.g. workspace numbers.
+    func ints(_ key: String) throws -> [Int]? {
+        guard use(key) else { return nil }
+        guard let array = try? table.array(forKey: key),
+              let ints = try? (0..<array.count).map({ Int(try array.integer(atIndex: $0)) }) else {
+            throw ConfigError(path: path(key), "expected a list of integers")
+        }
+        return ints
+    }
+
     /// A string or a list of them, e.g. display patterns.
     func stringOrStrings(_ key: String) throws -> [String]? {
         guard use(key) else { return nil }

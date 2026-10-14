@@ -5,3 +5,4 @@
 #import "spaces.h"
 #import "events.h"
 #import "borders.h"
+#import "haptics.h"

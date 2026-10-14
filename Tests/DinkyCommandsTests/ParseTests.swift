@@ -150,6 +150,9 @@ struct ParseTests {
         #expect(try parse("enable off") == .enable(.off))
         #expect(try parse("enable toggle") == .enable(.toggle))
         #expect(try parse("retile") == .retile)
+        #expect(try parse("window-switcher") == .windowSwitcher)
+        #expect(try parse("workspace-switcher") == .workspaceSwitcher)
+        #expect(throws: (any Error).self) { try parse("workspace-switcher next") }
         #expect(try parse("clear-minimum-sizes") == .clearMinimumSizes)
         #expect(try parse("exec-and-forget sketchybar --trigger 'a b'") == .execAndForget("sketchybar --trigger 'a b'"))
         #expect(try parse("  exec-and-forget   echo  hi") == .execAndForget("echo  hi"))
@@ -178,7 +181,7 @@ struct ParseTests {
     private static let knownGood = [
         "workspace 1", "workspace-back-and-forth", "move-window-to-workspace 2 --follow", "move-window-to-display next",
         "focus left", "focus-monitor next", "move left", "join-with left", "resize smart +10", "layout tiles",
-        "fullscreen", "grid 1:2:0:0:1:1", "cycle-size 50% 30% 60%", "flatten-workspace-tree", "balance-sizes", "rotate 90", "mirror y-axis", "retile", "clear-minimum-sizes", "mode main", "reload-config", "enable on",
+        "fullscreen", "grid 1:2:0:0:1:1", "cycle-size 50% 30% 60%", "flatten-workspace-tree", "balance-sizes", "rotate 90", "mirror y-axis", "retile", "window-switcher", "workspace-switcher", "clear-minimum-sizes", "mode main", "reload-config", "enable on",
         "list-workspaces", "list-windows", "list-monitors", "list-displays", "list-modes", "debug-state", "exec-and-forget true",
     ]
 

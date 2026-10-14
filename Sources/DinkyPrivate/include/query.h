@@ -36,6 +36,10 @@ NSArray<NSNumber *> *dinky_current_space_ids(void);
 
 uint64_t dinky_current_space_id(CFStringRef displayUUID);
 
+// Whether the display is moving between Spaces, as in a trackpad swipe, whose Space becomes current only once the
+// move ends (SLSManagedDisplayIsAnimating, looked up at run time). False where the call is missing.
+bool dinky_display_is_animating(CFStringRef displayUUID);
+
 // First Space of the window (SLSCopySpacesForWindows selector 0x7), 0 if none.
 uint64_t dinky_window_space_id(uint32_t windowID);
 

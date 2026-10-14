@@ -57,6 +57,29 @@ struct SchemaTests {
         #expect(fullscreen["focus-change"]!["enum"] as! [String] == configured)
     }
 
+    @Test func `HUD positions agree`() {
+        let properties = Self.schema["properties"] as! [String: [String: Any]]
+        let hud = properties["hud"]!["properties"] as! [String: [String: Any]]
+        #expect(hud["position"]!["enum"] as! [String] == HudPosition.allCases.map(\.rawValue))
+    }
+
+    @Test func `Switcher modifiers agree`() {
+        let properties = Self.schema["properties"] as! [String: [String: Any]]
+        let switcher = properties["window-switcher"]!["properties"] as! [String: [String: Any]]
+        #expect(switcher["modifier"]!["enum"] as! [String] == SwitcherModifier.allCases.map(\.rawValue))
+        let layouts = switcher["layouts"]!["items"] as! [String: Any]
+        #expect(layouts["enum"] as! [String] == SwitcherLayoutKind.allCases.map(\.rawValue))
+        #expect(switcher["tiles-style"]!["enum"] as! [String] == SwitcherTilesStyle.allCases.map(\.rawValue))
+    }
+
+    @Test func `Workspace switcher choices agree`() {
+        let properties = Self.schema["properties"] as! [String: [String: Any]]
+        let switcher = properties["workspace-switcher"]!["properties"] as! [String: [String: Any]]
+        #expect(switcher["modifier"]!["enum"] as! [String] == SwitcherModifier.allCases.map(\.rawValue))
+        #expect(switcher["displays"]!["enum"] as! [String] == WorkspaceSwitcherDisplays.allCases.map(\.rawValue))
+        #expect(switcher["thumbnails"]!["enum"] as! [String] == WorkspaceSwitcherThumbnails.allCases.map(\.rawValue))
+    }
+
     @Test func `Menu bar icons agree`() {
         let properties = Self.schema["properties"] as! [String: [String: Any]]
         #expect(properties["menu-bar-icon"]!["enum"] as! [String] == MenuBarIcon.allCases.map(\.rawValue))
@@ -103,6 +126,23 @@ struct SchemaTests {
 
         [scrolling]
         column-width = 0.5
+
+        [window-switcher]
+        modifier = 'alt'
+        delay-ms = 200
+        layouts = ['tiles']
+        corner-radius = 20
+        tiles-style = 'row'
+
+        [workspace-switcher]
+        modifier = 'ctrl'
+        delay-ms = 250
+        displays = 'pointer'
+        show-empty = false
+        exclude = [3]
+        card-height = 90
+        thumbnails = 'icons'
+        corner-radius = 18
 
         [floating]
         move-step = 20
@@ -156,6 +196,15 @@ struct SchemaTests {
         preview-fill-color = '#7aa2f74d'
         preview-border-width = 2.5
         home-outline = false
+
+        [hud]
+        enabled = true
+        position = 'top'
+        duration-ms = 800
+        offset = 10
+        on-layout-change = true
+        on-mode-change = false
+        on-workspace-change = false
 
         [modifiers]
         alt = 'left'

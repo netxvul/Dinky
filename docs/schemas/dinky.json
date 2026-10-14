@@ -241,6 +241,111 @@
         "preview-border-width": { "type": "number", "minimum": 0, "maximum": 20, "default": 3, "description": "Points, for every border while you drag: the preview, a swap's, and the outlines of the tiles." }
       }
     },
+    "window-switcher": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Hold the modifier alone over a workspace for a capsule of its windows at the pointer; release to focus the one picked.",
+      "properties": {
+        "modifier": {
+          "type": "string",
+          "enum": ["none", "alt", "ctrl", "cmd", "shift"],
+          "default": "none",
+          "description": "The modifier that shows the capsule; none turns it off. The key's side follows [modifiers]."
+        },
+        "delay-ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2000,
+          "default": 200,
+          "description": "How long the modifier is held alone before the capsule shows."
+        },
+        "layouts": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["scrolling", "tiles", "accordion", "fixed"] },
+          "default": ["scrolling", "tiles"],
+          "description": "The layouts the capsule shows for. tiles is dwindle."
+        },
+        "corner-radius": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 80,
+          "default": 52,
+          "description": "The capsule's corner radius in points. Half its height or more makes round ends."
+        },
+        "tiles-style": {
+          "type": "string",
+          "enum": ["map", "row"],
+          "default": "map",
+          "description": "How a tiles or fixed workspace shows: map, its tiles where they are, picked in two dimensions, or row, like a scrolling workspace."
+        }
+      }
+    },
+    "workspace-switcher": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Hold the modifier alone for a capsule of the workspaces at the pointer, each drawn small in its layout; release to switch to the one picked.",
+      "properties": {
+        "modifier": {
+          "type": "string",
+          "enum": ["none", "alt", "ctrl", "cmd", "shift"],
+          "default": "none",
+          "description": "The modifier that shows the capsule; none turns it off. Not the same as [window-switcher]'s. The key's side follows [modifiers]."
+        },
+        "delay-ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2000,
+          "default": 200,
+          "description": "How long the modifier is held alone before the capsule shows."
+        },
+        "displays": {
+          "type": "string",
+          "enum": ["all", "pointer"],
+          "default": "all",
+          "description": "all: every display's workspaces, a group per display. pointer: only the display under the pointer."
+        },
+        "show-empty": { "type": "boolean", "default": true, "description": "Cards for workspaces without windows." },
+        "exclude": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1 },
+          "default": [],
+          "description": "Workspace numbers left out."
+        },
+        "card-height": {
+          "type": "number",
+          "minimum": 60,
+          "maximum": 200,
+          "default": 85,
+          "description": "Each card's height in points; its width follows its display's proportions."
+        },
+        "thumbnails": {
+          "type": "string",
+          "enum": ["windows", "icons", "schematic"],
+          "default": "windows",
+          "description": "windows: a picture of each window, needing Screen Recording. icons: each window's app icon. schematic: a fixed picture of each workspace's layout, the same whatever its windows."
+        },
+        "corner-radius": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 80,
+          "description": "The capsule's corner radius in points; [window-switcher]'s when left out."
+        }
+      }
+    },
+    "hud": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A glass capsule naming the new layout or binding mode for a moment after it changes.",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true, "description": "Show the capsule." },
+        "position": { "enum": ["bottom", "top"], "default": "bottom", "description": "bottom: above the Dock, or near the bottom of the screen when the Dock hides or sits at a side. top: below the menu bar." },
+        "duration-ms": { "type": "integer", "minimum": 100, "maximum": 10000, "default": 1200, "description": "How long it stays before fading out. Another change meanwhile restarts the count." },
+        "offset": { "type": "number", "minimum": 0, "maximum": 200, "default": 16, "description": "Points between the capsule and the Dock or menu bar." },
+        "on-layout-change": { "type": "boolean", "default": true, "description": "Show it after the layout command." },
+        "on-mode-change": { "type": "boolean", "default": true, "description": "Show it when the binding mode changes." },
+        "on-workspace-change": { "type": "boolean", "default": true, "description": "Show the workspace's number and layout when a display moves to another workspace." }
+      }
+    },
     "modifiers": {
       "type": "object",
       "additionalProperties": false,
@@ -342,7 +447,7 @@
     },
     "command": {
       "type": "string",
-      "pattern": "^\\s*(workspace|workspace-back-and-forth|move-window-to-workspace|move-window-to-display|focus|focus-monitor|move|join-with|resize|layout|fullscreen|grid|cycle-size|flatten-workspace-tree|balance-sizes|rotate|mirror|retile|clear-minimum-sizes|mode|reload-config|enable|list-workspaces|list-windows|list-monitors|list-displays|list-modes|debug-state|exec-and-forget)(\\s.*)?$",
+      "pattern": "^\\s*(workspace|workspace-back-and-forth|move-window-to-workspace|move-window-to-display|focus|focus-monitor|move|join-with|resize|layout|fullscreen|grid|cycle-size|flatten-workspace-tree|balance-sizes|rotate|mirror|retile|window-switcher|workspace-switcher|clear-minimum-sizes|mode|reload-config|enable|list-workspaces|list-windows|list-monitors|list-displays|list-modes|debug-state|exec-and-forget)(\\s.*)?$",
       "description": "A dinky command, as `dinky help` lists them: `workspace 3`, `layout floating`, `exec-and-forget open -a Safari`."
     },
     "commands": {

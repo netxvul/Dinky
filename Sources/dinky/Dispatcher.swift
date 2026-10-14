@@ -116,6 +116,14 @@ enum Dispatcher {
             guard let coordinator = AppState.shared.coordinator else { return .error("tiling is not running") }
             coordinator.reconcile()
             return .ok("retiled")
+        case .windowSwitcher:
+            guard AppState.shared.coordinator != nil else { return .error("tiling is not running") }
+            return WindowSwitcher.shared.showFromKeyboard() ? .ok("window-switcher")
+                : .error("the workspace under the pointer has fewer than two windows, or a layout [window-switcher] layouts leaves out")
+        case .workspaceSwitcher:
+            guard AppState.shared.coordinator != nil else { return .error("tiling is not running") }
+            return WorkspaceSwitcher.shared.showFromKeyboard() ? .ok("workspace-switcher")
+                : .error("fewer than two workspaces to pick from")
         case .clearMinimumSizes:
             guard let coordinator = AppState.shared.coordinator else { return .error("tiling is not running") }
             coordinator.clearMinimumSizes()
@@ -303,6 +311,7 @@ enum Dispatcher {
             if coordinator.isScrolling(id) { coordinator.setScrolling(false, for: id) }
             coordinator.command(on: id) { $0.setLayout(name.mode, name.orientation) }
         }
+        Hud.shared.layoutChanged(name.rawValue)
         return .ok("layout \(name.rawValue)")
     }
 

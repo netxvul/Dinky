@@ -36,6 +36,10 @@ public enum Command: Equatable, Sendable {
     /// Flip the focused workspace's tree across an axis, as yabai's `space --mirror`.
     case mirror(MirrorAxis)
     case retile
+    /// Show the window switcher's capsule in the middle of the display under the pointer, picked with the keys.
+    case windowSwitcher
+    /// Show the workspace switcher's capsule in the middle of the display under the pointer, picked with the keys.
+    case workspaceSwitcher
     case clearMinimumSizes
     case mode(String)
     case reloadConfig

@@ -96,8 +96,8 @@ centred; focusing a column scrolls just far enough to show it whole.
 
 macOS can't hide part of another app's window, so a column scrolled out of view
 is parked: it hangs off the display edge with a sliver of at least 25 points
-left on, an inner gap from the columns in view. Where another display sits beyond that edge, the column stops
-at the border instead and waits behind the columns in view.
+left on, an inner gap from the columns in view. Where another display sits beyond that edge, the column hides
+behind the column in view nearest it instead, in the place of its biggest window, so none of it shows.
 
 Commands work on columns. `focus left` and `right` move between columns, `up`
 and `down` within one. `move left` and `right` swap the column with its
@@ -312,6 +312,151 @@ grid only swaps. Dropped anywhere else, the window goes back.
 
 </div>
 
+## `[hud]`
+
+After the `layout` command, or when the binding mode changes, a glass capsule
+shows the new layout, such as `h_accordion` or `scrolling`, or the new mode's
+name, for a moment on the focused display, then fades out. When a display moves
+to another workspace, it shows there the workspace's number and layout, such as
+`2 · v_accordion`: the layout of its focused tile, `scrolling`, `floating` for a
+workspace dinky does not tile, or the configured layout of an empty one. Another change while
+it shows replaces the text and restarts the count. On macOS 26 and later it is
+Liquid Glass; earlier, the HUD material.
+
+<div class="wide-table" markdown="1">
+
+| Key | Default | |
+|---|---|---|
+| `enabled` | `true` | Show the capsule. |
+| `position` | `'bottom'` | `'bottom'` above the Dock, or near the bottom of the screen when the Dock hides or sits at a side; `'top'` below the menu bar. |
+| `duration-ms` | `1200` | How long it stays before fading out, from `100` to `10000`. |
+| `offset` | `16` | Points, from `0` to `200`, between the capsule and the Dock or menu bar. |
+| `on-layout-change` | `true` | Show it after the `layout` command. |
+| `on-mode-change` | `true` | Show it when the binding mode changes. |
+| `on-workspace-change` | `true` | Show the workspace's layout when a display moves to another workspace. |
+
+</div>
+
+## `[window-switcher]`
+
+Hold `modifier` on its own over a workspace laid out by one of `layouts`, with
+two or more tiled windows, and after `delay-ms` a glass capsule of the
+workspace's windows appears at the pointer, with the focused one under it.
+
+- On a scrolling or accordion workspace it is a row over the pointer: strip
+  order, a column's windows together, or tree order, the windows of each part
+  of the root together. Move the pointer left and right to pick a window.
+- On a tiles or fixed workspace it is a map of the workspace over the pointer,
+  each window's tile scaled down where it is, the focused one under the
+  pointer. Move the pointer onto a tile to pick it; off the map the nearest
+  tile is picked. `tiles-style = 'row'` shows these as a row too.
+
+Release the modifier to focus the window picked, which on a scrolling
+workspace scrolls the strip to it.
+Esc, or any key pressed with the modifier, closes the capsule without focusing
+anything, so bindings that use the modifier work as before. One capsule serves
+every workspace.
+
+A key binding to the `window-switcher` command shows the capsule from the
+keyboard instead, in the middle of the display under the pointer: the arrows
+or h, j, k, l move the pick (onto the nearest tile that way on a map), Tab and
+Shift-Tab step through, Return or Space focuses the window picked and Esc
+closes it. The binding again steps to the next window, and letting go of its
+modifiers focuses the window picked, as Cmd-Tab does. It works with
+`modifier = 'none'` too.
+
+```toml
+[mode.main]
+alt-tab = 'window-switcher'
+```
+
+Thumbnails need Screen Recording (System Settings, Privacy & Security), asked
+for the first time the capsule shows; dinky may need a restart after it is
+granted. Without it each window shows as its app's icon. Thumbnails are kept
+per window, so the capsule draws at once and fresh ones fade in.
+
+<div class="wide-table" markdown="1">
+
+| Key | Default | |
+|---|---|---|
+| `modifier` | `'none'` | `'alt'`, `'ctrl'`, `'cmd'` or `'shift'`. `'none'` turns the switcher off. Which key of the pair counts follows [`[modifiers]`](#modifiers). |
+| `delay-ms` | `200` | How long the modifier is held alone before the capsule shows, `0` to `2000`. |
+| `layouts` | `['scrolling', 'tiles']` | The layouts it shows for: `'scrolling'`, `'tiles'` (dwindle), `'accordion'` and `'fixed'`. |
+| `corner-radius` | `52` | The capsule's corner radius in points, `0` to `80`, at most half its height. The padding around the thumbnails is the same on every side, `14` points, growing with the radius past `47` so no thumbnail is clipped. The row is about `128` points tall, so it takes about `70` for round ends; the map is `220`, and looks best around `20` to `28`. |
+| `tiles-style` | `'map'` | How a tiles or fixed workspace shows: `'map'`, its tiles as they are, or `'row'`, a row like a scrolling workspace's. |
+
+</div>
+
+```toml
+[window-switcher]
+modifier = 'alt'
+layouts = ['scrolling']   # only on scrolling workspaces
+corner-radius = 20
+
+[modifiers]
+alt = 'left'    # only left Option shows it; right Option types as usual
+```
+
+## `[workspace-switcher]`
+
+Hold `modifier` on its own and after `delay-ms` a glass capsule of the
+workspaces appears at the pointer, the display's current workspace under it.
+Each card is its display drawn small, with the windows where the workspace's
+layout puts them, and under it the workspace's number and layout as the
+[HUD](#hud) names it, such as `2 · scrolling`:
+
+- tiles and fixed workspaces show their tiles; a fixed workspace's empty cells
+  are dashed.
+- An accordion shows the focused window in front and its neighbours peeking
+  out behind it, a little further than they do on screen so they show.
+- A scrolling workspace shows the columns in view, drawn in from the sides,
+  with a sliver and a count for the columns parked off screen on each side.
+- A window fullscreen with `fullscreen` shows alone, floating windows over the
+  rest, and a workspace with no windows as a dashed outline.
+
+Move the pointer across to pick a workspace and release the modifier to
+switch to it, as `workspace` does: on another display, that display shows it
+and takes focus. Esc, or any key pressed with the modifier, closes the capsule
+without switching.
+
+A key binding to the `workspace-switcher` command shows the capsule in the
+middle of the display under the pointer instead: the arrows or h, j, k, l and
+Tab and Shift-Tab move the pick, Return or Space switches to it and Esc closes
+it; the binding again steps to the next workspace, and letting go of its
+modifiers switches to the one picked.
+
+Every card has its own display's proportions. With more than one display and
+`displays = 'all'`, each display's workspaces are a group, left to right as the
+displays are arranged, with the display's name over it; a dot marks the
+workspace each display shows. A display with no numbered workspace shows the
+Space it is on, and picking it focuses that display.
+
+Thumbnails are the [window-switcher](#window-switcher)'s and need Screen Recording too.
+macOS draws no Space but the ones on screen, so a workspace's windows are
+captured as they lose focus and as dinky switches away from it, and the ones
+on screen as the capsule shows; a window not captured yet shows its app's icon.
+
+<div class="wide-table" markdown="1">
+
+| Key | Default | |
+|---|---|---|
+| `modifier` | `'none'` | `'alt'`, `'ctrl'`, `'cmd'` or `'shift'`; not the same as `[window-switcher]`'s. `'none'` turns it off. Which key of the pair counts follows [`[modifiers]`](#modifiers). |
+| `delay-ms` | `200` | How long the modifier is held alone before the capsule shows, `0` to `2000`. |
+| `displays` | `'all'` | `'all'`: every display's workspaces, a group per display. `'pointer'`: only those of the display under the pointer. |
+| `show-empty` | `true` | Cards for workspaces without windows. |
+| `exclude` | `[]` | Workspace numbers left out, such as `[3]`. |
+| `card-height` | `85` | Each card's height in points, `60` to `200`; its width follows its display. A row too wide for the display is scaled down. |
+| `thumbnails` | `'windows'` | `'windows'` shows a picture of each window; `'icons'` only app icons; `'schematic'` a fixed picture of each workspace's layout, the same whatever windows it has: tiles one window beside two, accordion three stacked, scrolling two columns between parked slivers, fixed its template's cells, floating three overlapping windows. Its windows are solid grey blocks with a hairline edge, as Windows draws its snap layouts, all in the accent colour on the card picked. Neither of the last two needs Screen Recording. |
+| `corner-radius` | `[window-switcher]`'s | The capsule's corner radius in points, `0` to `80`. |
+
+</div>
+
+```toml
+[workspace-switcher]
+modifier = 'ctrl'
+exclude = [3]
+```
+
 ## `[modifiers]`
 
 Which key of each modifier pair a binding's modifier means. Limit `alt` to one
@@ -484,6 +629,25 @@ placeholders = true             # outline where a dragged tile came from and sho
 # preview-fill-color = '#7aa2f74d'  # unset is the border colour at 30%
 preview-border-width = 3        # points, for the preview and the outlines
 home-outline = true             # outline where a dragged tile came from; false shows only where it will go
+
+# A glass capsule naming the new layout or mode for a moment.
+[hud]
+enabled = true
+position = 'bottom'             # bottom (above the Dock) | top (below the menu bar)
+duration-ms = 1200              # how long it stays, 100 to 10000
+offset = 16                     # points from the Dock or menu bar
+on-layout-change = true         # after the layout command
+on-mode-change = true           # when the binding mode changes
+on-workspace-change = true      # the new workspace's layout when a display moves to another workspace
+
+# Hold the modifier alone for a glass capsule of the workspace's windows at the pointer; move across to pick
+# one, release to focus it.
+[window-switcher]
+modifier = 'none'               # none (off) | alt | ctrl | cmd | shift
+delay-ms = 200                  # how long it is held alone before the capsule shows, 0 to 2000
+layouts = ['scrolling', 'tiles']  # where it shows: scrolling | tiles | accordion | fixed
+corner-radius = 52              # points, 0 to 80; about 70 or more makes the row's ends round
+tiles-style = 'map'             # tiles and fixed: map (their tiles, picked in two dimensions) | row
 
 # Which key of each pair bindings answer to: both | left | right. With alt = 'left',
 # right Option still types special characters.

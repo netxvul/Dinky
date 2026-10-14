@@ -13,6 +13,8 @@ final class HotkeyEngine {
     var enabled = true
     /// Called with the new mode's name and the previous one whenever the mode changes.
     var onModeChange: ((_ mode: String, _ previous: String) -> Void)?
+    /// Keys to leave alone, bound or not, for whoever wants them first: a switcher's keys while it shows.
+    var yields: (CGEvent) -> Bool = { _ in false }
     private var tap: CFMachPort?
 
     /// `onCommands` is called on the main queue with the binding's commands, in order.
@@ -62,8 +64,8 @@ final class HotkeyEngine {
     }
 
     /// The commands bound to this event in the current mode, if dinky should take it.
-    fileprivate func commands(for event: CGEvent) -> [String]? {
-        guard enabled, let press = KeyPress(event, sides: sides) else { return nil }
+    func commands(for event: CGEvent) -> [String]? {
+        guard enabled, !yields(event), let press = KeyPress(event, sides: sides) else { return nil }
         return modes[currentMode]?[press]
     }
 

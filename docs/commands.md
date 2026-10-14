@@ -32,6 +32,8 @@ prints it.
 | `rotate <90\|180\|270>` | Turn the workspace's tiles clockwise, as yabai's `space --rotate`: a quarter turn makes a row a column, its first window on top, and a column a row, its top window on the right; a half turn reverses everything. A container set to `auto` keeps the turned axis as its orientation. Not for fixed or scrolling layouts. |
 | `mirror <x-axis\|y-axis>` | Flip the workspace's tiles, as yabai's `space --mirror`: `y-axis` swaps left and right, `x-axis` top and bottom. Not for fixed or scrolling layouts. |
 | `retile` | Re-read windows and re-apply every layout. |
+| `window-switcher` | Show the [window switcher](configuration.md#window-switcher) in the middle of the display under the pointer, for a key binding. The arrows or h, j, k, l move the pick, Tab and Shift-Tab step through, Return or Space focuses the window and Esc closes it. Run again while it shows, it steps to the next one; from a binding with modifiers, letting go of them takes the pick, as Cmd-Tab does. |
+| `workspace-switcher` | Show the [workspace switcher](configuration.md#workspace-switcher) the same way; Return or Space switches to the workspace picked. |
 | `clear-minimum-sizes` | Forget the minimum window sizes learned for every app and re-apply every layout. |
 | `mode <name>` | Switch binding mode. |
 | `reload-config` | Reload the config. |

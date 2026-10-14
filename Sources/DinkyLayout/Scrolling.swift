@@ -68,23 +68,30 @@ extension Workspace {
 
     /// The scroll offset the layout uses. The strip never scrolls past either end, and the column at an end
     /// reaches into the gutter there, which nothing is parked in, out to the outer gap. A strip that fits
-    /// between the outer gaps is centred.
+    /// between the outer gaps is centred. The focused column always shows whole, scrolled to as little as
+    /// that takes, even when what scrolled it away left focus alone: a column closing or growing to its
+    /// windows' minimum width left of it, or the display or gaps changing.
     func offset(for spans: [(start: CGFloat, width: CGFloat)], in area: CGRect) -> CGFloat {
         let total = spans.last.map { $0.start + $0.width } ?? 0, inset = gaps.inset(bounds)
         let first = area.minX - inset.minX, last = total - area.width - (inset.maxX - area.maxX)
         guard first < last else { return (first + (total - inset.width) / 2).rounded() }
-        return min(max(scrollOffset, first), last)
+        let wanted = focused.flatMap { root.path(of: $0)?.first }.map { showing(spans[$0], from: scrollOffset, in: area) }
+        return min(max(wanted ?? scrollOffset, first), last)
     }
 
-    /// Scroll as little as shows the window's column whole, as Hyprland's `fit` does. A column wider than the
-    /// screen is centred.
+    /// The offset nearest `offset` that shows `column` whole, as Hyprland's `fit` does. A column wider than the
+    /// area is centred.
+    func showing(_ column: (start: CGFloat, width: CGFloat), from offset: CGFloat, in area: CGRect) -> CGFloat {
+        column.width > area.width
+            ? column.start - (area.width - column.width) / 2
+            : min(max(offset, column.start + column.width - area.width), column.start)
+    }
+
+    /// Scroll as little as shows the window's column whole.
     mutating func reveal(_ id: WindowID) {
         guard isScrolling, let index = root.path(of: id)?.first else { return }
-        let area = stripArea, spans = columnSpans(in: area), column = spans[index]
-        let current = offset(for: spans, in: area)
-        scrollOffset = column.width > area.width
-            ? column.start - (area.width - column.width) / 2
-            : min(max(current, column.start + column.width - area.width), column.start)
+        let area = stripArea, spans = columnSpans(in: area)
+        scrollOffset = showing(spans[index], from: offset(for: spans, in: area), in: area)
     }
 
     /// The strip laid out at the current scroll offset, windows anywhere along it, on screen or not. The focused
@@ -109,6 +116,28 @@ extension Workspace {
             }
         }
         return result
+    }
+
+    /// Where the strip's windows go on screen, see `parked(_:)`. At a wall, a window scrolled out past it hides
+    /// behind the column in view nearest the wall instead, taking the frame of that column's biggest window, so
+    /// none of it shows in the outer gap, between the columns, or between the windows of a column of several.
+    /// It only grows past that frame to its minimum size, away from the wall. With no column in view it stays
+    /// flush at the wall.
+    func parked(_ frames: [WindowID: CGRect]) -> [WindowID: CGRect] {
+        let covers = root.children.compactMap { column -> CGRect? in
+            let rects = column.windows.compactMap { frames[$0] }
+            guard !rects.isEmpty, rects.allSatisfy({ $0.minX >= bounds.minX - 1 && $0.maxX <= bounds.maxX + 1 }) else { return nil }
+            return rects.max { $0.width * $0.height < $1.width * $1.height }
+        }
+        let left = covers.min { $0.minX < $1.minX }, right = covers.max { $0.maxX < $1.maxX }
+        return Dictionary(uniqueKeysWithValues: frames.map { id, frame in
+            let offLeft = frame.minX < bounds.minX - 1, offRight = frame.maxX > bounds.maxX + 1
+            guard offLeft != offRight, walls.contains(offLeft ? .left : .right),
+                  let cover = offLeft ? left : right else { return (id, parked(frame)) }
+            let minimum = minimumSizes[id] ?? .zero
+            let width = max(cover.width, minimum.width), height = max(cover.height, minimum.height)
+            return (id, CGRect(x: offLeft ? cover.minX : cover.maxX - width, y: cover.minY, width: width, height: height))
+        })
     }
 
     /// Where a window of the strip goes on screen: where the strip puts it while at least `peek` of it is on

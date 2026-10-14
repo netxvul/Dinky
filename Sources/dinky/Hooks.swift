@@ -20,6 +20,7 @@ final class Hooks {
         SpaceSwitcher.shared.onGiveUp = { [weak self] uuid in self?.switchGaveUp(uuid) }
         state.coordinator?.onFocusChange = { [weak self] in self?.focusChanged() }
         state.hotkeys.onModeChange = { mode, previous in
+            Hud.shared.modeChanged(mode)
             run(AppState.shared.config.hooks.modeChanged, env: ["DINKY_MODE": mode, "DINKY_PREV_MODE": previous])
         }
         run(state.config.hooks.startup)
@@ -39,6 +40,7 @@ final class Hooks {
             if let target = SpaceSwitcher.shared.target(on: display.uuid), target != display.currentSpaceID { continue }
             workspaces[display.uuid] = new
             runWorkspaceHooks(commands, workspace: new, previous: old, display: i)
+            Hud.shared.workspaceChanged(on: display, space: display.currentSpaceID)
         }
     }
 
@@ -46,8 +48,10 @@ final class Hooks {
     private func switchTargeted(_ uuid: String, _ target: UInt64) {
         let displays = AppState.shared.displays.displays
         guard let i = displays.firstIndex(where: { $0.uuid == uuid }) else { return }
+        WorkspaceSwitcher.shared.leaving(space: displays[i].currentSpaceID)
         let workspace = AppState.shared.numbers.label(of: target)
         runWorkspaceHooks(AppState.shared.config.hooks.workspaceChanging, workspace: workspace, previous: number(displays[i]), display: i)
+        Hud.shared.workspaceChanged(on: displays[i], space: target)
     }
 
     /// A switch that did not land still ends with `workspace-changed`, naming where the display is, so what
@@ -60,6 +64,7 @@ final class Hooks {
         let old = workspaces[uuid] ?? new
         workspaces[uuid] = new
         runWorkspaceHooks(AppState.shared.config.hooks.workspaceChanged, workspace: new, previous: old, display: i)
+        Hud.shared.workspaceChanged(on: model.displays[i], space: model.displays[i].currentSpaceID)
     }
 
     /// Runs workspace hooks with the numbers `exec-and-forget` passes on; `display` is 0-based.

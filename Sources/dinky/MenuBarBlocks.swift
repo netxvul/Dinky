@@ -3,10 +3,11 @@ import AppKit
 // The menu bar item's image for `menu-bar-icon = 'blocks'`: a rounded block per display, left to right as the
 // displays are arranged, shaped like its display. The focused display's block is filled with its workspace number
 // cut out, so the menu bar shows through; the others are outlined with the number drawn in. A full-screen Space
-// has no workspace number and gets corner marks instead. After DeskPeek's IconCreator (MIT, Sasindu Jayasinghe).
+// has no workspace number and gets corner marks instead; a display without workspaces, whose Space is unnumbered,
+// gets an empty block. After DeskPeek's IconCreator (MIT, Sasindu Jayasinghe).
 struct MenuBarBlocks: Equatable {
     struct Block: Equatable {
-        /// Nil where the Space has no workspace number yet.
+        /// Nil where the Space is not a workspace, as on a display `[workspace-to-display]` gives none.
         let number: Int?
         let fullScreen: Bool
         let focused: Bool
@@ -63,8 +64,8 @@ struct MenuBarBlocks: Equatable {
         }
         if block.fullScreen {
             drawCornerMarks(in: rect)
-        } else {
-            drawNumber(block.number.map(String.init) ?? "?", in: rect)
+        } else if let number = block.number {
+            drawNumber(String(number), in: rect)
         }
     }
 

@@ -170,6 +170,71 @@ struct ConfigTests {
         assertError("[scrolling]\ncolumn-width = 1.5\n", path: "scrolling.column-width", line: 2, contains: "0.1 to 1")
     }
 
+    @Test func `Window switcher`() throws {
+        let defaults = Config().windowSwitcher
+        #expect(defaults.modifier == .none)
+        #expect(defaults.delayMs == 200)
+        #expect(defaults.layouts == [.scrolling, .tiles])
+        #expect(defaults.cornerRadius == 52)
+        #expect(defaults.tilesStyle == .map)
+        let switcher = try Config.parse("""
+            [window-switcher]
+            modifier = 'alt'
+            delay-ms = 0
+            layouts = ['tiles', 'fixed']
+            corner-radius = 12
+            tiles-style = 'row'
+            """).windowSwitcher
+        #expect(switcher.modifier == .alt)
+        #expect(switcher.delayMs == 0)
+        #expect(switcher.layouts == [.tiles, .fixed])
+        #expect(switcher.cornerRadius == 12)
+        #expect(switcher.tilesStyle == .row)
+        assertError("[window-switcher]\ntiles-style = 'grid'\n", path: "window-switcher.tiles-style", line: 2, contains: "'map', 'row'")
+        assertError("[window-switcher]\nmodifier = 'fn'\n", path: "window-switcher.modifier", line: 2, contains: "'alt'")
+        assertError("[window-switcher]\ndelay-ms = 5000\n", path: "window-switcher.delay-ms", line: 2, contains: "0 to 2000")
+        assertError("[window-switcher]\nlayouts = ['grid']\n", path: "window-switcher.layouts", line: 2, contains: "'scrolling', 'tiles'")
+        assertError("[window-switcher]\ncorner-radius = 90\n", path: "window-switcher.corner-radius", line: 2, contains: "0 to 80")
+    }
+
+    @Test func `Workspace switcher`() throws {
+        let defaults = Config().workspaceSwitcher
+        #expect(defaults.modifier == .none)
+        #expect(defaults.displays == .all)
+        #expect(defaults.showEmpty)
+        #expect(defaults.exclude.isEmpty)
+        #expect(defaults.cardHeight == 85)
+        #expect(defaults.thumbnails == .windows)
+        #expect(defaults.cornerRadius == nil)
+        let switcher = try Config.parse("""
+            [workspace-switcher]
+            modifier = 'ctrl'
+            delay-ms = 300
+            displays = 'pointer'
+            show-empty = false
+            exclude = [3, 5]
+            card-height = 100
+            thumbnails = 'icons'
+            corner-radius = 18
+            """).workspaceSwitcher
+        #expect(switcher.modifier == .ctrl)
+        #expect(switcher.delayMs == 300)
+        #expect(switcher.displays == .pointer)
+        #expect(!switcher.showEmpty)
+        #expect(switcher.exclude == [3, 5])
+        #expect(switcher.cardHeight == 100)
+        #expect(switcher.thumbnails == .icons)
+        #expect(switcher.cornerRadius == 18)
+        assertError("[window-switcher]\nmodifier = 'alt'\n[workspace-switcher]\nmodifier = 'alt'\n",
+                    path: "workspace-switcher.modifier", line: 4, contains: "[window-switcher]")
+        #expect(try Config.parse("[workspace-switcher]\nthumbnails = 'schematic'\n").workspaceSwitcher.thumbnails == .schematic)
+        assertError("[workspace-switcher]\ndisplays = 'main'\n", path: "workspace-switcher.displays", line: 2, contains: "'all', 'pointer'")
+        assertError("[workspace-switcher]\nexclude = ['3']\n", path: "workspace-switcher.exclude", line: 2, contains: "integers")
+        assertError("[workspace-switcher]\nexclude = [0]\n", path: "workspace-switcher.exclude", line: 2, contains: "start at 1")
+        assertError("[workspace-switcher]\ncard-height = 20\n", path: "workspace-switcher.card-height", line: 2, contains: "60 to 200")
+        assertError("[workspace-switcher]\ncorner-radius = 81\n", path: "workspace-switcher.corner-radius", line: 2, contains: "0 to 80")
+    }
+
     @Test func `Syntax error has line`() {
         let error = #expect(throws: ConfigError.self) {
             try Config.parse("workspaces = 5\n[gaps\n")
@@ -325,6 +390,27 @@ struct ConfigTests {
         #expect(!config.drag.placeholders)
         assertError("[animations]\nduration-ms = -1\n", path: "animations.duration-ms", line: 2, contains: "0 to 1000")
         assertError("[drag]\nghost = true\n", path: "drag.ghost", line: 2, contains: "unknown key")
+    }
+
+    @Test func `HUD`() throws {
+        #expect(Config.default.hud == Hud())
+        let defaults = Hud()
+        #expect(defaults.enabled)
+        #expect(defaults.position == .bottom)
+        #expect(defaults.durationMs == 1200)
+        #expect(defaults.offset == 16)
+        #expect(defaults.onLayoutChange && defaults.onModeChange && defaults.onWorkspaceChange)
+        #expect(try !Config.parse("[hud]\non-workspace-change = false\n").hud.onWorkspaceChange)
+        let hud = try Config.parse("[hud]\nposition = 'top'\nduration-ms = 3000\noffset = 4.5\non-mode-change = false\n").hud
+        #expect(hud.position == .top)
+        #expect(hud.durationMs == 3000)
+        #expect(hud.offset == 4.5)
+        #expect(hud.onLayoutChange)
+        #expect(!hud.onModeChange)
+        assertError("[hud]\nposition = 'middle'\n", path: "hud.position", line: 2, contains: "'bottom'")
+        assertError("[hud]\nduration-ms = 50\n", path: "hud.duration-ms", line: 2, contains: "100 to 10000")
+        assertError("[hud]\noffset = -1\n", path: "hud.offset", line: 2, contains: "0 to 200")
+        assertError("[hud]\nseconds = 2\n", path: "hud.seconds", line: 2, contains: "unknown key")
     }
 
     @Test func `Drag preview style`() throws {

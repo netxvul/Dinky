@@ -1,3 +1,4 @@
+#include <dlfcn.h>
 #import "query.h"
 #import "skylight.h"
 
@@ -81,6 +82,16 @@ NSArray<NSNumber *> *dinky_current_space_ids(void)
 uint64_t dinky_current_space_id(CFStringRef displayUUID)
 {
     return SLSManagedDisplayGetCurrentSpace(dinky_connection(), displayUUID);
+}
+
+bool dinky_display_is_animating(CFStringRef displayUUID)
+{
+    static bool (*isAnimating)(int, CFStringRef);
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        isAnimating = (bool (*)(int, CFStringRef))dlsym(RTLD_DEFAULT, "SLSManagedDisplayIsAnimating");
+    });
+    return isAnimating ? isAnimating(dinky_connection(), displayUUID) : false;
 }
 
 uint64_t dinky_window_space_id(uint32_t windowID)

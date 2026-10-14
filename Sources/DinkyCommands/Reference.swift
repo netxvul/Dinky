@@ -81,6 +81,16 @@ extension Command {
                 + "x-axis top and bottom. Not for fixed or scrolling layouts."),
         Doc(syntax: "retile",
             description: "Re-read every window and re-apply the layout of every workspace on screen."),
+        Doc(syntax: "window-switcher",
+            description: "Show the window switcher's capsule of the windows of the workspace under the pointer, in the middle "
+                + "of its display. The arrows or h, j, k, l move the pick, Tab and Shift-Tab step through, Return or Space focuses "
+                + "the window picked and Esc closes it. Run again while it shows, it steps to the next window. "
+                + "From a binding with modifiers, letting go of them focuses the window picked, as Cmd-Tab does."),
+        Doc(syntax: "workspace-switcher",
+            description: "Show the workspace switcher's capsule in the middle of the display under the pointer. The arrows or "
+                + "h, j, k, l move the pick, Tab and Shift-Tab step through, Return or Space switches to the workspace picked "
+                + "and Esc closes it. Run again while it shows, it steps to the next workspace. "
+                + "From a binding with modifiers, letting go of them switches to the workspace picked."),
         Doc(syntax: "clear-minimum-sizes",
             description: "Forget the minimum window sizes dinky has learned for every app, and re-apply every layout."),
         Doc(syntax: "mode <name>",

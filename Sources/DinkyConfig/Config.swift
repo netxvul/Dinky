@@ -35,6 +35,9 @@ public struct Config: Equatable {
     public var focusFollowsMouse = FocusFollowsMouse()
     public var animations = Animations()
     public var drag = Drag()
+    public var hud = Hud()
+    public var windowSwitcher = Switcher()
+    public var workspaceSwitcher = WorkspaceSwitcher()
     public var modifiers = ModifierSides()
     public var hooks = Hooks()
     /// `[[rules]]`, in file order.
@@ -126,6 +129,12 @@ public struct Config: Equatable {
         focusFollowsMouse = try t.table("focus-follows-mouse").map(FocusFollowsMouse.init) ?? focusFollowsMouse
         animations = try t.table("animations").map(Animations.init) ?? animations
         drag = try t.table("drag").map(Drag.init) ?? drag
+        hud = try t.table("hud").map(Hud.init) ?? hud
+        windowSwitcher = try t.table("window-switcher").map(Switcher.init) ?? windowSwitcher
+        workspaceSwitcher = try t.table("workspace-switcher").map(WorkspaceSwitcher.init) ?? workspaceSwitcher
+        if workspaceSwitcher.modifier != .none, workspaceSwitcher.modifier == windowSwitcher.modifier {
+            throw ConfigError(path: "workspace-switcher.modifier", "[window-switcher] already uses '\(windowSwitcher.modifier.rawValue)'")
+        }
         modifiers = try t.table("modifiers").map(ModifierSides.init) ?? modifiers
         hooks = try t.table("hooks").map(Hooks.init) ?? hooks
         rules = try t.tables("rules")?.map(WindowRule.init) ?? []
@@ -181,6 +190,13 @@ public struct WorkspaceSettings: Equatable {
 }
 
 extension Config {
+    /// Whether a key binding in any mode runs `command`, a command name such as `workspace-switcher`.
+    public func binds(_ command: String) -> Bool {
+        modes.values.contains { mode in
+            mode.bindings.values.contains { $0.contains { $0.split(separator: " ").first.map(String.init) == command } }
+        }
+    }
+
     /// The settings of the workspace with this number, the top-level ones for an unnumbered workspace.
     public func settings(forWorkspace number: Int?) -> WorkspaceSettings {
         number.flatMap { workspaceLayouts[$0] } ?? WorkspaceSettings(tiling: defaultTiling, layout: defaultLayout)
@@ -218,6 +234,110 @@ public struct Scrolling: Equatable {
     init(_ t: Table) throws {
         columnWidth = try t.double("column-width") ?? columnWidth
         guard (0.1...1).contains(columnWidth) else { throw ConfigError(path: t.path("column-width"), "must be 0.1 to 1") }
+        try t.done()
+    }
+}
+
+/// The modifier that shows the switcher, its side as `[modifiers]` says; `none` turns the switcher off.
+public enum SwitcherModifier: String, CaseIterable {
+    case none, alt, ctrl, cmd, shift
+}
+
+/// A layout the switcher shows for: `tiles` is dwindle, `accordion` a dwindle accordion root.
+public enum SwitcherLayoutKind: String, CaseIterable {
+    case scrolling, tiles, accordion, fixed
+}
+
+/// How the switcher shows a tiles or fixed workspace: a map of its tiles, or a row like a strip's.
+public enum SwitcherTilesStyle: String, CaseIterable {
+    case map, row
+}
+
+/// `[window-switcher]`: hold the modifier on its own over a workspace laid out by one of `layouts` and a capsule of its
+/// windows shows at the pointer; release to focus the one picked.
+public struct Switcher: Equatable {
+    public var modifier = SwitcherModifier.none
+    /// How long the modifier is held alone before the capsule shows.
+    public var delayMs = 200
+    public var layouts: [SwitcherLayoutKind] = [.scrolling, .tiles]
+    /// Points; at half the capsule's height or more its ends are round.
+    public var cornerRadius = 52.0
+    public var tilesStyle = SwitcherTilesStyle.map
+
+    public init() {}
+
+    init(_ t: Table) throws {
+        modifier = try t.choice("modifier") ?? modifier
+        delayMs = try t.int("delay-ms") ?? delayMs
+        guard (0...2000).contains(delayMs) else { throw ConfigError(path: t.path("delay-ms"), "must be 0 to 2000") }
+        if let names = try t.strings("layouts") {
+            layouts = try names.map { name in
+                guard let kind = SwitcherLayoutKind(rawValue: name) else {
+                    let choices = SwitcherLayoutKind.allCases.map { "'\($0.rawValue)'" }.joined(separator: ", ")
+                    throw ConfigError(path: t.path("layouts"), "'\(name)' is not one of \(choices)")
+                }
+                return kind
+            }
+        }
+        cornerRadius = try t.double("corner-radius") ?? cornerRadius
+        guard (0...80).contains(cornerRadius) else { throw ConfigError(path: t.path("corner-radius"), "must be 0 to 80") }
+        tilesStyle = try t.choice("tiles-style") ?? tilesStyle
+        try t.done()
+    }
+}
+
+/// Which displays' workspaces the workspace switcher shows.
+public enum WorkspaceSwitcherDisplays: String, CaseIterable {
+    /// Every display's, a group per display.
+    case all
+    /// Only the workspaces of the display under the pointer.
+    case pointer
+}
+
+/// What the workspace switcher's cards show in each window.
+public enum WorkspaceSwitcherThumbnails: String, CaseIterable {
+    /// A picture of the window, needing Screen Recording; its app's icon until there is one.
+    case windows
+    /// Its app's icon.
+    case icons
+    /// A fixed picture of each workspace's layout, the same whatever its windows.
+    case schematic
+}
+
+/// `[workspace-switcher]`: hold the modifier on its own and a capsule of the workspaces shows at the pointer, each
+/// drawn small in its layout; release to switch to the one picked.
+public struct WorkspaceSwitcher: Equatable {
+    public var modifier = SwitcherModifier.none
+    /// How long the modifier is held alone before the capsule shows.
+    public var delayMs = 200
+    public var displays = WorkspaceSwitcherDisplays.all
+    /// Whether workspaces without windows get a card.
+    public var showEmpty = true
+    /// Workspace numbers left out.
+    public var exclude: [Int] = []
+    /// Points; each card is as wide as its display's proportions give.
+    public var cardHeight = 85.0
+    public var thumbnails = WorkspaceSwitcherThumbnails.windows
+    /// Points; nil takes `[window-switcher]`'s.
+    public var cornerRadius: Double?
+
+    public init() {}
+
+    init(_ t: Table) throws {
+        modifier = try t.choice("modifier") ?? modifier
+        delayMs = try t.int("delay-ms") ?? delayMs
+        guard (0...2000).contains(delayMs) else { throw ConfigError(path: t.path("delay-ms"), "must be 0 to 2000") }
+        displays = try t.choice("displays") ?? displays
+        showEmpty = try t.bool("show-empty") ?? showEmpty
+        exclude = try t.ints("exclude") ?? exclude
+        guard exclude.allSatisfy({ $0 >= 1 }) else { throw ConfigError(path: t.path("exclude"), "workspace numbers start at 1") }
+        cardHeight = try t.double("card-height") ?? cardHeight
+        guard (60...200).contains(cardHeight) else { throw ConfigError(path: t.path("card-height"), "must be 60 to 200") }
+        thumbnails = try t.choice("thumbnails") ?? thumbnails
+        cornerRadius = try t.double("corner-radius") ?? cornerRadius
+        if let cornerRadius, !(0...80).contains(cornerRadius) {
+            throw ConfigError(path: t.path("corner-radius"), "must be 0 to 80")
+        }
         try t.done()
     }
 }
@@ -390,6 +510,42 @@ public struct Drag: Equatable {
         guard (0...20).contains(previewBorderWidth) else {
             throw ConfigError(path: t.path("preview-border-width"), "must be 0 to 20")
         }
+        try t.done()
+    }
+}
+
+/// Where the HUD shows: above the Dock, or below the menu bar.
+public enum HudPosition: String, CaseIterable {
+    case bottom, top
+}
+
+/// `[hud]`: a glass capsule naming the new layout or binding mode for a moment after it changes.
+public struct Hud: Equatable {
+    public var enabled = true
+    public var position = HudPosition.bottom
+    /// How long it stays before fading out. Another change meanwhile restarts the count.
+    public var durationMs = 1200
+    /// Points between the capsule and the Dock or menu bar, or the screen's edge where neither is.
+    public var offset = 16.0
+    /// Shown for the `layout` command.
+    public var onLayoutChange = true
+    /// Shown when the binding mode changes.
+    public var onModeChange = true
+    /// Shown when a display moves to another workspace, with that workspace's layout.
+    public var onWorkspaceChange = true
+
+    public init() {}
+
+    init(_ t: Table) throws {
+        enabled = try t.bool("enabled") ?? enabled
+        position = try t.choice("position") ?? position
+        durationMs = try t.int("duration-ms") ?? durationMs
+        guard (100...10000).contains(durationMs) else { throw ConfigError(path: t.path("duration-ms"), "must be 100 to 10000") }
+        offset = try t.double("offset") ?? offset
+        guard (0...200).contains(offset) else { throw ConfigError(path: t.path("offset"), "must be 0 to 200") }
+        onLayoutChange = try t.bool("on-layout-change") ?? onLayoutChange
+        onModeChange = try t.bool("on-mode-change") ?? onModeChange
+        onWorkspaceChange = try t.bool("on-workspace-change") ?? onWorkspaceChange
         try t.done()
     }
 }

@@ -56,6 +56,18 @@ extension Coordinator {
         return (axis == .horizontal ? "h_" : "v_") + (container.mode == .accordion ? "accordion" : "tiles")
     }
 
+    /// The layout of a Space's workspace, as the HUD names it: its focused tile's as `layoutName(of:)` gives it,
+    /// `scrolling` for the strip, `floating` where dinky does not tile or floats every window, and the configured
+    /// layout for a workspace with nothing tiled yet.
+    func layoutName(ofSpace key: UInt64) -> String {
+        let settings = settings(for: key)
+        guard settings.tiling, !settings.float else { return "floating" }
+        guard let workspace = workspaces[key] else { return settings.layout.rawValue }
+        if workspace.isScrolling { return "scrolling" }
+        if let id = workspace.focused, workspace.contains(id) { return layoutName(of: id) }
+        return settings.layout.rawValue
+    }
+
     /// Runs a command on the tree of a window (the focused one by default), focused in that tree, and applies
     /// what changed. Nil if the window is not tiled.
     func command<T>(on id: WindowID? = nil, _ change: (inout Workspace) -> T) -> T? {
