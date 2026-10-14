@@ -277,6 +277,11 @@
           "enum": ["map", "row"],
           "default": "map",
           "description": "How a tiles or fixed workspace shows: map, its tiles where they are, picked in two dimensions, or row, like a scrolling workspace."
+        },
+        "show-single": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether the capsule shows for a workspace with a lone tiled window, held or from a binding. false shows it only with two or more."
         }
       }
     },

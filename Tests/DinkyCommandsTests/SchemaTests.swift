@@ -133,6 +133,7 @@ struct SchemaTests {
         layouts = ['tiles']
         corner-radius = 20
         tiles-style = 'row'
+        show-single = false
 
         [workspace-switcher]
         modifier = 'ctrl'

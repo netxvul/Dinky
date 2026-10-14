@@ -97,6 +97,7 @@ extension Config {
     layouts = ['scrolling', 'tiles']  # where it shows: scrolling | tiles | accordion | fixed
     corner-radius = 52              # points, 0 to 80; about 70 or more makes the row's ends round
     tiles-style = 'map'             # tiles and fixed: map (their tiles, picked in two dimensions) | row
+    show-single = true              # also show it for a workspace with a lone tiled window
 
     # Hold the modifier alone for a glass capsule of the workspaces at the pointer, each drawn small in its layout;
     # move across to pick one, release to switch to it.

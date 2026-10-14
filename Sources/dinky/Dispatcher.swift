@@ -119,7 +119,7 @@ enum Dispatcher {
         case .windowSwitcher:
             guard AppState.shared.coordinator != nil else { return .error("tiling is not running") }
             return WindowSwitcher.shared.showFromKeyboard() ? .ok("window-switcher")
-                : .error("the workspace under the pointer has fewer than two windows, or a layout [window-switcher] layouts leaves out")
+                : .error("the workspace under the pointer has too few tiled windows, as [window-switcher] show-single says, or a layout its layouts leave out")
         case .workspaceSwitcher:
             guard AppState.shared.coordinator != nil else { return .error("tiling is not running") }
             return WorkspaceSwitcher.shared.showFromKeyboard() ? .ok("workspace-switcher")

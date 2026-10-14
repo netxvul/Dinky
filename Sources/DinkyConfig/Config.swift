@@ -263,6 +263,8 @@ public struct Switcher: Equatable {
     /// Points; at half the capsule's height or more its ends are round.
     public var cornerRadius = 52.0
     public var tilesStyle = SwitcherTilesStyle.map
+    /// Whether the capsule shows for a workspace with a lone tiled window, the modifier held or the binding pressed.
+    public var showSingle = true
 
     public init() {}
 
@@ -282,6 +284,7 @@ public struct Switcher: Equatable {
         cornerRadius = try t.double("corner-radius") ?? cornerRadius
         guard (0...80).contains(cornerRadius) else { throw ConfigError(path: t.path("corner-radius"), "must be 0 to 80") }
         tilesStyle = try t.choice("tiles-style") ?? tilesStyle
+        showSingle = try t.bool("show-single") ?? showSingle
         try t.done()
     }
 }

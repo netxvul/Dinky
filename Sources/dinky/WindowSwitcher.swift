@@ -178,8 +178,8 @@ final class WindowSwitcher {
         spacesChanged()
     }
 
-    /// Shows the capsule for the workspace under the pointer, if `layouts` has its layout and it has two windows or
-    /// more. While the display under the pointer is still moving between Spaces, as in a trackpad swipe, it waits and
+    /// Shows the capsule for the workspace under the pointer, if `layouts` has its layout and it has a tiled window, or
+    /// two with `show-single` off. While the display under the pointer is still moving between Spaces, as in a trackpad swipe, it waits and
     /// shows the workspace it lands on.
     private func show() -> Bool {
         if let pointer = CGEvent(source: nil)?.location,
@@ -204,7 +204,7 @@ final class WindowSwitcher {
         let columns = workspace.root.children.map { $0.windows.filter { coordinator.model.windows[$0] != nil && tiles[$0] != nil } }
             .filter { !$0.isEmpty }
         let ids = columns.flatMap { $0 }
-        guard ids.count >= 2 else { return false }
+        guard ids.count >= (config.showSingle ? 1 : 2) else { return false }
         items = ids.map { id in
             let window = coordinator.model.windows[id]!
             let running = NSRunningApplication(processIdentifier: window.pid)

@@ -340,8 +340,9 @@ Liquid Glass; earlier, the HUD material.
 ## `[window-switcher]`
 
 Hold `modifier` on its own over a workspace laid out by one of `layouts`, with
-two or more tiled windows, and after `delay-ms` a glass capsule of the
-workspace's windows appears at the pointer, with the focused one under it.
+a tiled window or more (two or more with `show-single = false`), and after
+`delay-ms` a glass capsule of the workspace's windows appears at the pointer,
+with the focused one under it.
 
 - On a scrolling or accordion workspace it is a row over the pointer: strip
   order, a column's windows together, or tree order, the windows of each part
@@ -384,6 +385,7 @@ per window, so the capsule draws at once and fresh ones fade in.
 | `layouts` | `['scrolling', 'tiles']` | The layouts it shows for: `'scrolling'`, `'tiles'` (dwindle), `'accordion'` and `'fixed'`. |
 | `corner-radius` | `52` | The capsule's corner radius in points, `0` to `80`, at most half its height. The padding around the thumbnails is the same on every side, `14` points, growing with the radius past `47` so no thumbnail is clipped. The row is about `128` points tall, so it takes about `70` for round ends; the map is `220`, and looks best around `20` to `28`. |
 | `tiles-style` | `'map'` | How a tiles or fixed workspace shows: `'map'`, its tiles as they are, or `'row'`, a row like a scrolling workspace's. |
+| `show-single` | `true` | Whether the capsule shows for a workspace with a lone tiled window, held or from a binding. `false` shows it only with two or more. |
 
 </div>
 
@@ -648,6 +650,7 @@ delay-ms = 200                  # how long it is held alone before the capsule s
 layouts = ['scrolling', 'tiles']  # where it shows: scrolling | tiles | accordion | fixed
 corner-radius = 52              # points, 0 to 80; about 70 or more makes the row's ends round
 tiles-style = 'map'             # tiles and fixed: map (their tiles, picked in two dimensions) | row
+show-single = true              # also show it for a workspace with a lone tiled window
 
 # Which key of each pair bindings answer to: both | left | right. With alt = 'left',
 # right Option still types special characters.

@@ -177,6 +177,7 @@ struct ConfigTests {
         #expect(defaults.layouts == [.scrolling, .tiles])
         #expect(defaults.cornerRadius == 52)
         #expect(defaults.tilesStyle == .map)
+        #expect(defaults.showSingle)
         let switcher = try Config.parse("""
             [window-switcher]
             modifier = 'alt'
@@ -184,12 +185,14 @@ struct ConfigTests {
             layouts = ['tiles', 'fixed']
             corner-radius = 12
             tiles-style = 'row'
+            show-single = false
             """).windowSwitcher
         #expect(switcher.modifier == .alt)
         #expect(switcher.delayMs == 0)
         #expect(switcher.layouts == [.tiles, .fixed])
         #expect(switcher.cornerRadius == 12)
         #expect(switcher.tilesStyle == .row)
+        #expect(!switcher.showSingle)
         assertError("[window-switcher]\ntiles-style = 'grid'\n", path: "window-switcher.tiles-style", line: 2, contains: "'map', 'row'")
         assertError("[window-switcher]\nmodifier = 'fn'\n", path: "window-switcher.modifier", line: 2, contains: "'alt'")
         assertError("[window-switcher]\ndelay-ms = 5000\n", path: "window-switcher.delay-ms", line: 2, contains: "0 to 2000")
