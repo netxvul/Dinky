@@ -32,6 +32,9 @@ public func checkConfig(_ config: Config) -> [ConfigFinding] {
             check(commands, at: "mode.\(name).\(combo)")
         }
     }
+    for (swipe, commands) in config.gestures.swipes.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
+        check(commands, at: "gestures.\(swipe.rawValue)")
+    }
     for (i, rule) in config.rules.enumerated() {
         check(rule.run, at: "rules[\(i)].run")
     }

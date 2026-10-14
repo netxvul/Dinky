@@ -16,6 +16,7 @@ let package = Package(
                 .unsafeFlags(["-F/System/Library/PrivateFrameworks", "-framework", "SkyLight"]),
                 .linkedFramework("ApplicationServices"),
                 .linkedFramework("AppKit"),
+                .linkedFramework("IOKit"),
             ]
         ),
         // Pure layout engine: trees, rectangles, no AppKit. Fully unit tested.

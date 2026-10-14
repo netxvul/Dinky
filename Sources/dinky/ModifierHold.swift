@@ -10,9 +10,12 @@ import DinkyLayout
 //
 // `showFromKeyboard`, for a key binding, shows it without the modifier, until a key says what to do: the arrows and
 // h, j, k, l go to `navigate`, Tab and Shift-Tab and the binding again to `cycle`, Return, Enter or Space run `commit`, Esc runs
-// `hide`, all swallowed; any other key or a click runs `hide` and goes on. Shown by a binding with modifiers, letting
-// go of them all runs `commit`, as Cmd-Tab does; shown without, from the CLI, it waits for Return or Esc. Main thread
-// only.
+// `hide`, a digit picks what `pickNumber` numbers and runs `commit`, all swallowed; any other key or a click runs `hide` and goes on. Shown by a binding with modifiers, letting
+// go of them all runs `commit`, as Cmd-Tab does; shown without, from the CLI, it waits for Return or Esc. The mouse
+// works too: moves over what is shown, `within` says, go to `moved`, and a click there runs `commit`, swallowed. Shown by a
+// trackpad swipe, the swiping fingers drive it too: `fingersMoved` steps the pick and `fingersLifted` commits, as
+// `TrackpadGestures` says, or, lifted before a step, leaves it up for the pointer: moves go to `moved` and a click runs
+// `commit`, swallowed. Main thread only.
 final class ModifierHold {
     private enum State {
         case idle
@@ -30,6 +33,9 @@ final class ModifierHold {
     /// Keys that move the pick: the arrows, and h, j, k, l.
     private static let directions: [Int64: Direction] = [123: .left, 124: .right, 125: .down, 126: .up,
                                                          4: .left, 38: .down, 40: .up, 37: .right]
+    /// The digit keys, the row's and the keypad's, by the number they type; 0 is 10.
+    private static let digits: [Int64: Int] = [18: 1, 19: 2, 20: 3, 21: 4, 23: 5, 22: 6, 26: 7, 28: 8, 25: 9, 29: 10,
+                                                83: 1, 84: 2, 85: 3, 86: 4, 87: 5, 88: 6, 89: 7, 91: 8, 92: 9, 82: 10]
     /// Return, keypad Enter and Space.
     private static let confirms: Set<Int64> = [36, 76, 49]
 
@@ -44,7 +50,26 @@ final class ModifierHold {
     var commit: () -> Void = {}
     var hide: () -> Void = {}
 
+    /// Set while a trackpad swipe runs its commands, so a showing from the keyboard is driven by its fingers too.
+    static var gesturing = false
+    /// The hold the swiping fingers drive, while it shows.
+    private(set) static weak var driven: ModifierHold?
+
     private var state = State.idle
+    /// Picks what is numbered `n`, as a digit key asks; false if nothing is.
+    var pickNumber: (Int) -> Bool = { _ in false }
+    /// Whether something is numbered `n`.
+    var hasNumber: (Int) -> Bool = { _ in false }
+    /// Whether a point, in global coordinates with a top-left origin, is over what is shown.
+    var within: (CGPoint) -> Bool = { _ in false }
+    /// Whether the pick follows the fingers up and down as well as across, as on a map.
+    var vertical: () -> Bool = { false }
+    /// Shown from the keyboard by a swipe, whose fingers drive it.
+    var byFingers: Bool { Self.driven === self && isKeyboard }
+    /// Left up by fingers that lifted before a step: the pointer picks and a click commits.
+    private var byPointer = false
+    /// The click that committed went unseen; its release goes the same way.
+    private var swallowUp = false
     /// The modifiers held as it showed from the keyboard; letting go of them all commits.
     private var openedWith: CGEventFlags = []
     private static let modifierMasks: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl, .maskShift]
@@ -74,7 +99,12 @@ final class ModifierHold {
         let code = event.getIntegerValueField(.keyboardEventKeycode)
         return code == Self.escape || code == Self.tab || Self.confirms.contains(code)
             || (Self.directions[code] != nil && !event.flags.contains(.maskCommand))
+            || (Self.digits[code].map(hasNumber) ?? false)
     }
+
+    /// Whether it shows in the middle of the display: shown from the keyboard, but not by a gesture, which shows it
+    /// at the pointer like the modifier does.
+    var centred: Bool { isKeyboard && !byFingers }
 
     /// Whether it was shown from the keyboard.
     var isKeyboard: Bool {
@@ -102,7 +132,9 @@ final class ModifierHold {
         }
         start()
         state = .keyboard
-        openedWith = CGEventSource.flagsState(.combinedSessionState).intersection(Self.modifierMasks)
+        Self.driven = Self.gesturing ? self : nil
+        byPointer = false
+        openedWith = Self.gesturing ? [] : CGEventSource.flagsState(.combinedSessionState).intersection(Self.modifierMasks)
         guard show() else {
             state = .idle
             settle()
@@ -134,6 +166,25 @@ final class ModifierHold {
         (self.tap, source) = (nil, nil)
     }
 
+    /// The swiping fingers moved `steps` steps across, and `rows` down where the pick goes up and down.
+    func fingersMoved(steps: Int, rows: Int) {
+        guard byFingers else { return }
+        for _ in 0..<abs(steps) { navigate(steps > 0 ? .right : .left) }
+        if vertical() { for _ in 0..<abs(rows) { navigate(rows > 0 ? .down : .up) } }
+    }
+
+    /// The swiping fingers lifted: take the pick if they moved it, or leave it up for the pointer and more swipes.
+    func fingersLifted(stepped: Bool) {
+        guard byFingers else { return }
+        guard stepped else {
+            byPointer = true
+            return
+        }
+        state = .idle
+        commit()
+        settle()
+    }
+
     /// Hides what is shown without committing, as a binding that runs while it is up does.
     func dismiss() {
         switch state {
@@ -155,7 +206,7 @@ final class ModifierHold {
     private func start() {
         guard tap == nil else { return }
         let types: [CGEventType] = [.flagsChanged, .keyDown, .mouseMoved, .leftMouseDragged, .leftMouseDown,
-                                    .rightMouseDown, .otherMouseDown, .scrollWheel]
+                                    .leftMouseUp, .rightMouseDown, .otherMouseDown, .scrollWheel]
         let mask = types.reduce(CGEventMask(0)) { $0 | 1 << $1.rawValue }
         guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
                                           eventsOfInterest: mask, callback: holdCallback,
@@ -203,6 +254,21 @@ final class ModifierHold {
             dismiss()
         case .mouseMoved, .leftMouseDragged:
             if case .showing = state { moved(event.location) }
+            if pointerPicks(at: event.location) { moved(event.location) }
+        case .scrollWheel where byFingers:
+            // The swiping fingers scroll too, and their momentum goes on after they lift: none of it is for the app.
+            return false
+        case .leftMouseDown where pointerPicks(at: event.location):
+            state = .idle
+            swallowUp = true
+            commit()
+            return false
+        case .leftMouseUp:
+            guard swallowUp else { return true }
+            // Its press committed; the tap goes once the release is swallowed too.
+            swallowUp = false
+            settle()
+            return false
         default:
             // A click or scroll with the modifier is the modifier at work for something else.
             dismiss()
@@ -210,11 +276,23 @@ final class ModifierHold {
         return true
     }
 
+    /// Whether the pointer picks, shown from the keyboard: over what is shown, or anywhere once a swipe's fingers have
+    /// left it up, but not while they drive it.
+    private func pointerPicks(at point: CGPoint) -> Bool {
+        guard isKeyboard else { return false }
+        return byFingers ? byPointer : within(point)
+    }
+
     /// A key while shown from the keyboard; whether to let it through.
     private func keyboardKey(_ event: CGEvent) -> Bool {
         let code = event.getIntegerValueField(.keyboardEventKeycode)
         if code == Self.escape {
             dismiss()
+        } else if let n = Self.digits[code], pickNumber(n) {
+            // A digit picks what it numbers and takes it at once.
+            state = .idle
+            commit()
+            settle()
         } else if Self.confirms.contains(code) {
             state = .idle
             commit()

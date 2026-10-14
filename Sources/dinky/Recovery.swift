@@ -59,8 +59,10 @@ final class Recovery {
 
     /// Stops journaling, moves every journaled window back to its Space, writes its frame, and forgets the
     /// journal. Blocks until the frames are written. Returns a summary; what could not be restored is logged.
+    /// Without `spaces`, as on quitting, windows stay on the Spaces they are on now and only get their frames
+    /// back, so a restarted dinky finds them on the workspaces they were tiled on.
     @discardableResult
-    func restore() -> String {
+    func restore(spaces: Bool = true) -> String {
         recording = false
         guard let model, !entries.isEmpty else { return "nothing to restore" }
         let displays = AppState.shared.displays
@@ -76,12 +78,13 @@ final class Recovery {
                 return false
             }
             // Already in place, possibly on a Space AX cannot reach.
-            return dinky_window_info(entry.id).frame != entry.frame || dinky_window_space_id(entry.id) != entry.spaceID
+            return dinky_window_info(entry.id).frame != entry.frame
+                || (spaces && dinky_window_space_id(entry.id) != entry.spaceID)
         }
         // Frames first while windows are on screen, then Spaces, then frames again for windows that
         // came back onto a visible Space: AX only reaches windows on a Space that is on screen.
         var results = writeFrames(live)
-        let moved = moveBack(live, problems: &problems)
+        let moved = spaces ? moveBack(live, problems: &problems) : []
         for (id, result) in writeFrames(live.filter { moved.contains($0.id) }) { results[id] = result }
         for entry in live where results[entry.id]?.matched != true && problems[entry.id] == nil {
             let got = results[entry.id]?.got.map { "\($0)" } ?? "unreachable"

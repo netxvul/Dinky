@@ -32,6 +32,7 @@ extension Config {
 
     [scrolling]
     column-width = 0.49             # a new column's share of the display; a lone column fills it
+    glide = 'windows'               # windows (moved frame by frame) | snapshots (smooth, needs Screen Recording)
 
     [floating]
     move-step = 50                  # points `move` shifts a floating window by, unless the binding gives a number
@@ -110,6 +111,14 @@ extension Config {
     card-height = 85                # points, 60 to 200; the width follows each display's proportions
     thumbnails = 'windows'          # windows (pictures, need Screen Recording) | icons (app icons) | schematic (a fixed picture of the layout)
     # corner-radius = 18            # points, 0 to 80; [window-switcher]'s when left out
+
+    # Swipes on the trackpad, each running commands as a key binding does. A swipe that shows a switcher goes on
+    # picking with the same fingers, a step every `step` millimetres; lift them to take the pick.
+    # [gestures]
+    # fingers = 3                   # 2 to 5
+    # step = 12                     # millimetres per step, 4 to 50
+    # swipe-right = 'window-switcher'   # also swipe-left, swipe-up, swipe-down
+    # swipe-left = 'workspace-switcher'
 
     # Which key of each pair bindings answer to: both | left | right. With alt = 'left',
     # right Option still types special characters.

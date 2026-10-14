@@ -37,7 +37,6 @@ final class FrameApplier {
             write: { [unowned self] job in element(pid: job.pid, id: job.id).map { write(job.frame, to: $0) } },
             move: { [unowned self] job in element(pid: job.pid, id: job.id).map { move(job.frame.origin, to: $0) } }
         )
-        scheduler.onStepsWritten = { GlideStats.shared.drain(pid: $0, seconds: $1, windows: $2) }
     }
 
     /// Sizes windows refused to shrink below, from readback.
@@ -51,6 +50,12 @@ final class FrameApplier {
     func minimumSize(of id: WindowID, app: String?) -> CGSize? {
         scheduler.minimumSizes[id] ?? app.flatMap { app in lock.withLock { appMinimums[app] } }
     }
+
+    /// Whether the app was too slow to follow an animation step in the current glide. See `FrameScheduler.isSlow`.
+    func isSlow(_ pid: pid_t) -> Bool { scheduler.isSlow(pid) }
+
+    /// Forgets which apps were slow, as a glide starts.
+    func clearSlow() { scheduler.clearSlow() }
 
     /// The size each window has now, so the animator's first step moves it without writing its size again.
     func assume(_ sizes: [WindowID: CGSize], pids: [WindowID: pid_t]) {

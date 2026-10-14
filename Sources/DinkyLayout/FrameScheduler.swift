@@ -44,10 +44,12 @@ public final class FrameScheduler: @unchecked Sendable {
     private let write: (FrameJob) -> Void
     private let move: (FrameJob) -> Void
 
-    /// TEMPORARY: how long each process's animation steps took to write, with how many windows.
-    public var onStepsWritten: ((Int32, Double, Int) -> Void)?
+    /// Seconds an app may take to move its windows for one animation step before it counts as slow.
+    public static let slowStep: TimeInterval = 0.05
 
     private let lock = NSLock()
+    /// Processes that took longer than `slowStep` over an animation step since `clearSlow`.
+    private var slow: Set<Int32> = []
     private var apps: [Int32: App] = [:]
     private var minimums: [WindowID: CGSize] = [:]
     /// Refusals seen once, by window: a minimum only when a later pass sees the same one.
@@ -111,6 +113,13 @@ public final class FrameScheduler: @unchecked Sendable {
         return app
     }
 
+    /// Whether the process took longer than `slowStep` to move its windows for an animation step since `clearSlow`:
+    /// following it frame by frame would only show it stalling and jumping.
+    public func isSlow(_ pid: Int32) -> Bool { lock.withLock { slow.contains(pid) } }
+
+    /// Forgets which processes were slow, as a new glide starts.
+    public func clearSlow() { lock.withLock { slow = [] } }
+
     /// Takes `size` as the size last written for a window about to be stepped, its size now, so a first step that
     /// keeps it is a plain move: writing the size as well would make the app lay the window out again as it sets off.
     public func assume(_ size: CGSize, of id: WindowID, pid: Int32) {
@@ -160,12 +169,12 @@ public final class FrameScheduler: @unchecked Sendable {
         }
         if needsPrepare { prepare(app.pid) }
         let began = Date()
-        defer { if !steps.isEmpty { onStepsWritten?(app.pid, Date().timeIntervalSince(began), steps.count) } }
         for job in steps {
             app.written[job.id] == job.frame.size ? move(job) : write(job)
             app.written[job.id] = job.frame.size
             app.stepSizes[job.id, default: []].insert(job.frame.size)
         }
+        if !steps.isEmpty, Date().timeIntervalSince(began) > Self.slowStep { lock.withLock { _ = slow.insert(app.pid) } }
         let results = run(jobs, stepSizes: app.stepSizes) { self.lock.withLock { self.generation } == generation }
         for result in results {
             if result.written { app.written[result.job.id] = nil }

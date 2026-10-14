@@ -47,6 +47,14 @@ func runDoctor(_ args: [String]) -> Int32 {
         }
     }
 
+    if !config.gestures.swipes.isEmpty {
+        let fingers = config.gestures.fingers
+        let clashes = gestureClashes(fingers: fingers, swipes: Set(config.gestures.swipes.keys))
+        clashes.isEmpty ? ok("\(fingers)-finger swipes clash with nothing macOS does")
+                        : warn("\(fingers)-finger swipes also \(clashes.joined(separator: " and ")) in macOS; "
+                               + "change it in System Settings > Trackpad > More Gestures, or [gestures] fingers")
+    }
+
     // Where the workspaces go with the displays connected now; the app arranges the Spaces to match.
     let connected = dinky_displays()
     let displays = connected.map { d in
@@ -80,4 +88,26 @@ func runDoctor(_ args: [String]) -> Int32 {
 /// A boolean Dock setting, nil when unset.
 func dockSetting(_ key: String) -> Bool? {
     CFPreferencesCopyAppValue(key as CFString, "com.apple.dock" as CFString) as? Bool
+}
+
+/// What macOS does with the `swipes` dinky has bound for `fingers` fingers, from its trackpad settings.
+func gestureClashes(fingers: Int, swipes: Set<GestureSwipe>) -> [String] {
+    func setting(_ key: String) -> Int? {
+        CFPreferencesCopyAppValue(key as CFString, "com.apple.AppleMultitouchTrackpad" as CFString) as? Int
+    }
+    let across = swipes.contains(.swipeLeft) || swipes.contains(.swipeRight)
+    let upDown = swipes.contains(.swipeUp) || swipes.contains(.swipeDown)
+    var clashes: [String] = []
+    switch fingers {
+    case 2:
+        clashes.append("scroll")
+    case 3, 4:
+        let count = fingers == 3 ? "Three" : "Four"
+        if across, (setting("Trackpad\(count)FingerHorizSwipeGesture") ?? 2) != 0 { clashes.append("switch Spaces") }
+        if upDown, (setting("Trackpad\(count)FingerVertSwipeGesture") ?? 2) != 0 { clashes.append("open Mission Control") }
+        if fingers == 3, (setting("TrackpadThreeFingerDrag") ?? 0) != 0 { clashes.append("drag") }
+    default:
+        break
+    }
+    return clashes
 }

@@ -27,7 +27,7 @@ struct MenuBarBlocks: Equatable {
     }
 
     private static let height: CGFloat = 16
-    private static let radius: CGFloat = 2
+    private static let radius: CGFloat = 4
     private static let gap: CGFloat = 6
     private static let lineWidth: CGFloat = 1.5
     private static let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .bold)

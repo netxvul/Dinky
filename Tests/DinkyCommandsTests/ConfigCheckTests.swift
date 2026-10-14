@@ -25,6 +25,12 @@ struct ConfigCheckTests {
         #expect(findings[0].message.hasPrefix("mode.main.alt-h:"))
     }
 
+    @Test func `Unknown command in gesture`() throws {
+        let findings = try check("[mode.main]\n[gestures]\nswipe-left = 'fly left'")
+        #expect(findings.count == 1)
+        #expect(findings[0].message.hasPrefix("gestures.swipe-left:"))
+    }
+
     @Test func `Mode command must name a mode`() throws {
         let findings = try check("[mode.main]\nalt-h = 'mode resize'")
         #expect(findings.count == 1)

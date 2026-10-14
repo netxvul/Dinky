@@ -42,6 +42,13 @@ final class WorkspaceSwitcher {
         hold.commit = { [unowned self] in commit() }
         hold.hide = { [unowned self] in hide() }
         hold.navigate = { [unowned self] in navigate($0) }
+        hold.hasNumber = { [unowned self] n in cards.contains { $0.number == n } }
+        hold.pickNumber = { [unowned self] n in
+            guard let index = cards.firstIndex(where: { $0.number == n }) else { return false }
+            view.pick(index)
+            return true
+        }
+        hold.within = { [unowned self] in CGRect(origin: origin, size: layout.size).contains($0) }
         hold.cycle = { [unowned self] in navigate($0 ? .right : .left) }
     }
 
@@ -153,7 +160,7 @@ final class WorkspaceSwitcher {
         }
         let picked = cards.firstIndex { $0.display.uuid == here.uuid && $0.current }
             ?? cards.firstIndex { $0.display.uuid == here.uuid } ?? 0
-        origin = hold.isKeyboard ? SwitcherLayout.centred(layout.size, in: visible)
+        origin = hold.centred ? SwitcherLayout.centred(layout.size, in: visible)
                                  : layout.origin(anchor: picked, pointer: pointer, visible: visible)
         startPointer = pointer
         pointerMoved = false
@@ -201,6 +208,8 @@ final class WorkspaceSwitcher {
         let index = SwitcherLayout.step(view.picked, count: cards.count, toward: direction)
         guard index != view.picked else { return }
         view.pick(index)
+        // Felt, as a pointer's pick is, when the swiping fingers move it.
+        if hold.byFingers { tapTrackpad() }
     }
 
     private func pointerMoved(to point: CGPoint) {

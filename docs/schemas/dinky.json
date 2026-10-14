@@ -81,6 +81,12 @@
           "maximum": 1,
           "default": 0.49,
           "description": "A new column's width as a share of the display. A lone column fills the display."
+        },
+        "glide": {
+          "type": "string",
+          "enum": ["windows", "snapshots"],
+          "default": "windows",
+          "description": "How the strip scrolls with animations on: windows moved frame by frame, or snapshots of them gliding while the windows go to their places underneath at once. snapshots needs Screen Recording."
         }
       }
     },
@@ -351,6 +357,19 @@
         "on-workspace-change": { "type": "boolean", "default": true, "description": "Show the workspace's number and layout when a display moves to another workspace." }
       }
     },
+    "gestures": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Swipes on the trackpad with `fingers` fingers, each running a command or commands as a key binding does. A swipe that shows a switcher goes on picking with the same fingers until they lift.",
+      "properties": {
+        "fingers": { "type": "integer", "minimum": 2, "maximum": 5, "default": 3, "description": "How many fingers swipe. 2 also scrolls." },
+        "step": { "type": "number", "minimum": 4, "maximum": 50, "default": 12, "description": "Millimetres the fingers move for each step of a switcher's pick." },
+        "swipe-left": { "$ref": "#/definitions/commands" },
+        "swipe-right": { "$ref": "#/definitions/commands" },
+        "swipe-up": { "$ref": "#/definitions/commands" },
+        "swipe-down": { "$ref": "#/definitions/commands" }
+      }
+    },
     "modifiers": {
       "type": "object",
       "additionalProperties": false,
@@ -392,6 +411,20 @@
           "app-name": { "type": "string", "minLength": 1, "description": "Case-insensitive regex found anywhere in the app's name." },
           "title": { "type": "string", "minLength": 1, "description": "Case-insensitive regex found anywhere in the window title." },
           "kind": { "type": "string", "enum": ["normal", "dialog", "sheet", "panel"], "description": "The kind of window." },
+          "workspace-layout": {
+            "description": "The layout of the window's workspace as the rule's commands run, or a list of them. floating is a workspace that does not tile.",
+            "oneOf": [
+              { "$ref": "#/definitions/ruleLayout" },
+              { "type": "array", "minItems": 1, "items": { "$ref": "#/definitions/ruleLayout" } }
+            ]
+          },
+          "workspace": {
+            "description": "The number of the window's workspace as the rule's commands run, or a list of them.",
+            "oneOf": [
+              { "type": "integer", "minimum": 1 },
+              { "type": "array", "minItems": 1, "items": { "type": "integer", "minimum": 1 } }
+            ]
+          },
           "run": { "$ref": "#/definitions/commands", "description": "The command or commands to run for a matching window." }
         }
       }
@@ -408,6 +441,7 @@
     }
   },
   "definitions": {
+    "ruleLayout": { "type": "string", "enum": ["scrolling", "tiles", "dwindle", "accordion", "fixed", "floating"] },
     "gaps": {
       "type": "object",
       "additionalProperties": false,

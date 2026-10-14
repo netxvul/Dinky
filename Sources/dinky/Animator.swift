@@ -7,7 +7,15 @@ import DinkyLayout
 // readback, retry and raises. A new pass mid-flight retargets the windows: on the spring they curve to their new
 // tiles, keeping their speed; an easing starts over from where they are. A scrolling strip glides as a whole: its
 // windows ride in strip coordinates, unparked, and each frame the tree's `place` puts them all on screen together,
-// so a long scroll passes the columns between across the screen in turn. Main thread only.
+// so a long scroll passes the columns between across the screen in turn.
+//
+// Frames are stepped and written at 60 a second, even on a 120 Hz display: each app moves its own windows, and most
+// keep up with a move every 16 ms but not every 8, so the steadier pace looks smoother. An app that takes longer than
+// `FrameScheduler.slowStep` over one step stops being moved for the rest of the glide, and its windows land with the
+// tree's final write: stalling and leaping along would show more than one move at the end.
+//
+// A tree can glide something other than its windows instead, such as snapshots of them (see GlideStage): its frames go
+// to its `sink` and nowhere else, at the display's full rate, since no app has to keep up. Main thread only.
 final class Animator: NSObject {
     private struct Entry {
         var animation: FrameAnimation
@@ -22,6 +30,8 @@ final class Animator: NSObject {
     /// By tree, how its frames go on screen, for a strip: `place` takes every window's frame in strip coordinates,
     /// those resting at their targets, `base`, with the moving ones where they are now.
     private var placers: [UInt64: (base: [WindowID: CGRect], place: ([WindowID: CGRect]) -> [WindowID: CGRect])] = [:]
+    /// By tree, where its frames go instead of to its windows.
+    private var sinks: [UInt64: ([WindowID: CGRect]) -> Void] = [:]
     /// The frame last written for each moving window, so a parked window that stays put is not written every frame.
     private var written: [WindowID: CGRect] = [:]
     /// By tree, the rest of its latest pass, run once its windows have arrived.
@@ -67,9 +77,12 @@ final class Animator: NSObject {
     /// or with it, starts over from `starts`.
     func animate(_ key: UInt64, from starts: [WindowID: CGRect], to targets: [WindowID: CGRect],
                  pids: [WindowID: pid_t], place: (([WindowID: CGRect]) -> [WindowID: CGRect])? = nil,
-                 stretch: Double = 1, then finish: @escaping () -> Void) {
+                 stretch: Double = 1, sink: (([WindowID: CGRect]) -> Void)? = nil, then finish: @escaping () -> Void) {
+        // A new glide: every app gets another chance to keep up.
+        if entries.isEmpty { applier.clearSlow() }
         let wasPlaced = placers[key] != nil
         placers[key] = place.map { (targets, $0) }
+        sinks[key] = sink
         for (id, entry) in entries where entry.key == key && (targets[id] == nil || wasPlaced != (place != nil)) {
             entries[id] = nil
             written[id] = nil
@@ -106,6 +119,17 @@ final class Animator: NSObject {
         for result in results { landed[result.job.id] = result.got.map { (result.job.frame, $0) } }
     }
 
+    /// Stops the tree's windows where they are, without finishing its pass.
+    func stop(_ key: UInt64) {
+        for (id, entry) in entries where entry.key == key {
+            entries[id] = nil
+            written[id] = nil
+        }
+        finishes[key] = nil
+        placers[key] = nil
+        sinks[key] = nil
+    }
+
     /// Forgets a window that is gone, so a new window given its id starts fresh.
     func forget(_ id: WindowID) {
         entries[id] = nil
@@ -118,6 +142,7 @@ final class Animator: NSObject {
         entries = [:]
         finishes = [:]
         placers = [:]
+        sinks = [:]
         written = [:]
         link?.isPaused = true
         lastTick = nil
@@ -130,6 +155,10 @@ final class Animator: NSObject {
             link = (NSScreen.main ?? NSScreen.screens.first)?.displayLink(target: self, selector: #selector(tick))
             link?.add(to: .main, forMode: .common)
         }
+        // Only snapshots to move: as fast as the display goes. Any window: 60 a second.
+        let full = entries.values.allSatisfy { sinks[$0.key] != nil }
+        link?.preferredFrameRateRange = full ? CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+                                             : CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
         link?.isPaused = false
         lastStepAt = CACurrentMediaTime()
         if watchdog == nil {
@@ -159,18 +188,10 @@ final class Animator: NSObject {
 
     @objc private func tick(_ link: CADisplayLink) {
         // A stalled clock (sleep, a busy main thread) resumes where it was rather than leaping ahead.
-        let gap = lastTick.map { link.timestamp - $0 }
-        let dt = min(gap ?? link.duration, 1.0 / 30)
+        let dt = min(lastTick.map { link.timestamp - $0 } ?? link.duration, 1.0 / 30)
         lastTick = link.timestamp
-        GlideStats.shared.begin()
-        let began = CACurrentMediaTime()
         step(dt: dt)
-        GlideStats.shared.tick(gap: gap, step: CACurrentMediaTime() - began, jobs: lastJobs)
-        if entries.isEmpty { GlideStats.shared.end() }
     }
-
-    /// TEMPORARY: jobs written by the last step.
-    private var lastJobs = 0
 
     /// Advances every window by `dt` seconds and writes the frames; `dt` of `timeout` or more lands them all.
     private func step(dt: Double) {
@@ -183,6 +204,12 @@ final class Animator: NSObject {
             frames[id] = entries[id]!.animation.frame
             if done { entries[id] = nil; arrived.append(id) }
         }
+        // A tree gliding something else takes its frames, and its windows are left alone.
+        for (key, sink) in sinks {
+            let ours = frames.filter { moving[$0.key]?.key == key }
+            frames = frames.filter { moving[$0.key]?.key != key }
+            if !ours.isEmpty { sink(ours) }
+        }
         // A strip's windows go on screen together, each tree's resting ones where they rest.
         for (key, placer) in placers {
             let ours = frames.filter { moving[$0.key]?.key == key }
@@ -191,12 +218,11 @@ final class Animator: NSObject {
             for id in ours.keys { frames[id] = placed[id] ?? frames[id] }
         }
         var jobs: [FrameJob] = []
-        for (id, frame) in frames where written[id] != frame {
+        for (id, frame) in frames where written[id] != frame && !applier.isSlow(moving[id]!.pid) {
             written[id] = frame
             jobs.append(FrameJob(pid: moving[id]!.pid, id: id, frame: frame))
         }
         for id in arrived { written[id] = nil }
-        lastJobs = jobs.count
         applier.step(jobs)
         if !arrived.isEmpty { onArrive(arrived) }
         finishArrived()
@@ -214,6 +240,7 @@ final class Animator: NSObject {
         for (key, finish) in finishes where !moving.contains(key) {
             finishes[key] = nil
             placers[key] = nil
+            sinks[key] = nil
             finish()
         }
     }

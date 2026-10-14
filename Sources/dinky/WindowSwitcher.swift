@@ -84,6 +84,11 @@ final class WindowSwitcher {
         hold.commit = { [unowned self] in commit() }
         hold.hide = { [unowned self] in hide() }
         hold.navigate = { [unowned self] in navigate($0) }
+        hold.within = { [unowned self] in CGRect(origin: origin, size: arrangement.size).contains($0) }
+        hold.vertical = { [unowned self] in
+            if case .map = arrangement { return true }
+            return false
+        }
         hold.cycle = { [unowned self] forward in
             view.pick(SwitcherLayout.step(view.picked, count: items.count, toward: forward ? .right : .left))
         }
@@ -217,7 +222,7 @@ final class WindowSwitcher {
             let map = SwitcherMap(tiles: ids.map { tiles[$0]! }, bounds: workspace.bounds,
                                   cornerRadius: CGFloat(config.cornerRadius), maxWidth: maxWidth)
             arrangement = .map(map)
-            origin = hold.isKeyboard ? SwitcherLayout.centred(map.size, in: visible)
+            origin = hold.centred ? SwitcherLayout.centred(map.size, in: visible)
                                      : map.origin(anchor: picked, pointer: pointer, visible: visible)
         } else {
             let aspects = columns.map { $0.map { id -> CGFloat in
@@ -226,7 +231,7 @@ final class WindowSwitcher {
             } }
             let row = SwitcherLayout(columns: aspects, cornerRadius: CGFloat(config.cornerRadius), maxWidth: maxWidth)
             arrangement = .row(row)
-            origin = hold.isKeyboard ? SwitcherLayout.centred(row.size, in: visible)
+            origin = hold.centred ? SwitcherLayout.centred(row.size, in: visible)
                                      : row.origin(anchor: picked, pointer: pointer, visible: visible)
         }
         startPointer = pointer
@@ -260,6 +265,8 @@ final class WindowSwitcher {
         }
         guard let index, index != view.picked else { return }
         view.pick(index)
+        // Felt, as a pointer's pick is, when the swiping fingers move it.
+        if hold.byFingers { tapTrackpad() }
     }
 
     private func pointerMoved(to point: CGPoint) {

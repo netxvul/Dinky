@@ -180,7 +180,9 @@ printf 'workspace 2\n' | nc -U "$TMPDIR/dinky.sock"
 ## Recovery
 
 dinky journals each window's original frame and Space before tiling it. `enable
-off`, quitting, `kill` and logging out put them all back. After a crash, the
+off` puts them all back. Quitting, `kill` and logging out put back the frames
+but leave each window on the Space it is on, so dinky started again finds the
+windows on the workspaces they were tiled on. After a crash, the
 menu offers to restore them (or `dinky recover`); dinky stays off until `dinky
 enable on`.
 

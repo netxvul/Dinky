@@ -38,6 +38,7 @@ public struct Config: Equatable {
     public var hud = Hud()
     public var windowSwitcher = Switcher()
     public var workspaceSwitcher = WorkspaceSwitcher()
+    public var gestures = Gestures()
     public var modifiers = ModifierSides()
     public var hooks = Hooks()
     /// `[[rules]]`, in file order.
@@ -135,6 +136,7 @@ public struct Config: Equatable {
         if workspaceSwitcher.modifier != .none, workspaceSwitcher.modifier == windowSwitcher.modifier {
             throw ConfigError(path: "workspace-switcher.modifier", "[window-switcher] already uses '\(windowSwitcher.modifier.rawValue)'")
         }
+        gestures = try t.table("gestures").map(Gestures.init) ?? gestures
         modifiers = try t.table("modifiers").map(ModifierSides.init) ?? modifiers
         hooks = try t.table("hooks").map(Hooks.init) ?? hooks
         rules = try t.tables("rules")?.map(WindowRule.init) ?? []
@@ -190,11 +192,11 @@ public struct WorkspaceSettings: Equatable {
 }
 
 extension Config {
-    /// Whether a key binding in any mode runs `command`, a command name such as `workspace-switcher`.
+    /// Whether a key binding in any mode or a trackpad gesture runs `command`, a command name such as
+    /// `workspace-switcher`.
     public func binds(_ command: String) -> Bool {
-        modes.values.contains { mode in
-            mode.bindings.values.contains { $0.contains { $0.split(separator: " ").first.map(String.init) == command } }
-        }
+        let lists = modes.values.flatMap(\.bindings.values) + gestures.swipes.values
+        return lists.contains { $0.contains { $0.split(separator: " ").first.map(String.init) == command } }
     }
 
     /// The settings of the workspace with this number, the top-level ones for an unnumbered workspace.
@@ -228,14 +230,24 @@ public struct Scrolling: Equatable {
     /// A new column's width, as a share of the display's width inside the outer gaps. Omarchy's 0.49 fits two
     /// columns side by side with a sliver of margin; a lone column always fills the display.
     public var columnWidth = 0.49
+    /// How the strip scrolls with animations on.
+    public var glide = ScrollingGlide.windows
 
     public init() {}
 
     init(_ t: Table) throws {
         columnWidth = try t.double("column-width") ?? columnWidth
         guard (0.1...1).contains(columnWidth) else { throw ConfigError(path: t.path("column-width"), "must be 0.1 to 1") }
+        glide = try t.choice("glide") ?? glide
         try t.done()
     }
+}
+
+/// How a scrolling workspace's strip scrolls: its windows moved frame by frame, as fast as each app moves them, or
+/// snapshots of them gliding over a snapshot of what is behind, the windows put in place underneath at once. Snapshots
+/// need Screen Recording; without it the windows move.
+public enum ScrollingGlide: String, CaseIterable {
+    case windows, snapshots
 }
 
 /// The modifier that shows the switcher, its side as `[modifiers]` says; `none` turns the switcher off.
@@ -285,6 +297,38 @@ public struct Switcher: Equatable {
         guard (0...80).contains(cornerRadius) else { throw ConfigError(path: t.path("corner-radius"), "must be 0 to 80") }
         tilesStyle = try t.choice("tiles-style") ?? tilesStyle
         showSingle = try t.bool("show-single") ?? showSingle
+        try t.done()
+    }
+}
+
+/// A swipe on the trackpad that `[gestures]` can bind, by the way the fingers move.
+public enum GestureSwipe: String, CaseIterable {
+    case swipeLeft = "swipe-left", swipeRight = "swipe-right", swipeUp = "swipe-up", swipeDown = "swipe-down"
+}
+
+/// `[gestures]`: swipes on the trackpad with `fingers` fingers, each running commands as a key binding does. A swipe
+/// that shows a switcher goes on picking with the same fingers, a step every `step` millimetres, until they lift.
+public struct Gestures: Equatable {
+    /// How many fingers swipe, 2 to 5.
+    public var fingers = 3
+    /// Millimetres the fingers move for each step of a switcher's pick.
+    public var step = 12.0
+    public var swipes: [GestureSwipe: [String]] = [:]
+
+    public init() {}
+
+    init(_ t: Table) throws {
+        fingers = try t.int("fingers") ?? fingers
+        guard (2...5).contains(fingers) else { throw ConfigError(path: t.path("fingers"), "must be 2 to 5") }
+        step = try t.double("step") ?? step
+        guard (4...50).contains(step) else { throw ConfigError(path: t.path("step"), "must be 4 to 50") }
+        for key in t.keys where key != "fingers" && key != "step" {
+            guard let swipe = GestureSwipe(rawValue: key) else {
+                let choices = GestureSwipe.allCases.map { "'\($0.rawValue)'" }.joined(separator: ", ")
+                throw ConfigError(path: t.path(key), "'\(key)' is not one of \(choices)")
+            }
+            swipes[swipe] = try t.commands(key)
+        }
         try t.done()
     }
 }

@@ -1,6 +1,8 @@
 import AppKit
 import DinkyCommands
 import DinkyConfig
+import DinkyLayout
+import DinkyPrivate
 
 // Window classification for the coordinator: the AX window kind, its fullscreen button and the config's `[[rules]]`.
 
@@ -27,25 +29,57 @@ extension Coordinator {
         let title = axString(element, kAXTitleAttribute) ?? ""
         // `layout floating` and `layout tiling` decide here, the last one wins; `grid` floats the window too, so it
         // is never tiled on its way to its cells. Other rule commands, such as move-window-to-workspace, run for
-        // this window once it is placed.
+        // this window once it is placed. A rule about the window's workspace decides here by the workspace the window
+        // shows on, and its other commands look again as they run, since an earlier rule may have moved the window.
         var floats: Bool?
         var runsRules = false
-        for command in config.commands(for: window, kind: kind, title: title) {
-            switch command {
-            case .layout([.floating]): floats = true
-            case .layout([.tiling]): floats = false
-            default:
-                if case .grid = command { floats = true }
-                runsRules = true
-                DispatchQueue.main.async {
-                    let reply = Dispatcher.run(command, window: window.id)
-                    if !reply.ok { fputs("rule: \(reply.text)\n", stderr) }
+        // Only a new window runs the other commands. One open before dinky started, as on a restart, is where
+        // they left it, and running them again would move it, resize it and follow it about.
+        let isNew = window.identity.firstSeen > model.seededAt
+        for rule in config.rules(for: window, kind: kind, title: title) {
+            let holdsNow = !rule.asksWorkspace || matchesWorkspace(rule, space: window.spaceID)
+            for command in rule.run.compactMap({ try? Command.parse($0) }) {
+                switch command {
+                case .layout([.floating]): if holdsNow { floats = true }
+                case .layout([.tiling]): if holdsNow { floats = false }
+                default:
+                    if holdsNow, case .grid = command { floats = true }
+                    guard isNew else { continue }
+                    if holdsNow { runsRules = true }
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self else { return }
+                        if rule.asksWorkspace {
+                            let space = dinky_window_space_id(window.id)
+                            guard matchesWorkspace(rule, space: space != 0 ? space : window.spaceID) else { return }
+                        }
+                        let reply = Dispatcher.run(command, window: window.id)
+                        if !reply.ok { fputs("rule: \(reply.text)\n", stderr) }
+                    }
                 }
             }
         }
         let floating = kind != .normal || !resizable.boolValue
             || (floats ?? (config.floatWindowsWithoutFullscreen && lacksFullscreen(element, bundleID: window.bundleID)))
         return (floating, runsRules)
+    }
+}
+
+extension Coordinator {
+    /// Whether a rule's `workspace-layout` and `workspace` hold for a window on `space`.
+    func matchesWorkspace(_ rule: WindowRule, space: UInt64) -> Bool {
+        rule.matches(layout: ruleLayout(ofSpace: space), workspace: AppState.shared.numbers.number(of: space))
+    }
+
+    /// The Space's layout as rules name it: its tree's, which a `layout` command may have switched, else its settings'.
+    func ruleLayout(ofSpace space: UInt64) -> RuleLayout {
+        let settings = settings(for: space)
+        guard settings.tiling, !settings.float else { return .floating }
+        return switch workspaces[space]?.algorithm ?? algorithm(settings) {
+        case .scrolling: .scrolling
+        case .dwindle(.tiles): .tiles
+        case .dwindle(.accordion): .accordion
+        case .fixed: .fixed
+        }
     }
 }
 
@@ -76,10 +110,9 @@ private func buttonEnabled(_ element: AXUIElement, _ attribute: String) -> Bool 
 }
 
 extension Config {
-    /// The commands of every rule that matches, in order. Commands that do not parse are skipped.
-    func commands(for window: Window, kind: WindowKind, title: String) -> [Command] {
+    /// Every rule whose conditions on the window itself hold, in order; those on its workspace are the caller's.
+    func rules(for window: Window, kind: WindowKind, title: String) -> [WindowRule] {
         rules.filter { $0.matches(appId: window.bundleID, appName: window.appName, title: title, kind: kind) }
-            .flatMap { $0.run.compactMap { try? Command.parse($0) } }
     }
 }
 

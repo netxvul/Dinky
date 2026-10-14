@@ -80,6 +80,11 @@ struct SchemaTests {
         #expect(switcher["thumbnails"]!["enum"] as! [String] == WorkspaceSwitcherThumbnails.allCases.map(\.rawValue))
     }
 
+    @Test func `Rule layouts agree`() {
+        let definitions = Self.schema["definitions"] as! [String: [String: Any]]
+        #expect(definitions["ruleLayout"]!["enum"] as! [String] == RuleLayout.allCases.map(\.rawValue))
+    }
+
     @Test func `Menu bar icons agree`() {
         let properties = Self.schema["properties"] as! [String: [String: Any]]
         #expect(properties["menu-bar-icon"]!["enum"] as! [String] == MenuBarIcon.allCases.map(\.rawValue))
@@ -126,6 +131,7 @@ struct SchemaTests {
 
         [scrolling]
         column-width = 0.5
+        glide = 'snapshots'
 
         [window-switcher]
         modifier = 'alt'
@@ -144,6 +150,14 @@ struct SchemaTests {
         card-height = 90
         thumbnails = 'icons'
         corner-radius = 18
+
+        [gestures]
+        fingers = 4
+        step = 15
+        swipe-left = 'workspace-switcher'
+        swipe-right = ['window-switcher']
+        swipe-up = 'focus up'
+        swipe-down = 'focus down'
 
         [floating]
         move-step = 20
@@ -225,6 +239,8 @@ struct SchemaTests {
         app-name = 'safari'
         title = 'settings'
         kind = 'dialog'
+        workspace-layout = ['scrolling', 'tiles']
+        workspace = 2
         run = ['layout floating', 'move-window-to-workspace 2']
 
         [mode.main]

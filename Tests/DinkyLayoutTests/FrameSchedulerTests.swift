@@ -359,3 +359,20 @@ struct FrameSchedulerStepTests {
         #expect(scheduler.minimumSizes[10] == nil)
     }
 }
+
+struct SlowStepTests {
+    @Test func `An app slower than a step's allowance counts as slow until cleared`() {
+        let windows = FakeWindows([10: .zero, 20: .zero])
+        windows.holds[10] = DispatchSemaphore(value: 0)
+        let scheduler = windows.scheduler()
+        // Window 10's app is stuck past the allowance; window 20's moves at once.
+        scheduler.step([job(1, 10, 50), job(2, 20, 50)])
+        Thread.sleep(forTimeInterval: FrameScheduler.slowStep + 0.03)
+        windows.holds[10]!.signal()
+        Thread.sleep(forTimeInterval: 0.05)
+        #expect(scheduler.isSlow(1))
+        #expect(!scheduler.isSlow(2))
+        scheduler.clearSlow()
+        #expect(!scheduler.isSlow(1))
+    }
+}

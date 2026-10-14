@@ -8,16 +8,7 @@ final class AppState {
 
     /// Runs each binding's commands in order through the dispatcher. Started by the app once
     /// Accessibility is granted.
-    let hotkeys = HotkeyEngine { commands in
-        // A binding that uses a switcher's modifier is the modifier at work for something else, unless it is the
-        // switcher's own command, which steps its pick.
-        if !commands.contains("window-switcher") { WindowSwitcher.shared.dismiss() }
-        if !commands.contains("workspace-switcher") { WorkspaceSwitcher.shared.dismiss() }
-        for command in commands {
-            let reply = Dispatcher.run(command)
-            if !reply.ok { fputs("\(command): \(reply.text)\n", stderr) }
-        }
-    }
+    let hotkeys = HotkeyEngine(onCommands: runBound)
 
     /// The config in effect. A config that fails to load leaves the previous one here.
     private(set) var config = Config.default
@@ -73,17 +64,19 @@ final class AppState {
         hoverFocus.update(config: config.focusFollowsMouse)
         WindowSwitcher.shared.update(config: config)
         WorkspaceSwitcher.shared.update(config: config)
+        propagateEnabled()
     }
 
     /// The one enable transition. Off stops tiling and puts every window back where it was before dinky
     /// touched it, and returns the restore's summary. This is the emergency path: `dinky enable off`, the
     /// menu's Enabled item, `dinky recover` and quitting all come through here.
+    /// Quitting keeps windows on their Spaces (`spaces: false`), so a restart picks them up where they were tiled.
     @discardableResult
-    func setEnabled(_ on: Bool) -> String {
+    func setEnabled(_ on: Bool, spaces: Bool = true) -> String {
         if on { recovery.resume() }
         enabled = on
         propagateEnabled()
-        return on ? "" : recovery.restore()
+        return on ? "" : recovery.restore(spaces: spaces)
     }
 
     /// `dinky recover` and the menu's restore item: after a crash, stops tiling and restores every
@@ -93,9 +86,9 @@ final class AppState {
         return .ok(setEnabled(false) + "; dinky is disabled, `dinky enable on` tiles again")
     }
 
-    /// Quitting stops tiling and puts every window back.
+    /// Quitting stops tiling and puts every window back to its frame, on the Space it is on now.
     func quit() {
-        setEnabled(false)
+        setEnabled(false, spaces: false)
     }
 
     private func apply(_ result: Result<Config, ConfigError>) {
@@ -126,5 +119,19 @@ final class AppState {
     private func propagateEnabled() {
         hotkeys.enabled = enabled
         coordinator?.enabled = enabled
+        // Gestures run commands, so not before the coordinator is there to take them.
+        TrackpadGestures.shared.update(config: config.gestures, enabled: enabled && coordinator != nil)
+    }
+}
+
+/// Runs a key binding's or a gesture's commands in order through the dispatcher.
+func runBound(_ commands: [String]) {
+    // A binding that uses a switcher's modifier is the modifier at work for something else, unless it is the
+    // switcher's own command, which steps its pick.
+    if !commands.contains("window-switcher") { WindowSwitcher.shared.dismiss() }
+    if !commands.contains("workspace-switcher") { WorkspaceSwitcher.shared.dismiss() }
+    for command in commands {
+        let reply = Dispatcher.run(command)
+        if !reply.ok { fputs("\(command): \(reply.text)\n", stderr) }
     }
 }

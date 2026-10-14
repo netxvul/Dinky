@@ -168,6 +168,9 @@ struct ConfigTests {
         #expect(try Config.parse("[scrolling]\ncolumn-width = 0.5\n").scrolling.columnWidth == 0.5)
         #expect(try Config.parse("default-layout = 'scrolling'\n").defaultLayout == .scrolling)
         assertError("[scrolling]\ncolumn-width = 1.5\n", path: "scrolling.column-width", line: 2, contains: "0.1 to 1")
+        #expect(Config().scrolling.glide == .windows)
+        #expect(try Config.parse("[scrolling]\nglide = 'snapshots'\n").scrolling.glide == .snapshots)
+        assertError("[scrolling]\nglide = 'fast'\n", path: "scrolling.glide", line: 2, contains: "'windows', 'snapshots'")
     }
 
     @Test func `Window switcher`() throws {
@@ -238,6 +241,29 @@ struct ConfigTests {
         assertError("[workspace-switcher]\ncorner-radius = 81\n", path: "workspace-switcher.corner-radius", line: 2, contains: "0 to 80")
     }
 
+    @Test func `Gestures`() throws {
+        let defaults = Config().gestures
+        #expect(defaults.fingers == 3)
+        #expect(defaults.step == 12)
+        #expect(defaults.swipes.isEmpty)
+        let config = try Config.parse("""
+            [gestures]
+            fingers = 4
+            step = 20
+            swipe-right = 'window-switcher'
+            swipe-left = ['workspace-switcher', 'focus left']
+            """)
+        #expect(config.gestures.fingers == 4)
+        #expect(config.gestures.step == 20)
+        #expect(config.gestures.swipes == [.swipeRight: ["window-switcher"], .swipeLeft: ["workspace-switcher", "focus left"]])
+        #expect(config.binds("workspace-switcher"))
+        #expect(!config.binds("layout"))
+        assertError("[gestures]\nfingers = 1\n", path: "gestures.fingers", line: 2, contains: "2 to 5")
+        assertError("[gestures]\nstep = 2\n", path: "gestures.step", line: 2, contains: "4 to 50")
+        assertError("[gestures]\no = 'workspace 1'\n", path: "gestures.o", line: 2, contains: "'swipe-left'")
+        assertError("[gestures]\nswipe-up = []\n", path: "gestures.swipe-up", line: 2, contains: "can't be empty")
+    }
+
     @Test func `Syntax error has line`() {
         let error = #expect(throws: ConfigError.self) {
             try Config.parse("workspaces = 5\n[gaps\n")
@@ -298,6 +324,38 @@ struct ConfigTests {
         assertError("[mode.main.binding]\nalt-a = 'x'\n", path: "mode.main.binding", line: 1, contains: "unknown key 'binding'")
     }
 
+    @Test func `Rules on the window's workspace`() throws {
+        let rules = try Config.parse("""
+        [[rules]]
+        workspace-layout = 'scrolling'
+        run = 'cycle-size 70%'
+
+        [[rules]]
+        workspace-layout = ['dwindle', 'fixed']
+        workspace = [1, 4]
+        run = 'cycle-size 60%'
+
+        [[rules]]
+        workspace = 3
+        run = 'layout floating'
+        """).rules
+        #expect(rules[0].workspaceLayouts == [.scrolling] && rules[0].workspaces == nil && rules[0].asksWorkspace)
+        #expect(rules[0].matches(layout: .scrolling, workspace: 2))
+        #expect(!rules[0].matches(layout: .tiles, workspace: 2))
+        // dwindle and tiles are one layout; both conditions must hold.
+        #expect(rules[1].matches(layout: .tiles, workspace: 1))
+        #expect(rules[1].matches(layout: .fixed, workspace: 4))
+        #expect(!rules[1].matches(layout: .tiles, workspace: 2))
+        #expect(!rules[1].matches(layout: .scrolling, workspace: 1))
+        #expect(!rules[1].matches(layout: .tiles, workspace: nil), "an unnumbered workspace is none of the numbers")
+        #expect(rules[2].workspaces == [3] && rules[2].workspaceLayouts == nil)
+        #expect(rules[2].matches(layout: .floating, workspace: 3))
+        assertError("[[rules]]\nworkspace-layout = 'grid'\nrun = 'x'\n", path: "rules[0].workspace-layout", line: 2, contains: "'scrolling', 'tiles'")
+        assertError("[[rules]]\nworkspace-layout = []\nrun = 'x'\n", path: "rules[0].workspace-layout", line: 2, contains: "empty")
+        assertError("[[rules]]\nworkspace = 0\nrun = 'x'\n", path: "rules[0].workspace", line: 2, contains: "from 1")
+        assertError("[[rules]]\nworkspace = 'two'\nrun = 'x'\n", path: "rules[0].workspace", line: 2, contains: "integer")
+    }
+
     @Test func `Window rule round-trips`() throws {
         let config = try Config.parse("""
         [[rules]]
@@ -325,6 +383,8 @@ struct ConfigTests {
         #expect(!expected.matches(appId: "com.apple.finder", appName: "Finder", title: "Desktop", kind: .dialog))
         #expect(!expected.matches(appId: "com.apple.Safari", appName: "Finder", title: "Copy", kind: .dialog))
         #expect(second.matches(appId: nil, appName: nil, title: "", kind: .normal), "a rule with no conditions matches everything")
+        #expect(!second.asksWorkspace)
+        #expect(second.matches(layout: .floating, workspace: nil))
     }
 
     @Test func `Bad window rules fail`() {

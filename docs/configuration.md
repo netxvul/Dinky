@@ -128,6 +128,7 @@ ctrl-alt-cmd-s = 'layout tiles accordion scrolling'
 | Key | Default | |
 |---|---|---|
 | `column-width` | `0.49` | A new column's width, as a share of the display inside the outer gaps, from `0.1` to `1`. Omarchy's `0.49` fits two columns side by side. |
+| `glide` | `'windows'` | How the strip scrolls with animations on. `'windows'` moves the windows frame by frame, as fast as each app moves them: an app slow to move its windows stutters, and is left to land at the end. `'snapshots'` glides snapshots of the windows over a snapshot of what is behind them, at the display's full rate, while the windows go to their places underneath at once; the windows' contents stand still for the glide. It needs Screen Recording, and falls back to `'windows'` without it. |
 
 </div>
 
@@ -363,8 +364,9 @@ keyboard instead, in the middle of the display under the pointer: the arrows
 or h, j, k, l move the pick (onto the nearest tile that way on a map), Tab and
 Shift-Tab step through, Return or Space focuses the window picked and Esc
 closes it. The binding again steps to the next window, and letting go of its
-modifiers focuses the window picked, as Cmd-Tab does. It works with
-`modifier = 'none'` too.
+modifiers focuses the window picked, as Cmd-Tab does. The mouse works too:
+move the pointer over a window in the capsule to pick it and click to focus
+it. It works with `modifier = 'none'` too.
 
 ```toml
 [mode.main]
@@ -425,7 +427,9 @@ A key binding to the `workspace-switcher` command shows the capsule in the
 middle of the display under the pointer instead: the arrows or h, j, k, l and
 Tab and Shift-Tab move the pick, Return or Space switches to it and Esc closes
 it; the binding again steps to the next workspace, and letting go of its
-modifiers switches to the one picked.
+modifiers switches to the one picked. A digit switches to the workspace with
+that number at once, 0 for 10. The mouse works too: move the pointer over a
+card to pick it and click to switch to it.
 
 Every card has its own display's proportions. With more than one display and
 `displays = 'all'`, each display's workspaces are a group, left to right as the
@@ -457,6 +461,44 @@ on screen as the capsule shows; a window not captured yet shows its app's icon.
 [workspace-switcher]
 modifier = 'ctrl'
 exclude = [3]
+```
+
+## `[gestures]`
+
+Swipe on the trackpad with `fingers` fingers and the swipe's commands run, as
+a key binding's do; the trackpad ticks. A swipe is the fingers moving about a
+centimetre, mostly one way, soon after they land.
+
+A swipe that shows the [window-switcher](#window-switcher) or the
+[workspace-switcher](#workspace-switcher) goes on with the same fingers, as
+holding the modifier does: keep them down and move them across, a step of the
+pick every `step` millimetres, each one felt; on a map, up and down too. Lift
+them to take the pick. Lifted before the pick moves, as at the end of a quick
+swipe, the capsule stays up: move the pointer to pick and click to take it, or
+put the fingers down again and slide them. Another finger closes the capsule,
+and so does Esc.
+
+Two fingers also scroll, so three is the default. macOS swipes three fingers
+across to switch Spaces and up for Mission Control unless that is off or set
+to four fingers in System Settings, Trackpad, More Gestures; `dinky doctor`
+says when a bound swipe clashes. Gestures read the trackpad through macOS's
+private MultitouchSupport framework, the built-in trackpad and Magic Trackpads
+alike.
+
+<div class="wide-table" markdown="1">
+
+| Key | Default | |
+|---|---|---|
+| `fingers` | `3` | How many fingers swipe, `2` to `5`. |
+| `step` | `12` | Millimetres the fingers move for each step of a switcher's pick, `4` to `50`. |
+| `swipe-left`, `swipe-right`, `swipe-up`, `swipe-down` | | The command or commands the swipe runs. |
+
+</div>
+
+```toml
+[gestures]
+swipe-right = 'window-switcher'
+swipe-left = 'workspace-switcher'
 ```
 
 ## `[modifiers]`
@@ -500,6 +542,10 @@ sheets, panels and fixed-size windows always float. Windows that can't go full
 screen float too while `float-windows-without-fullscreen` is on, unless a
 `layout tiling` rule tiles them.
 
+Windows already open when dinky starts are not new: `layout floating`,
+`layout tiling` and `grid` still float or tile them, but no other command runs,
+so restarting dinky moves, resizes and follows nothing.
+
 A rule that is exactly `layout floating` or `layout tiling` decides before the
 window is placed, the last one winning. A `grid` rule floats the window too, so
 it goes straight to its cells without being tiled first. Every other rule
@@ -517,9 +563,17 @@ it goes instead.
 | `app-name` | Case-insensitive regex. |
 | `title` | Case-insensitive regex. |
 | `kind` | `'normal'`, `'dialog'`, `'sheet'` or `'panel'`. |
+| `workspace-layout` | The layout of the window's workspace, or a list of them: `'scrolling'`, `'tiles'` (or `'dwindle'`), `'accordion'`, `'fixed'`, or `'floating'` for a workspace that does not tile (`tiling = false` or `float = true`). Its layout now, as a `layout` command may have switched it. |
+| `workspace` | The number of the window's workspace, or a list of them. |
 | `run` | Required. A command or a list. |
 
 </div>
+
+`workspace-layout` and `workspace` are about the workspace the window is on as
+the rule's commands run, so a rule after one that moves the window looks at
+where it went. A rule that is exactly `layout floating` or `layout tiling`
+looks at the workspace the window first shows on. A rule whose workspace does
+not match is skipped; the others still run.
 
 ```toml
 [[rules]]
@@ -530,6 +584,17 @@ run = ['layout floating', 'move-window-to-workspace 5']
 [[rules]]
 app-id = 'com.apple.finder'
 run = 'grid 3:3:1:1:1:1'
+
+# Ghostty's new windows: a 70% column on a scrolling workspace, 60% of the row on a tiled one.
+[[rules]]
+app-id = 'com.mitchellh.ghostty'
+workspace-layout = 'scrolling'
+run = 'cycle-size 70%'
+
+[[rules]]
+app-id = 'com.mitchellh.ghostty'
+workspace-layout = ['tiles', 'fixed']
+run = 'cycle-size 60%'
 ```
 
 ## `[mode.<name>]`
@@ -585,6 +650,7 @@ orientation = 'auto'            # auto: run along the container's longer side | 
 
 [scrolling]
 column-width = 0.49             # a new column's share of the display; a lone column fills it
+glide = 'windows'               # windows (moved frame by frame) | snapshots (smooth, needs Screen Recording)
 
 [floating]
 move-step = 50                  # points `move` shifts a floating window by, unless the binding gives a number

@@ -103,6 +103,15 @@ enum Dispatcher {
                     FloatingFrame.centered(SizeCycle.next(after: Double(frame.width / area.width), in: shares), in: area)
                 }
             }) { return reply }
+            // A rule's window, which need not have focus yet: its own tree, with it focused there.
+            if let window, let coordinator = AppState.shared.coordinator, let key = coordinator.placements[window]?.space {
+                let changed = coordinator.command(onSpace: key) { workspace -> Bool in
+                    guard workspace.contains(window) else { return false }
+                    if workspace.focused != window { workspace.focus(window) }
+                    return workspace.cycleWidth(through: shares)
+                }
+                return changed == true ? .ok(name) : .error("\(name): nothing to do")
+            }
             return tree(name) { $0.cycleWidth(through: shares) }
         case .flattenWorkspaceTree:
             return tree("flatten-workspace-tree", wholeSpace: true) { $0.flatten(); return true }

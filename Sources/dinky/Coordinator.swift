@@ -62,6 +62,10 @@ final class Coordinator {
     /// By scrolling tree, its strip frames as last applied, unparked and parked, so the next glide starts each window
     /// where the strip had it rather than where it was parked.
     private var lastStrips: [UInt64: (strip: [WindowID: CGRect], placed: [WindowID: CGRect])] = [:]
+    /// By scrolling tree, a glide of snapshots under way or being made ready, and the layout it is gliding to. See
+    /// GlideStage.
+    private var glides: [UInt64: (token: Int, stage: GlideStage?, layout: Layout)] = [:]
+    private var glideTokens = 0
     /// Where dinky last sent each floating window, so a command pressed again mid-glide starts from where the
     /// window is going rather than where it is.
     private(set) var floatingTargets: [WindowID: CGRect] = [:]
@@ -121,8 +125,6 @@ final class Coordinator {
     // MARK: Events
 
     private func handle(_ event: WindowEvent) {
-        let began = CACurrentMediaTime()
-        defer { GlideStats.shared.event(CACurrentMediaTime() - began) }
         // Detected here, not in the border manager, so hover focus stands down even with borders off.
         if MissionControl.shared.update(from: model) { borders?.missionControlChanged() }
         borders?.handle(event)
@@ -389,11 +391,20 @@ final class Coordinator {
         workspace.minimumSizes = minimumSizes(in: workspace)
         workspaces[key] = workspace
         let layout = workspace.layout()
+        // A glide of snapshots already heading for this layout carries on; one heading elsewhere gives way to this pass,
+        // its windows on the places it wrote them to.
+        if let glide = glides[key] {
+            if glide.layout == layout { return }
+            glides[key] = nil
+            glide.stage?.remove(fading: false)
+            animator.stop(key)
+        }
         let pids = Dictionary(uniqueKeysWithValues: layout.order.compactMap { id in model.windows[id].map { (id, $0.pid) } })
-        let write = { [weak self] in
+        let writeThen = { [weak self] (landed: @escaping () -> Void) in
             guard let self else { return }
             applier.apply(layout, pids: pids, front: workspace.focused) { [weak self] results in
                 DispatchQueue.main.async {
+                    landed()
                     guard let self, self.enabled else { return }
                     self.animator.noteLanded(results)
                     self.edit(key) { $0.minimumSizes = self.minimumSizes(in: $0) }
@@ -408,6 +419,7 @@ final class Coordinator {
                 }
             }
         }
+        let write = { writeThen {} }
         let strip = workspace.stripFrames, previous = lastStrips[key]
         lastStrips[key] = strip.isEmpty ? nil : (strip, layout.frames)
         guard animates, snap.remove(key) == nil else { return write() }
@@ -448,7 +460,37 @@ final class Coordinator {
             for id in fullscreen where frames[id] != nil { placed[id] = frames[id] }
             return placed
         }
-        animator.animate(key, from: starts, to: targets, pids: pids, place: place, stretch: stretch, then: write)
+        let glidesSnapshots = config.scrolling.glide == .snapshots && fullscreen.isEmpty && Thumbnails.shared.permitted
+        guard glidesSnapshots, let display = displays.display(containingSpace: key) else {
+            return animator.animate(key, from: starts, to: targets, pids: pids, place: place, stretch: stretch, then: write)
+        }
+        // Snapshots of the strip glide over a snapshot of what is behind it, while the windows go to their places
+        // underneath at once. Without the snapshots in time, the windows glide.
+        animator.stop(key)
+        glideTokens += 1
+        let token = glideTokens
+        glides[key] = (token, nil, layout)
+        let corners = Dictionary(uniqueKeysWithValues: strip.keys.compactMap { id in
+            model.windows[id].map { (id, CGFloat($0.cornerRadius)) }
+        })
+        GlideStage.capture(Array(strip.keys), on: display) { [weak self] stage in
+            guard let self, glides[key]?.token == token else { stage?.remove(fading: false); return }
+            guard let stage else {
+                glides[key] = nil
+                animator.animate(key, from: starts, to: targets, pids: pids, place: place, stretch: stretch, then: write)
+                return
+            }
+            glides[key]!.stage = stage
+            stage.onRemoved = { [weak self] in
+                if self?.glides[key]?.token == token { self?.glides[key] = nil }
+            }
+            stage.show(at: starts.filter { strip[$0.key] != nil }, order: layout.order, corners: corners)
+            // A frame later, so the stage is up before the windows move under it.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 60) { writeThen { stage.windowsLanded() } }
+            animator.animate(key, from: starts, to: targets, pids: pids, stretch: stretch, sink: { stage.move($0) }) {
+                stage.glideEnded()
+            }
+        }
     }
 
     /// Moves a floating window to `frame`: gliding there from where it is when passes glide, then written with
