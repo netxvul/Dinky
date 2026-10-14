@@ -118,6 +118,17 @@ extension Workspace {
         return result
     }
 
+    /// Scrolling: the strip's frames before parking, at the current scroll offset. Gliding these and parking them
+    /// on every frame (`placeStrip`) scrolls the strip as one: a column passing through slides across the screen
+    /// where the strip has it, rather than every parked window flying straight from one edge to the other.
+    public var stripFrames: [WindowID: CGRect] {
+        isScrolling ? stripLayout().frames : [:]
+    }
+
+    /// Where strip frames, such as `stripFrames` part way through a glide, go on screen: parked as `layout()` parks
+    /// them.
+    public func placeStrip(_ frames: [WindowID: CGRect]) -> [WindowID: CGRect] { parked(frames) }
+
     /// Where the strip's windows go on screen, see `parked(_:)`. At a wall, a window scrolled out past it hides
     /// behind the column in view nearest the wall instead, taking the frame of that column's biggest window, so
     /// none of it shows in the outer gap, between the columns, or between the windows of a column of several.

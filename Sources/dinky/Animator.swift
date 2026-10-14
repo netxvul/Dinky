@@ -5,7 +5,9 @@ import DinkyLayout
 // tile, stepped on every frame of the main display and written through the applier's per-app queues without
 // readback. Once a tree's windows have arrived, its pass finishes as an unanimated one would: the full write with
 // readback, retry and raises. A new pass mid-flight retargets the windows: on the spring they curve to their new
-// tiles, keeping their speed; an easing starts over from where they are. Main thread only.
+// tiles, keeping their speed; an easing starts over from where they are. A scrolling strip glides as a whole: its
+// windows ride in strip coordinates, unparked, and each frame the tree's `place` puts them all on screen together,
+// so a long scroll passes the columns between across the screen in turn. Main thread only.
 final class Animator: NSObject {
     private struct Entry {
         var animation: FrameAnimation
@@ -15,6 +17,11 @@ final class Animator: NSObject {
 
     private let applier: FrameApplier
     private var entries: [WindowID: Entry] = [:]
+    /// By tree, how its frames go on screen, for a strip: `place` takes every window's frame in strip coordinates,
+    /// those resting at their targets, `base`, with the moving ones where they are now.
+    private var placers: [UInt64: (base: [WindowID: CGRect], place: ([WindowID: CGRect]) -> [WindowID: CGRect])] = [:]
+    /// The frame last written for each moving window, so a parked window that stays put is not written every frame.
+    private var written: [WindowID: CGRect] = [:]
     /// By tree, the rest of its latest pass, run once its windows have arrived.
     private var finishes: [UInt64: () -> Void] = [:]
     private var link: CADisplayLink?
@@ -53,10 +60,18 @@ final class Animator: NSObject {
     var animating: [WindowID] { Array(entries.keys) }
 
     /// Move the tree's windows from `starts` to `targets`, then run `finish`. Windows already there, or with
-    /// no start, are left to `finish`; with none left to move, it runs at once.
+    /// no start, are left to `finish`; with none left to move, it runs at once. With `place`, the starts and targets
+    /// are in strip coordinates and `place` puts them on screen on every frame; a window that was moving without it,
+    /// or with it, starts over from `starts`.
     func animate(_ key: UInt64, from starts: [WindowID: CGRect], to targets: [WindowID: CGRect],
-                 pids: [WindowID: pid_t], then finish: @escaping () -> Void) {
-        for (id, entry) in entries where entry.key == key && targets[id] == nil { entries[id] = nil }
+                 pids: [WindowID: pid_t], place: (([WindowID: CGRect]) -> [WindowID: CGRect])? = nil,
+                 then finish: @escaping () -> Void) {
+        let wasPlaced = placers[key] != nil
+        placers[key] = place.map { (targets, $0) }
+        for (id, entry) in entries where entry.key == key && (targets[id] == nil || wasPlaced != (place != nil)) {
+            entries[id] = nil
+            written[id] = nil
+        }
         for (id, target) in targets {
             if entries[id] != nil {
                 entries[id]!.animation.retarget(target)
@@ -86,12 +101,15 @@ final class Animator: NSObject {
     func forget(_ id: WindowID) {
         entries[id] = nil
         landed[id] = nil
+        written[id] = nil
     }
 
     /// Stops every animation where it is. Nothing is finished.
     func cancel() {
         entries = [:]
         finishes = [:]
+        placers = [:]
+        written = [:]
         link?.isPaused = true
         lastTick = nil
         watchdog?.invalidate()
@@ -140,12 +158,26 @@ final class Animator: NSObject {
     /// Advances every window by `dt` seconds and writes the frames; `dt` of `timeout` or more lands them all.
     private func step(dt: Double) {
         lastStepAt = CACurrentMediaTime()
-        var jobs: [FrameJob] = [], arrived: [WindowID] = []
-        for (id, entry) in entries {
+        var frames: [WindowID: CGRect] = [:], arrived: [WindowID] = []
+        let moving = entries
+        for id in moving.keys {
             let done = entries[id]!.animation.step(curve, dt: dt, timeout: timeout)
-            jobs.append(FrameJob(pid: entry.pid, id: id, frame: entries[id]!.animation.frame))
+            frames[id] = entries[id]!.animation.frame
             if done { entries[id] = nil; arrived.append(id) }
         }
+        // A strip's windows go on screen together, each tree's resting ones where they rest.
+        for (key, placer) in placers {
+            let ours = frames.filter { moving[$0.key]?.key == key }
+            guard !ours.isEmpty else { continue }
+            let placed = placer.place(placer.base.merging(ours) { $1 })
+            for id in ours.keys { frames[id] = placed[id] ?? frames[id] }
+        }
+        var jobs: [FrameJob] = []
+        for (id, frame) in frames where written[id] != frame {
+            written[id] = frame
+            jobs.append(FrameJob(pid: moving[id]!.pid, id: id, frame: frame))
+        }
+        for id in arrived { written[id] = nil }
         applier.step(jobs)
         if !arrived.isEmpty { onArrive(arrived) }
         finishArrived()
@@ -162,6 +194,7 @@ final class Animator: NSObject {
         let moving = Set(entries.values.map(\.key))
         for (key, finish) in finishes where !moving.contains(key) {
             finishes[key] = nil
+            placers[key] = nil
             finish()
         }
     }

@@ -59,6 +59,9 @@ final class Coordinator {
     /// moved the windows of Spaces that were not on screen to frames of their own, and a glide from there
     /// would only show the mess.
     private var snap: Set<UInt64> = []
+    /// By scrolling tree, its strip frames as last applied, unparked and parked, so the next glide starts each window
+    /// where the strip had it rather than where it was parked.
+    private var lastStrips: [UInt64: (strip: [WindowID: CGRect], placed: [WindowID: CGRect])] = [:]
     /// Where dinky last sent each floating window, so a command pressed again mid-glide starts from where the
     /// window is going rather than where it is.
     private(set) var floatingTargets: [WindowID: CGRect] = [:]
@@ -403,13 +406,36 @@ final class Coordinator {
                 }
             }
         }
+        let strip = workspace.stripFrames, previous = lastStrips[key]
+        lastStrips[key] = strip.isEmpty ? nil : (strip, layout.frames)
         guard animates, snap.remove(key) == nil else { return write() }
         // Stacking first, so the window coming to the front of an accordion slides in on top.
         applier.raiseIntoOrder(layout, pids: pids, front: workspace.focused)
-        let starts = Dictionary(uniqueKeysWithValues: layout.order.compactMap { id in
+        var starts = Dictionary(uniqueKeysWithValues: layout.order.compactMap { id in
             id == dragging ? nil : model.windows[id].map { (id, $0.frame) }
         })
-        animator.animate(key, from: starts, to: layout.frames, pids: pids, then: write)
+        guard !strip.isEmpty else { return animator.animate(key, from: starts, to: layout.frames, pids: pids, then: write) }
+        // A strip glides as a whole, in strip coordinates, parked on every frame. A window still where the last pass
+        // parked it starts where the strip had it then; any other, a new or dragged one, from where it is.
+        // Windows shown fullscreen glide to the screen as usual; the strip still parks the others around where it
+        // has them.
+        let fullscreen = Set(workspace.fullscreenWindows)
+        var targets = layout.frames
+        for (id, frame) in strip where !fullscreen.contains(id) {
+            targets[id] = frame
+            if let start = starts[id], let was = previous?.strip[id], let placed = previous?.placed[id],
+               start.isClose(to: placed, within: 2) {
+                starts[id] = was
+            }
+        }
+        let place = { (frames: [WindowID: CGRect]) -> [WindowID: CGRect] in
+            var input = strip
+            for (id, frame) in frames where !fullscreen.contains(id) { input[id] = frame }
+            var placed = workspace.placeStrip(input)
+            for id in fullscreen where frames[id] != nil { placed[id] = frames[id] }
+            return placed
+        }
+        animator.animate(key, from: starts, to: targets, pids: pids, place: place, then: write)
     }
 
     /// Moves a floating window to `frame`: gliding there from where it is when passes glide, then written with

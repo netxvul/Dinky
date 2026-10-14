@@ -273,3 +273,30 @@ struct ScrollingCommandTests {
         #expect(lefts(ws) == [-425, 50, 525], "columns 475 wide between the gutters")
     }
 }
+
+struct ScrollingGlideTests {
+    @Test func `Placing the strip frames gives the layout`() {
+        for walls: Set<Direction> in [[], [.left], [.left, .right]] {
+            var ws = strip(10, walls: walls)
+            ws.focus(4)
+            #expect(ws.placeStrip(ws.stripFrames) == ws.layout().frames, "walls \(walls)")
+        }
+    }
+
+    @Test func `Halfway through a long scroll the columns between are on screen where the strip has them`() {
+        var ws = strip(10)
+        let from = ws.stripFrames
+        ws.focus(1)
+        let to = ws.stripFrames
+        let halfway = from.mapValues { $0 }.merging(to) { a, b in
+            rect((a.minX + b.minX) / 2, a.minY, a.width, a.height)
+        }
+        let placed = ws.placeStrip(halfway)
+        let passing = (2...9).map(WindowID.init).filter { id in
+            placed[id] == halfway[id] && placed[id]!.minX >= ws.bounds.minX && placed[id]!.maxX <= ws.bounds.maxX
+        }
+        #expect(!passing.isEmpty)
+        // Not every window lands parked against one edge or the other, as gliding the parked frames would have it.
+        #expect(Set((1...10).map { placed[WindowID($0)]!.minX }).count > 2)
+    }
+}
