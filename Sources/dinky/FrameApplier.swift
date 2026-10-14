@@ -37,6 +37,7 @@ final class FrameApplier {
             write: { [unowned self] job in element(pid: job.pid, id: job.id).map { write(job.frame, to: $0) } },
             move: { [unowned self] job in element(pid: job.pid, id: job.id).map { move(job.frame.origin, to: $0) } }
         )
+        scheduler.onStepsWritten = { GlideStats.shared.drain(pid: $0, seconds: $1, windows: $2) }
     }
 
     /// Sizes windows refused to shrink below, from readback.
@@ -49,6 +50,11 @@ final class FrameApplier {
     /// app has refused, so a new window of a known app is laid out right the first time.
     func minimumSize(of id: WindowID, app: String?) -> CGSize? {
         scheduler.minimumSizes[id] ?? app.flatMap { app in lock.withLock { appMinimums[app] } }
+    }
+
+    /// The size each window has now, so the animator's first step moves it without writing its size again.
+    func assume(_ sizes: [WindowID: CGSize], pids: [WindowID: pid_t]) {
+        for (id, size) in sizes { if let pid = pids[id] { scheduler.assume(size, of: id, pid: pid) } }
     }
 
     /// Forgets a window that is gone: its element and what the scheduler learned about it.

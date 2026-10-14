@@ -5,8 +5,12 @@ import CoreGraphics
 public struct Spring: Equatable, Sendable {
     public let stiffness: Double
     public let friction: Double
+    public let response: Double
+    public let damping: Double
 
     public init(response: Double, damping: Double) {
+        self.response = response
+        self.damping = damping
         let omega = 2 * Double.pi / max(response, 0.001)
         stiffness = omega * omega
         friction = 2 * damping * omega
@@ -68,6 +72,23 @@ public enum Easing: String, CaseIterable, Sendable {
 public enum AnimationCurve: Equatable, Sendable {
     case spring(Spring)
     case eased(Easing, duration: Double)
+
+    /// The same curve taking `factor` times as long: a slower spring, or a longer easing.
+    public func stretched(_ factor: Double) -> AnimationCurve {
+        guard factor != 1 else { return self }
+        return switch self {
+        case .spring(let spring): .spring(Spring(response: spring.response * factor, damping: spring.damping))
+        case .eased(let easing, let duration): .eased(easing, duration: duration * factor)
+        }
+    }
+
+    /// How much longer a strip scroll over `columns` columns takes than one over a single column: `perColumn`
+    /// seconds more for each column past the first, up to `longest` seconds in all. One of `base` seconds or longer
+    /// already, or a scroll of a column or less, takes the usual time.
+    public static func stripStretch(base: Double, columns: Double, perColumn: Double = 0.03, longest: Double = 0.6) -> Double {
+        guard base > 0, base < longest, columns > 1 else { return 1 }
+        return min(base + (columns - 1) * perColumn, longest) / base
+    }
 }
 
 /// One window moving from where it is to its tile: x, y, width and height each on the same curve,

@@ -121,3 +121,22 @@ struct EasedAnimationTests {
         #expect(a.frame == rect(1000, 0, 100, 100))
     }
 }
+
+struct StripStretchTests {
+    @Test func `A long scroll takes a little longer for each column past the first, up to a limit`() {
+        #expect(AnimationCurve.stripStretch(base: 0.2, columns: 1) == 1)
+        #expect(AnimationCurve.stripStretch(base: 0.2, columns: 0.4) == 1)
+        #expect(abs(AnimationCurve.stripStretch(base: 0.2, columns: 3) - 1.3) < 1e-9)
+        #expect(abs(AnimationCurve.stripStretch(base: 0.2, columns: 30) - 3) < 1e-9)
+        // Already as long as the limit, or no time at all: as configured.
+        #expect(AnimationCurve.stripStretch(base: 0.8, columns: 9) == 1)
+        #expect(AnimationCurve.stripStretch(base: 0, columns: 9) == 1)
+    }
+
+    @Test func `A stretched curve takes longer`() {
+        #expect(AnimationCurve.eased(.easeOutCubic, duration: 0.2).stretched(1.5) == .eased(.easeOutCubic, duration: 0.2 * 1.5))
+        let spring = Spring(response: 0.2, damping: 0.9)
+        #expect(AnimationCurve.spring(spring).stretched(2) == .spring(Spring(response: 0.4, damping: 0.9)))
+        #expect(AnimationCurve.spring(spring).stretched(1) == .spring(spring))
+    }
+}

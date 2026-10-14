@@ -44,6 +44,9 @@ public final class FrameScheduler: @unchecked Sendable {
     private let write: (FrameJob) -> Void
     private let move: (FrameJob) -> Void
 
+    /// TEMPORARY: how long each process's animation steps took to write, with how many windows.
+    public var onStepsWritten: ((Int32, Double, Int) -> Void)?
+
     private let lock = NSLock()
     private var apps: [Int32: App] = [:]
     private var minimums: [WindowID: CGSize] = [:]
@@ -108,6 +111,15 @@ public final class FrameScheduler: @unchecked Sendable {
         return app
     }
 
+    /// Takes `size` as the size last written for a window about to be stepped, its size now, so a first step that
+    /// keeps it is a plain move: writing the size as well would make the app lay the window out again as it sets off.
+    public func assume(_ size: CGSize, of id: WindowID, pid: Int32) {
+        lock.withLock {
+            let app = app(pid)
+            app.queue.async { app.written[id] = size }
+        }
+    }
+
     /// Drain the process's queue unless a drain is already on its way. Under the lock.
     private func schedule(_ app: App) {
         guard !app.scheduled else { return }
@@ -147,6 +159,8 @@ public final class FrameScheduler: @unchecked Sendable {
             return (app.steps, app.pending, app.batches, !app.prepared, self.generation)
         }
         if needsPrepare { prepare(app.pid) }
+        let began = Date()
+        defer { if !steps.isEmpty { onStepsWritten?(app.pid, Date().timeIntervalSince(began), steps.count) } }
         for job in steps {
             app.written[job.id] == job.frame.size ? move(job) : write(job)
             app.written[job.id] = job.frame.size

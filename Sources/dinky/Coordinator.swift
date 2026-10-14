@@ -121,6 +121,8 @@ final class Coordinator {
     // MARK: Events
 
     private func handle(_ event: WindowEvent) {
+        let began = CACurrentMediaTime()
+        defer { GlideStats.shared.event(CACurrentMediaTime() - began) }
         // Detected here, not in the border manager, so hover focus stands down even with borders off.
         if MissionControl.shared.update(from: model) { borders?.missionControlChanged() }
         borders?.handle(event)
@@ -415,8 +417,10 @@ final class Coordinator {
             id == dragging ? nil : model.windows[id].map { (id, $0.frame) }
         })
         guard !strip.isEmpty else { return animator.animate(key, from: starts, to: layout.frames, pids: pids, then: write) }
-        // A strip glides as a whole, in strip coordinates, parked on every frame. A window still where the last pass
-        // parked it starts where the strip had it then; any other, a new or dragged one, from where it is.
+        // A strip glides as a whole, in strip coordinates, parked on every frame. A window resting where the last pass
+        // put it starts where the strip had it then, even an app's that snapped to a grid or kept a minimum size a few
+        // points off, which would otherwise glide apart from the rest; one still gliding carries on from where it is.
+        // A new window, or one the user moved or resized, starts from where it is.
         // Windows shown fullscreen glide to the screen as usual; the strip still parks the others around where it
         // has them.
         let fullscreen = Set(workspace.fullscreenWindows)
@@ -424,10 +428,19 @@ final class Coordinator {
         for (id, frame) in strip where !fullscreen.contains(id) {
             targets[id] = frame
             if let start = starts[id], let was = previous?.strip[id], let placed = previous?.placed[id],
-               start.isClose(to: placed, within: 2) {
+               animator.isAnimating(id) || animator.rests(id, at: start, askedFor: placed) {
                 starts[id] = was
             }
         }
+        // A long scroll takes longer, a little more for each column it passes, so a window an app is slow to move
+        // falls less far behind the others in a frame.
+        let moved = strip.compactMap { id, frame in starts[id].map { abs(frame.minX - $0.minX) } }.max() ?? 0
+        let column = max(workspace.bounds.width * CGFloat(workspace.columnWidth), 1)
+        let stretch = AnimationCurve.stripStretch(base: Double(config.animations.durationMs) / 1000,
+                                                  columns: Double(moved / column))
+        applier.assume(Dictionary(uniqueKeysWithValues: strip.keys.compactMap { id in
+            id == dragging ? nil : model.windows[id].map { (id, $0.frame.size) }
+        }), pids: pids)
         let place = { (frames: [WindowID: CGRect]) -> [WindowID: CGRect] in
             var input = strip
             for (id, frame) in frames where !fullscreen.contains(id) { input[id] = frame }
@@ -435,7 +448,7 @@ final class Coordinator {
             for id in fullscreen where frames[id] != nil { placed[id] = frames[id] }
             return placed
         }
-        animator.animate(key, from: starts, to: targets, pids: pids, place: place, then: write)
+        animator.animate(key, from: starts, to: targets, pids: pids, place: place, stretch: stretch, then: write)
     }
 
     /// Moves a floating window to `frame`: gliding there from where it is when passes glide, then written with

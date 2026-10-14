@@ -13,6 +13,8 @@ final class Animator: NSObject {
         var animation: FrameAnimation
         let pid: pid_t
         var key: UInt64
+        /// How long this pass takes, as a multiple of the configured time: longer for a long strip scroll.
+        var stretch = 1.0
     }
 
     private let applier: FrameApplier
@@ -65,7 +67,7 @@ final class Animator: NSObject {
     /// or with it, starts over from `starts`.
     func animate(_ key: UInt64, from starts: [WindowID: CGRect], to targets: [WindowID: CGRect],
                  pids: [WindowID: pid_t], place: (([WindowID: CGRect]) -> [WindowID: CGRect])? = nil,
-                 then finish: @escaping () -> Void) {
+                 stretch: Double = 1, then finish: @escaping () -> Void) {
         let wasPlaced = placers[key] != nil
         placers[key] = place.map { (targets, $0) }
         for (id, entry) in entries where entry.key == key && (targets[id] == nil || wasPlaced != (place != nil)) {
@@ -76,13 +78,20 @@ final class Animator: NSObject {
             if entries[id] != nil {
                 entries[id]!.animation.retarget(target)
                 entries[id]!.key = key
+                entries[id]!.stretch = stretch
             } else if let start = starts[id], let pid = pids[id], !isResting(id, at: start, for: target) {
-                entries[id] = Entry(animation: FrameAnimation(from: start, to: target), pid: pid, key: key)
+                entries[id] = Entry(animation: FrameAnimation(from: start, to: target), pid: pid, key: key, stretch: stretch)
             }
         }
         finishes[key] = finish
         finishArrived()
         if !entries.isEmpty { run() }
+    }
+
+    /// Whether a window at `frame` is where it came to rest when last asked for `asked`, or on it: not moved since by
+    /// its app or the user. An app that snaps to a grid or keeps a minimum size rests a few points off.
+    func rests(_ id: WindowID, at frame: CGRect, askedFor asked: CGRect) -> Bool {
+        isResting(id, at: frame, for: asked)
     }
 
     /// Whether a window at `start` is as close to `target` as it gets: on it, or where it came to rest when last asked for it.
@@ -150,10 +159,18 @@ final class Animator: NSObject {
 
     @objc private func tick(_ link: CADisplayLink) {
         // A stalled clock (sleep, a busy main thread) resumes where it was rather than leaping ahead.
-        let dt = min(lastTick.map { link.timestamp - $0 } ?? link.duration, 1.0 / 30)
+        let gap = lastTick.map { link.timestamp - $0 }
+        let dt = min(gap ?? link.duration, 1.0 / 30)
         lastTick = link.timestamp
+        GlideStats.shared.begin()
+        let began = CACurrentMediaTime()
         step(dt: dt)
+        GlideStats.shared.tick(gap: gap, step: CACurrentMediaTime() - began, jobs: lastJobs)
+        if entries.isEmpty { GlideStats.shared.end() }
     }
+
+    /// TEMPORARY: jobs written by the last step.
+    private var lastJobs = 0
 
     /// Advances every window by `dt` seconds and writes the frames; `dt` of `timeout` or more lands them all.
     private func step(dt: Double) {
@@ -161,7 +178,8 @@ final class Animator: NSObject {
         var frames: [WindowID: CGRect] = [:], arrived: [WindowID] = []
         let moving = entries
         for id in moving.keys {
-            let done = entries[id]!.animation.step(curve, dt: dt, timeout: timeout)
+            let stretch = entries[id]!.stretch
+            let done = entries[id]!.animation.step(curve.stretched(stretch), dt: dt, timeout: timeout * stretch)
             frames[id] = entries[id]!.animation.frame
             if done { entries[id] = nil; arrived.append(id) }
         }
@@ -178,6 +196,7 @@ final class Animator: NSObject {
             jobs.append(FrameJob(pid: moving[id]!.pid, id: id, frame: frame))
         }
         for id in arrived { written[id] = nil }
+        lastJobs = jobs.count
         applier.step(jobs)
         if !arrived.isEmpty { onArrive(arrived) }
         finishArrived()
