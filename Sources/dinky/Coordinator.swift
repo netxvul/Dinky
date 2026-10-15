@@ -61,7 +61,7 @@ final class Coordinator {
     private var snap: Set<UInt64> = []
     /// By scrolling tree, its strip frames as last applied, unparked and parked, so the next glide starts each window
     /// where the strip had it rather than where it was parked.
-    private var lastStrips: [UInt64: (strip: [WindowID: CGRect], placed: [WindowID: CGRect])] = [:]
+    private var lastStrips: [UInt64: (strip: [WindowID: CGRect], placed: [WindowID: CGRect], fullscreen: Set<WindowID>)] = [:]
     /// By scrolling tree, a glide of snapshots under way or being made ready, and the layout it is gliding to. See
     /// GlideStage.
     private var glides: [UInt64: (token: Int, stage: GlideStage?, layout: Layout)] = [:]
@@ -433,8 +433,9 @@ final class Coordinator {
             }
         }
         let write = { writeThen {} }
+        let fullscreen = Set(workspace.fullscreenWindows)
         let strip = workspace.stripFrames, previous = lastStrips[key]
-        lastStrips[key] = strip.isEmpty ? nil : (strip, layout.frames)
+        lastStrips[key] = strip.isEmpty ? nil : (strip, layout.frames, fullscreen)
         guard animates, snap.remove(key) == nil else { return write() }
         // Stacking first, so the window coming to the front of an accordion slides in on top.
         applier.raiseIntoOrder(layout, pids: pids, front: workspace.focused)
@@ -448,11 +449,13 @@ final class Coordinator {
         // A new window, or one the user moved or resized, starts from where it is.
         // Windows shown fullscreen glide to the screen as usual; the strip still parks the others around where it
         // has them.
-        let fullscreen = Set(workspace.fullscreenWindows)
         var targets = layout.frames
         for (id, frame) in strip where !fullscreen.contains(id) {
             targets[id] = frame
+            // Start a resting window where the strip had it, for a continuous scroll — but not one that was
+            // fullscreen last pass: it rests at its fullscreen frame, not a strip one, and must glide down from there.
             if let start = starts[id], let was = previous?.strip[id], let placed = previous?.placed[id],
+               !(previous?.fullscreen.contains(id) ?? false),
                animator.isAnimating(id) || animator.rests(id, at: start, askedFor: placed) {
                 starts[id] = was
             }
