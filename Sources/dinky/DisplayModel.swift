@@ -79,7 +79,9 @@ final class DisplayModel {
         var tick = 0
         Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             tick += 1
-            if SpaceSwitcher.shared.switching || tick % 4 == 0 { self?.reconcile() }
+            // Every half second while a switch is in flight — the new Space must be caught quickly — otherwise every
+            // five seconds, where the poll is only a backstop to the (usually reliable) Space-change notifications.
+            if SpaceSwitcher.shared.switching || tick % 10 == 0 { self?.reconcile() }
         }
     }
 
