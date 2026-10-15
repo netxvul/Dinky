@@ -16,6 +16,95 @@ final class GlideStage {
     private static let landingLimit: TimeInterval = 0.4
     private static let fadeOut: TimeInterval = 0.1
 
+    /// Fetching SCShareableContent (enumerating every window) costs ~50-70ms, so a recent copy is reused across
+    /// scrolls and refreshed in the background. A copy this fresh is used as is; one this stale triggers a background
+    /// refresh for the next scroll; past `contentMaxAge` the scroll waits for a fresh fetch. The window list may then
+    /// lag reality by up to that age — a window that just joined the strip can miss this glide's snapshot and hide
+    /// until the stage goes, which the background refresh keeps rare.
+    private static let contentMaxAge: TimeInterval = 2.0
+    private static let contentFreshenAfter: TimeInterval = 0.4
+    private static var cachedContent: (content: SCShareableContent, at: CFTimeInterval)?
+    private static var freshening = false
+
+    /// A recent window enumeration, reused when fresh enough so a scroll need not wait ~60ms for a new one.
+    private static func shareableContent() async -> SCShareableContent? {
+        let now = CACurrentMediaTime()
+        if let cached = cachedContent, now - cached.at < contentMaxAge {
+            if now - cached.at > contentFreshenAfter { freshenContent() }
+            return cached.content
+        }
+        guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false) else {
+            return cachedContent?.content   // a stale copy beats failing the glide
+        }
+        cachedContent = (content, CACurrentMediaTime())
+        return content
+    }
+
+    /// Refreshes the cached enumeration in the background, so the next scroll reuses a current one without waiting.
+    private static func freshenContent() {
+        guard !freshening else { return }
+        freshening = true
+        Task { @MainActor in
+            if let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false) {
+                cachedContent = (content, CACurrentMediaTime())
+            }
+            freshening = false
+        }
+    }
+
+    /// Window snapshots kept between scrolls: capturing them is the bulk of a glide's setup, so a run of scrolls
+    /// reuses recent ones and only the background is taken each time. Reused up to `shotMaxAge`; past
+    /// `shotFreshenAfter` a reused one is re-captured in the background so the picture stays current.
+    private static let shotMaxAge: TimeInterval = 5.0
+    private static let shotFreshenAfter: TimeInterval = 1.0
+    private static var shotCache: [WindowID: (image: CGImage, at: CFTimeInterval)] = [:]
+    private static var fresheningShots: Set<WindowID> = []
+
+    /// The filter and configuration to snapshot one window at `scale`.
+    private static func windowConfig(_ window: SCWindow, scale: CGFloat) -> (SCContentFilter, SCStreamConfiguration) {
+        let configuration = SCStreamConfiguration()
+        configuration.width = Int(window.frame.width * scale)
+        configuration.height = Int(window.frame.height * scale)
+        configuration.showsCursor = false
+        configuration.ignoreShadowsSingleWindow = true
+        return (SCContentFilter(desktopIndependentWindow: window), configuration)
+    }
+
+    /// Re-captures one window's snapshot into the cache in the background, so a reused one does not grow stale.
+    private static func freshenShot(_ window: SCWindow, scale: CGFloat) {
+        let id = window.windowID
+        guard !fresheningShots.contains(id), window.frame.width > 1, window.frame.height > 1 else { return }
+        fresheningShots.insert(id)
+        let (filter, configuration) = windowConfig(window, scale: scale)
+        Task { @MainActor in
+            if let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration) {
+                shotCache[id] = (image, CACurrentMediaTime())
+            }
+            fresheningShots.remove(id)
+        }
+    }
+
+    /// Drops window snapshots older than `at`, so closed windows do not linger in the cache.
+    private static func pruneShots(before at: CFTimeInterval) {
+        shotCache = shotCache.filter { $0.value.at >= at }
+    }
+
+    /// Background snapshots per display, cached and freshened like the window shots.
+    private static var bgCache: [CGDirectDisplayID: (image: CGImage, at: CFTimeInterval)] = [:]
+    private static var fresheningBg: Set<CGDirectDisplayID> = []
+
+    /// Re-captures a display's background into the cache in the background, so a reused one does not grow stale.
+    private static func freshenBackground(_ displayID: CGDirectDisplayID, filter: SCContentFilter, configuration: SCStreamConfiguration) {
+        guard !fresheningBg.contains(displayID) else { return }
+        fresheningBg.insert(displayID)
+        Task { @MainActor in
+            if let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration) {
+                bgCache[displayID] = (image, CACurrentMediaTime())
+            }
+            fresheningBg.remove(displayID)
+        }
+    }
+
     private let window: NSWindow
     /// The area the stage covers, in global coordinates with a top-left origin.
     private let area: CGRect
@@ -74,10 +163,25 @@ final class GlideStage {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + captureLimit) { answer(nil) }
         Task { @MainActor in
-            guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false),
+            guard let content = await shareableContent(),
                   let target = content.displays.first(where: { $0.displayID == display.id }) else { return answer(nil) }
             let wanted = Set(ids), own = getpid()
             let windows = content.windows.filter { wanted.contains($0.windowID) }
+            let now = CACurrentMediaTime()
+            pruneShots(before: now - shotMaxAge)
+            // Reuse recent window snapshots: a window's content barely changes from one scroll to the next, and the
+            // real window shows crisp again once the glide lands. Only windows missing or stale are captured now, and
+            // soon-to-expire ones are freshened in the background, so a run of scrolls pays only for the background.
+            var images: [WindowID: CGImage] = [:]
+            var toCapture: [SCWindow] = []
+            for window in windows {
+                if let cached = shotCache[window.windowID], now - cached.at < shotMaxAge {
+                    images[window.windowID] = cached.image
+                    if now - cached.at > shotFreshenAfter { freshenShot(window, scale: scale) }
+                } else if window.frame.width > 1 && window.frame.height > 1 {
+                    toCapture.append(window)
+                }
+            }
             // Behind the strip: the display without the strip's windows or dinky's own, such as the switcher fading out.
             let hidden = content.windows.filter { wanted.contains($0.windowID) || $0.owningApplication?.processID == own }
             let backConfiguration = SCStreamConfiguration()
@@ -87,25 +191,36 @@ final class GlideStage {
             backConfiguration.height = Int(area.height * scale)
             backConfiguration.showsCursor = false
             let backFilter = SCContentFilter(display: target, excludingWindows: hidden)
-            var images: [WindowID: CGImage] = [:]
+            // What is behind the strip barely changes as the strip scrolls, so the background is cached like the
+            // window shots: reused when fresh, freshened in the background when stale, captured now only when absent.
+            var cachedBackground: CGImage?
+            if let cached = bgCache[display.id], now - cached.at < shotMaxAge {
+                cachedBackground = cached.image
+                if now - cached.at > shotFreshenAfter { freshenBackground(display.id, filter: backFilter, configuration: backConfiguration) }
+            }
+            async let backgroundShot: CGImage? = cachedBackground == nil
+                ? (try? await SCScreenshotManager.captureImage(contentFilter: backFilter, configuration: backConfiguration))
+                : nil
             await withTaskGroup(of: (WindowID, CGImage?).self) { group in
-                for window in windows where window.frame.width > 1 && window.frame.height > 1 {
-                    let configuration = SCStreamConfiguration()
-                    configuration.width = Int(window.frame.width * scale)
-                    configuration.height = Int(window.frame.height * scale)
-                    configuration.showsCursor = false
-                    configuration.ignoreShadowsSingleWindow = true
-                    let filter = SCContentFilter(desktopIndependentWindow: window)
+                for window in toCapture {
+                    let (filter, configuration) = windowConfig(window, scale: scale)
                     let id = window.windowID
                     group.addTask {
                         (id, try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration))
                     }
                 }
-                for await (id, image) in group { if let image { images[id] = image } }
+                for await (id, image) in group {
+                    if let image { images[id] = image; shotCache[id] = (image, CACurrentMediaTime()) }
+                }
             }
-            guard let background = try? await SCScreenshotManager.captureImage(contentFilter: backFilter,
-                                                                               configuration: backConfiguration)
-            else { return answer(nil) }
+            let background: CGImage
+            if let cachedBackground {
+                background = cachedBackground
+            } else {
+                guard let fresh = await backgroundShot else { return answer(nil) }
+                bgCache[display.id] = (fresh, CACurrentMediaTime())
+                background = fresh
+            }
             answer(GlideStage(area: area, background: background, images: images, scale: scale))
         }
     }
