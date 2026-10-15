@@ -55,6 +55,7 @@ struct SchemaTests {
         let properties = Self.schema["properties"] as! [String: [String: Any]]
         let fullscreen = properties["fullscreen"]!["properties"] as! [String: [String: Any]]
         #expect(fullscreen["focus-change"]!["enum"] as! [String] == configured)
+        #expect(fullscreen["scrolling"]!["enum"] as! [String] == FullscreenScrolling.allCases.map(\.rawValue))
     }
 
     @Test func `HUD positions agree`() {
@@ -170,6 +171,7 @@ struct SchemaTests {
         [fullscreen]
         focus-change = 'keep'
         follow-delay-ms = 200
+        scrolling = 'over'
 
         [gaps]
         inner.horizontal = 4

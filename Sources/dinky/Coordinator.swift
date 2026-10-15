@@ -215,6 +215,7 @@ final class Coordinator {
             workspaces[key]!.columnWidth = config.scrolling.columnWidth
             workspaces[key]!.fullscreenFocus = fullscreenFocus
             workspaces[key]!.fullscreenFollowsLater = config.fullscreen.followDelayMs > 0
+            workspaces[key]!.fullscreenPushesStrip = config.fullscreen.scrolling == .push
             workspaces[key]!.setAlgorithm(workspaces[key]!.chosenAlgorithm ?? algorithm(settings(for: key)))
         }
     }
@@ -340,6 +341,7 @@ final class Coordinator {
             workspaces[key]!.columnWidth = config.scrolling.columnWidth
             workspaces[key]!.fullscreenFocus = fullscreenFocus
             workspaces[key]!.fullscreenFollowsLater = config.fullscreen.followDelayMs > 0
+            workspaces[key]!.fullscreenPushesStrip = config.fullscreen.scrolling == .push
             workspaces[key]!.walls = walls(of: display)
         }
         return key
@@ -433,7 +435,8 @@ final class Coordinator {
             }
         }
         let write = { writeThen {} }
-        let fullscreen = Set(workspace.fullscreenWindows)
+        // Windows shown fullscreen over the strip. A strip that pushes has none: its fullscreen windows are part of it.
+        let fullscreen = workspace.pushesFullscreen ? [] : Set(workspace.fullscreenWindows)
         let strip = workspace.stripFrames, previous = lastStrips[key]
         lastStrips[key] = strip.isEmpty ? nil : (strip, layout.frames, fullscreen)
         guard animates, snap.remove(key) == nil else { return write() }
@@ -447,8 +450,8 @@ final class Coordinator {
         // put it starts where the strip had it then, even an app's that snapped to a grid or kept a minimum size a few
         // points off, which would otherwise glide apart from the rest; one still gliding carries on from where it is.
         // A new window, or one the user moved or resized, starts from where it is.
-        // Windows shown fullscreen glide to the screen as usual; the strip still parks the others around where it
-        // has them.
+        // Windows shown fullscreen over the strip (`[fullscreen] scrolling = 'over'`) glide to the screen as usual; the
+        // strip still parks the others around where it has them. Pushing fullscreen windows glide with the strip.
         var targets = layout.frames
         for (id, frame) in strip where !fullscreen.contains(id) {
             targets[id] = frame

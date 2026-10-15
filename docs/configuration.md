@@ -144,6 +144,7 @@ by Cmd-Tab, a click, `focus`, a new window or the fullscreen window closing.
 |---|---|---|
 | `focus-change` | `'exit'` | `'exit'`: fullscreen ends and the window goes back to its tile. `'follow'`: the newly focused window goes fullscreen and the other goes back to its tile. `'keep'`: the newly focused window goes fullscreen too, and the other stays fullscreen behind it. |
 | `follow-delay-ms` | `0` | With `'follow'`, how long the newly focused window waits in its tile before going fullscreen, from `0` to `5000`, so the window it took over from is back in its tile first. `0` swaps them at the same time. About `duration-ms` waits for the glide back; a little more lets it settle. |
+| `scrolling` | `'push'` | On a scrolling workspace, `'push'` widens the window's column to the screen and slides its neighbours off either side; when fullscreen ends, the strip goes back to where it was. `'over'` covers the columns where they are, as on any other workspace. |
 
 </div>
 
@@ -155,7 +156,8 @@ back.
 With `'keep'`, every window focused while one is fullscreen joins it, the
 focused one in front. `fullscreen` again, or any layout command, ends
 fullscreen for all of them. Floating windows and other workspaces are not
-affected.
+affected. On a scrolling workspace that pushes, each of them is a column as
+wide as the screen, so focusing one scrolls a whole screen to it.
 
 ```toml
 [fullscreen]
@@ -661,6 +663,7 @@ resize-anchor = 'center'        # what stays put when `resize` sizes a floating 
 [fullscreen]
 focus-change = 'exit'           # focusing another window: exit | follow (it takes over) | keep (both fullscreen)
 follow-delay-ms = 0             # with follow, wait this long for the other window to be back in its tile
+scrolling = 'push'              # on a scrolling workspace: push (neighbours slide off) | over (cover them)
 
 [gaps]
 inner = 8                       # or { horizontal = 8, vertical = 8 }

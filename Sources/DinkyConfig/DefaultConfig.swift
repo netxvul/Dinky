@@ -42,6 +42,7 @@ extension Config {
     [fullscreen]
     focus-change = 'exit'           # focusing another window: exit | follow (it takes over) | keep (both fullscreen)
     follow-delay-ms = 0             # with follow, wait this long for the other window to be back in its tile
+    scrolling = 'push'              # on a scrolling workspace: push (neighbours slide off) | over (cover them)
 
     [gaps]
     inner = 8                       # or { horizontal = 8, vertical = 8 }

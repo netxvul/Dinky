@@ -40,6 +40,9 @@ public struct Workspace: Equatable, Sendable {
     /// With `follow`, whether the newly focused window waits until the coordinator promotes it, so the window it took
     /// focus from is back in its tile first. Off, it goes fullscreen at once.
     public var fullscreenFollowsLater = false
+    /// Scrolling: whether fullscreen widens the window's column to the screen and pushes its neighbours off it,
+    /// rather than covering them where they are. See Scrolling.swift.
+    public var fullscreenPushesStrip = true
     /// The focused window waiting to go fullscreen with `fullscreenFollowsLater`. See `promotePendingFullscreen`.
     public internal(set) var pendingFullscreen: WindowID?
     /// The window shown fullscreen in front, if any: the focused one.
@@ -437,12 +440,13 @@ public struct Workspace: Equatable, Sendable {
     }
 
     /// Frames and stacking for every window. Fullscreen windows cover the bounds minus outer gaps and come first,
-    /// the focused one in front. Scrolled-out windows are parked where macOS lets them be, see `parked(_:)`.
+    /// the focused one in front; in a strip that pushes, they fill their widened columns instead, see
+    /// `stripLayout(pushed:)`. Scrolled-out windows are parked where macOS lets them be, see `parked(_:)`.
     public func layout() -> Layout {
-        var result = tiledLayout()
+        var result = pushesFullscreen ? stripLayout(pushed: pushedColumns) : tiledLayout()
         if isScrolling { result.frames = parked(result.frames) }
         let shown = fullscreenWindows.filter { result.frames[$0] != nil }
-        for id in shown { result.frames[id] = gaps.inset(bounds) }
+        if !pushesFullscreen { for id in shown { result.frames[id] = gaps.inset(bounds) } }
         result.order = shown + result.order.filter { !shown.contains($0) }
         return result
     }

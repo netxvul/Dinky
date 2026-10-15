@@ -447,12 +447,21 @@ public enum FullscreenFocusChange: String, CaseIterable {
     case keep
 }
 
+/// What fullscreen does to the other columns of a scrolling workspace.
+public enum FullscreenScrolling: String, CaseIterable {
+    /// The window's column widens to the screen and its neighbours slide off it.
+    case push
+    /// The window covers the columns where they are.
+    case over
+}
+
 /// `[fullscreen]`: dinky's fullscreen, a window filling its workspace over the tree.
 public struct Fullscreen: Equatable {
     public var focusChange = FullscreenFocusChange.exit
     /// With `follow`, how long the newly focused window waits before going fullscreen, so the window it took focus
     /// from is back in its tile first. 0 swaps them at once.
     public var followDelayMs = 0
+    public var scrolling = FullscreenScrolling.push
 
     public init() {}
 
@@ -462,6 +471,7 @@ public struct Fullscreen: Equatable {
         guard (0...5000).contains(followDelayMs) else {
             throw ConfigError(path: t.path("follow-delay-ms"), "must be 0 to 5000")
         }
+        scrolling = try t.choice("scrolling") ?? scrolling
         try t.done()
     }
 }

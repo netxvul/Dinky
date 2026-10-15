@@ -152,6 +152,9 @@ struct ConfigTests {
         #expect(Config().fullscreen.followDelayMs == 0)
         #expect(try Config.parse("[fullscreen]\nfollow-delay-ms = 200\n").fullscreen.followDelayMs == 200)
         assertError("[fullscreen]\nfollow-delay-ms = -1\n", path: "fullscreen.follow-delay-ms", line: 2, contains: "0 to 5000")
+        #expect(Config().fullscreen.scrolling == .push)
+        #expect(try Config.parse("[fullscreen]\nscrolling = 'over'\n").fullscreen.scrolling == .over)
+        assertError("[fullscreen]\nscrolling = 'cover'\n", path: "fullscreen.scrolling", line: 2, contains: "'push', 'over'")
     }
 
     @Test func floating() throws {

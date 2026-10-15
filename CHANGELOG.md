@@ -18,6 +18,7 @@
 ### Fullscreen
 
 - New `[fullscreen] focus-change` says what Cmd-Tab, a click or `focus` onto another window of the workspace does while one is fullscreen: `'exit'` ends fullscreen, as before; `'follow'` makes the newly focused window fullscreen and puts the other back in its tile; `'keep'` makes it fullscreen too. `fullscreen` again ends it for every window. With `'follow'`, `follow-delay-ms` makes the newly focused window wait until the other is back in its tile.
+- On a scrolling workspace, `fullscreen` widens the window's column to the screen and slides its neighbours off either side, instead of covering them where they are; when fullscreen ends, the strip slides back to where it was. With `focus-change = 'follow'` or `'keep'`, focusing a neighbour scrolls a whole screen to it. `[fullscreen] scrolling = 'over'` covers them as before.
 
 ### Animations
 

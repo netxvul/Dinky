@@ -9,6 +9,10 @@ import CoreGraphics
 // instead: on an edge with nothing beyond it, it hangs off the screen with `peek` points left on, in a gutter
 // the columns keep an inner gap clear of; on an edge with another display beyond it, it stops flush at the
 // border, behind the columns in view, so it never shows on the other display.
+//
+// Fullscreen, with `fullscreenPushesStrip`, widens the fullscreen window's column to the whole screen inside the
+// outer gaps and scrolls to it, so its neighbours slide off and park as any column scrolled away does. The scroll
+// offset is left alone meanwhile, so when fullscreen ends the strip goes back to where it was.
 
 extension Workspace {
     /// How much of a parked window stays on screen. The WindowServer takes any position that leaves a little of
@@ -19,6 +23,15 @@ extension Workspace {
     static let minimumColumnWidth = 0.1
 
     public var isScrolling: Bool { algorithm == .scrolling }
+
+    /// Whether fullscreen here widens the window's column and pushes its neighbours off, rather than covering them.
+    public var pushesFullscreen: Bool { isScrolling && fullscreenPushesStrip }
+
+    /// The columns fullscreen widens to the whole screen: those holding a fullscreen window, when it pushes.
+    var pushedColumns: Set<Int> {
+        guard pushesFullscreen else { return [] }
+        return Set(fullscreenWindows.compactMap { root.path(of: $0)?.first })
+    }
 
     /// Put a window in a new column right of the focused one, at the default width.
     mutating func insertColumn(_ id: WindowID) {
@@ -53,14 +66,16 @@ extension Workspace {
 
     /// Each column's start and width in points along the strip, from its left edge. Half an inner gap is part
     /// of a column on each side that has a neighbour, so neighbours end up a whole gap apart. A lone column is
-    /// as wide as the screen; any other is its share of it, grown to fit its windows' minimum widths.
-    func columnSpans(in area: CGRect) -> [(start: CGFloat, width: CGFloat)] {
-        let count = root.children.count, gap = gaps.horizontal
+    /// as wide as the screen; any other is its share of it, grown to fit its windows' minimum widths. A column in
+    /// `pushed` is as wide as the screen inside the outer gaps, gutters and all.
+    func columnSpans(in area: CGRect, pushed: Set<Int> = []) -> [(start: CGFloat, width: CGFloat)] {
+        let count = root.children.count, gap = gaps.horizontal, screen = gaps.inset(bounds).width
         var start: CGFloat = 0
         return root.children.indices.map { i in
             let insets = (i > 0 ? gap / 2 : 0) + (i < count - 1 ? gap / 2 : 0)
             let minimum = root.children[i].minimumExtent(.horizontal, gap: gap, padding: accordionPadding, minimumSizes)
-            let width = count == 1 ? area.width : max((area.width * CGFloat(width(ofColumn: i))).rounded(), minimum + insets)
+            let share = pushed.contains(i) ? screen : (area.width * CGFloat(width(ofColumn: i))).rounded()
+            let width = count == 1 ? area.width : max(share + (pushed.contains(i) ? insets : 0), minimum + insets)
             defer { start += width }
             return (start, width)
         }
@@ -96,11 +111,19 @@ extension Workspace {
 
     /// The strip laid out at the current scroll offset, windows anywhere along it, on screen or not. The focused
     /// column comes first in the stacking, then the others by distance from it.
-    func stripLayout() -> Layout {
+    /// The columns in `pushed` are as wide as the screen and their fullscreen windows fill them; the focused one, if
+    /// pushed, fills the screen inside the outer gaps whatever the scroll offset. The other windows of a pushed
+    /// column keep the width the column has otherwise, behind its fullscreen window.
+    func stripLayout(pushed: Set<Int> = []) -> Layout {
         var result = Layout()
-        let area = stripArea, spans = columnSpans(in: area), offset = offset(for: spans, in: area)
+        let area = stripArea, spans = columnSpans(in: area, pushed: pushed), inset = gaps.inset(bounds)
         let gap = gaps.horizontal, last = root.children.count - 1
-        result.containerRects[[]] = gaps.inset(bounds)
+        var offset = offset(for: spans, in: area)
+        if let column = focused.flatMap({ root.path(of: $0)?.first }), pushed.contains(column) {
+            offset = area.minX + spans[column].start + (column > 0 ? gap / 2 : 0) - inset.minX
+        }
+        let unpushed = pushed.isEmpty ? spans : columnSpans(in: area)
+        result.containerRects[[]] = inset
         for i in root.stackingOrder {
             let span = spans[i]
             let lead = i > 0 ? gap / 2 : 0, trail = i < last ? gap / 2 : 0
@@ -111,6 +134,11 @@ extension Workspace {
             case .window(let id):
                 result.frames[id] = rect
                 result.order.append(id)
+            case .container(let c) where pushed.contains(i):
+                let end = (x + unpushed[i].width - trail).rounded()
+                let inner = CGRect(x: a, y: area.minY, width: end - a, height: area.height)
+                c.layout(in: inner, gaps: gaps, padding: accordionPadding, minimums: minimumSizes, path: [i], into: &result)
+                for id in Node.container(c).windows where fullscreenWindows.contains(id) { result.frames[id] = rect }
             case .container(let c):
                 c.layout(in: rect, gaps: gaps, padding: accordionPadding, minimums: minimumSizes, path: [i], into: &result)
             }
@@ -122,7 +150,7 @@ extension Workspace {
     /// on every frame (`placeStrip`) scrolls the strip as one: a column passing through slides across the screen
     /// where the strip has it, rather than every parked window flying straight from one edge to the other.
     public var stripFrames: [WindowID: CGRect] {
-        isScrolling ? stripLayout().frames : [:]
+        isScrolling ? stripLayout(pushed: pushedColumns).frames : [:]
     }
 
     /// Where strip frames, such as `stripFrames` part way through a glide, go on screen: parked as `layout()` parks
@@ -133,8 +161,10 @@ extension Workspace {
     /// behind the column in view nearest the wall instead, taking the frame of that column's biggest window, so
     /// none of it shows in the outer gap, between the columns, or between the windows of a column of several.
     /// It only grows past that frame to its minimum size, away from the wall. With no column in view it stays
-    /// flush at the wall.
+    /// flush at the wall. While fullscreen pushes, the column in view is the fullscreen window's, so a window hiding
+    /// behind it keeps its own size rather than taking the whole screen's.
     func parked(_ frames: [WindowID: CGRect]) -> [WindowID: CGRect] {
+        let keepsSize = !pushedColumns.isEmpty
         let covers = root.children.compactMap { column -> CGRect? in
             let rects = column.windows.compactMap { frames[$0] }
             guard !rects.isEmpty, rects.allSatisfy({ $0.minX >= bounds.minX - 1 && $0.maxX <= bounds.maxX + 1 }) else { return nil }
@@ -146,7 +176,8 @@ extension Workspace {
             guard offLeft != offRight, walls.contains(offLeft ? .left : .right),
                   let cover = offLeft ? left : right else { return (id, parked(frame)) }
             let minimum = minimumSizes[id] ?? .zero
-            let width = max(cover.width, minimum.width), height = max(cover.height, minimum.height)
+            let width = keepsSize ? frame.width : max(cover.width, minimum.width)
+            let height = keepsSize ? frame.height : max(cover.height, minimum.height)
             return (id, CGRect(x: offLeft ? cover.minX : cover.maxX - width, y: cover.minY, width: width, height: height))
         })
     }
@@ -161,9 +192,10 @@ extension Workspace {
         return CGRect(x: x, y: frame.minY, width: frame.width, height: frame.height)
     }
 
-    /// Whether the strip shows the whole window now. Always true outside the scrolling layout.
+    /// Whether the strip shows the whole window now. Always true outside the scrolling layout. Neighbours a
+    /// fullscreen window pushed off are not in view.
     public func isInView(_ id: WindowID) -> Bool {
-        guard isScrolling, let frame = tiledLayout().frames[id] else { return true }
+        guard isScrolling, let frame = stripLayout(pushed: pushedColumns).frames[id] else { return true }
         return frame.minX >= bounds.minX - 1 && frame.maxX <= bounds.maxX + 1
     }
 

@@ -107,6 +107,12 @@
           "maximum": 5000,
           "default": 0,
           "description": "With focus-change = 'follow', how long the newly focused window waits before going fullscreen, so the other window is back in its tile first. 0 swaps them at once."
+        },
+        "scrolling": {
+          "type": "string",
+          "enum": ["push", "over"],
+          "default": "push",
+          "description": "On a scrolling workspace: push widens the window's column to the screen and slides its neighbours off, over covers the columns where they are."
         }
       }
     },
