@@ -73,8 +73,14 @@ final class DisplayModel {
                                                           object: nil, queue: .main) { [weak self] _ in
             self?.reconcile()
         }
-        // Neither notification is reliable for swipes posted by other processes.
-        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.reconcile() }
+        // Neither notification is reliable for swipes posted by other processes, so poll. Enumerating displays and
+        // Spaces is not free, so poll every half second only while a switch is in flight — when the new Space must be
+        // caught quickly — and every two seconds otherwise, where it is just a backstop to the notifications.
+        var tick = 0
+        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            tick += 1
+            if SpaceSwitcher.shared.switching || tick % 4 == 0 { self?.reconcile() }
+        }
     }
 
     /// Re-reads every display from WindowServer. Records previous Spaces and publishes if anything changed.
