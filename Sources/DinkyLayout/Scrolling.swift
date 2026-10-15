@@ -10,8 +10,9 @@ import CoreGraphics
 // the columns keep an inner gap clear of; on an edge with another display beyond it, it stops flush at the
 // border, behind the columns in view, so it never shows on the other display.
 //
-// Fullscreen, with `fullscreenPushesStrip`, widens the fullscreen window's column to the whole screen inside the
-// outer gaps and scrolls to it, so its neighbours slide off and park as any column scrolled away does. The scroll
+// Fullscreen, with `fullscreenPushesStrip`, widens the fullscreen window's column to the whole width the columns
+// get, clear of the gutters, and scrolls to it, so its neighbours slide off and park in the gutters, a gap from it,
+// as any column scrolled away does. The scroll
 // offset is left alone meanwhile, so when fullscreen ends the strip goes back to where it was.
 
 extension Workspace {
@@ -67,15 +68,15 @@ extension Workspace {
     /// Each column's start and width in points along the strip, from its left edge. Half an inner gap is part
     /// of a column on each side that has a neighbour, so neighbours end up a whole gap apart. A lone column is
     /// as wide as the screen; any other is its share of it, grown to fit its windows' minimum widths. A column in
-    /// `pushed` is as wide as the screen inside the outer gaps, gutters and all.
+    /// `pushed` is as wide as `area`, so with its half gaps it stays a whole gap from the gutters either side.
     func columnSpans(in area: CGRect, pushed: Set<Int> = []) -> [(start: CGFloat, width: CGFloat)] {
-        let count = root.children.count, gap = gaps.horizontal, screen = gaps.inset(bounds).width
+        let count = root.children.count, gap = gaps.horizontal
         var start: CGFloat = 0
         return root.children.indices.map { i in
             let insets = (i > 0 ? gap / 2 : 0) + (i < count - 1 ? gap / 2 : 0)
             let minimum = root.children[i].minimumExtent(.horizontal, gap: gap, padding: accordionPadding, minimumSizes)
-            let share = pushed.contains(i) ? screen : (area.width * CGFloat(width(ofColumn: i))).rounded()
-            let width = count == 1 ? area.width : max(share + (pushed.contains(i) ? insets : 0), minimum + insets)
+            let share = pushed.contains(i) ? area.width : (area.width * CGFloat(width(ofColumn: i))).rounded()
+            let width = count == 1 ? area.width : max(share, minimum + insets)
             defer { start += width }
             return (start, width)
         }
@@ -111,8 +112,8 @@ extension Workspace {
 
     /// The strip laid out at the current scroll offset, windows anywhere along it, on screen or not. The focused
     /// column comes first in the stacking, then the others by distance from it.
-    /// The columns in `pushed` are as wide as the screen and their fullscreen windows fill them; the focused one, if
-    /// pushed, fills the screen inside the outer gaps whatever the scroll offset. The other windows of a pushed
+    /// The columns in `pushed` are as wide as the strip's area and their fullscreen windows fill them; the focused
+    /// one, if pushed, fills the area whatever the scroll offset, its neighbours parked in the gutters either side. The other windows of a pushed
     /// column keep the width the column has otherwise, behind its fullscreen window.
     func stripLayout(pushed: Set<Int> = []) -> Layout {
         var result = Layout()
@@ -120,7 +121,7 @@ extension Workspace {
         let gap = gaps.horizontal, last = root.children.count - 1
         var offset = offset(for: spans, in: area)
         if let column = focused.flatMap({ root.path(of: $0)?.first }), pushed.contains(column) {
-            offset = area.minX + spans[column].start + (column > 0 ? gap / 2 : 0) - inset.minX
+            offset = spans[column].start
         }
         let unpushed = pushed.isEmpty ? spans : columnSpans(in: area)
         result.containerRects[[]] = inset

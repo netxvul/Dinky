@@ -315,9 +315,11 @@ struct ScrollingFullscreenTests {
     @Test func `Fullscreen widens its column and pushes the neighbours off`() {
         let ws = fullscreen(gaps: Gaps(all: 10))
         let frames = ws.layout().frames
-        #expect(frames[2] == Gaps(all: 10).inset(ws.bounds))
+        #expect(frames[2] == ws.stripArea.insetBy(dx: 5, dy: 0), "clear of the gutters")
+        #expect(frames[2]!.minX - frames[1]!.maxX == 10, "a gap either side")
         #expect(frames[1]!.maxX == ws.bounds.minX + peek)
         #expect(frames[3]!.minX == ws.bounds.maxX - peek)
+        #expect(frames[3]!.minX - frames[2]!.maxX == 10)
         #expect(frames[1]!.width == 490, "neighbours keep their width")
         #expect(!ws.isInView(1) && !ws.isInView(3) && ws.isInView(2))
         #expect(ws.layout().order.first == 2)
@@ -355,24 +357,24 @@ struct ScrollingFullscreenTests {
         var ws = fullscreen(focusChange: .follow)
         ws.focus(.right)
         let frames = ws.layout().frames
-        #expect(frames[3] == ws.bounds)
+        #expect(frames[3] == ws.stripArea)
         #expect(frames[2]!.width == 500 && !ws.isInView(2), "back to its width, off screen")
     }
 
     @Test func `With keep every fullscreen column is as wide as the screen`() {
         var ws = fullscreen(focusChange: .keep)
         ws.focus(.right)
-        #expect(ws.layout().frames[3] == ws.bounds)
+        #expect(ws.layout().frames[3] == ws.stripArea)
         ws.focus(.left)
-        #expect(ws.layout().frames[2] == ws.bounds)
-        #expect(ws.stripFrames[3]!.width == ws.bounds.width)
+        #expect(ws.layout().frames[2] == ws.stripArea)
+        #expect(ws.stripFrames[3]!.width == ws.stripArea.width)
     }
 
     @Test func `A new window with follow opens fullscreen`() {
         var ws = fullscreen(focusChange: .follow)
         ws.insert(9)
         #expect(ws.windows == [1, 2, 9, 3, 4])
-        #expect(ws.layout().frames[9] == ws.bounds)
+        #expect(ws.layout().frames[9] == ws.stripArea)
         #expect(!ws.isInView(2))
     }
 
@@ -383,9 +385,9 @@ struct ScrollingFullscreenTests {
         let before = ws.layout().frames[3]!
         ws.toggleFullscreen()
         let frames = ws.layout().frames
-        #expect(frames[2] == ws.bounds)
+        #expect(frames[2] == ws.stripArea)
         #expect(frames[3]!.size == before.size)
-        #expect(frames[3]!.minX == ws.bounds.minX)
+        #expect(frames[3]!.minX == ws.stripArea.minX)
     }
 
     @Test func `At a wall the pushed neighbours keep their size behind it`() {

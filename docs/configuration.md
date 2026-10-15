@@ -144,7 +144,7 @@ by Cmd-Tab, a click, `focus`, a new window or the fullscreen window closing.
 |---|---|---|
 | `focus-change` | `'exit'` | `'exit'`: fullscreen ends and the window goes back to its tile. `'follow'`: the newly focused window goes fullscreen and the other goes back to its tile. `'keep'`: the newly focused window goes fullscreen too, and the other stays fullscreen behind it. |
 | `follow-delay-ms` | `0` | With `'follow'`, how long the newly focused window waits in its tile before going fullscreen, from `0` to `5000`, so the window it took over from is back in its tile first. `0` swaps them at the same time. About `duration-ms` waits for the glide back; a little more lets it settle. |
-| `scrolling` | `'push'` | On a scrolling workspace, `'push'` widens the window's column to the screen and slides its neighbours off either side; when fullscreen ends, the strip goes back to where it was. `'over'` covers the columns where they are, as on any other workspace. |
+| `scrolling` | `'push'` | On a scrolling workspace, `'push'` widens the window's column across the screen and slides its neighbours off either side, where their edges show a gap from it, as a scrolled-away column's do; when fullscreen ends, the strip goes back to where it was. `'over'` covers the columns where they are, as on any other workspace. |
 
 </div>
 

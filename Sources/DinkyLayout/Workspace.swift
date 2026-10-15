@@ -40,7 +40,7 @@ public struct Workspace: Equatable, Sendable {
     /// With `follow`, whether the newly focused window waits until the coordinator promotes it, so the window it took
     /// focus from is back in its tile first. Off, it goes fullscreen at once.
     public var fullscreenFollowsLater = false
-    /// Scrolling: whether fullscreen widens the window's column to the screen and pushes its neighbours off it,
+    /// Scrolling: whether fullscreen widens the window's column across the screen and pushes its neighbours off it,
     /// rather than covering them where they are. See Scrolling.swift.
     public var fullscreenPushesStrip = true
     /// The focused window waiting to go fullscreen with `fullscreenFollowsLater`. See `promotePendingFullscreen`.
