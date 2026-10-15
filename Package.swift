@@ -12,6 +12,9 @@ let package = Package(
         // Private SkyLight and CGS calls. Objective-C, capability checked, nothing else lives here.
         .target(
             name: "DinkyPrivate",
+            // The scripting addition (osax/payload.m, osax/loader.m) is built and injected into Dock separately,
+            // by scripts/build-sa.sh; only its wire protocol (osax/common.h) is shared with the client here.
+            exclude: ["osax/payload.m", "osax/loader.m"],
             linkerSettings: [
                 .unsafeFlags(["-F/System/Library/PrivateFrameworks", "-framework", "SkyLight"]),
                 .linkedFramework("ApplicationServices"),

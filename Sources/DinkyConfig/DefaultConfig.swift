@@ -33,6 +33,7 @@ extension Config {
     [scrolling]
     column-width = 0.49             # a new column's share of the display; a lone column fills it
     glide = 'windows'               # windows (moved frame by frame) | snapshots (smooth, needs Screen Recording)
+                                    # | scripting-addition (smooth via Dock, needs SIP off + the addition injected)
 
     [floating]
     move-step = 50                  # points `move` shifts a floating window by, unless the binding gives a number

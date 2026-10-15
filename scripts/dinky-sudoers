@@ -1,0 +1,12 @@
+# Lets dinky re-inject its Dock scripting addition after a Dock restart without a password prompt.
+# The command is a fixed, root-owned binary in /Library (writable only by root), so this grants no more than the
+# ability to (re)load the addition dinky already installed. Same approach as yabai's --load-sa sudoers entry.
+#
+# Install (substitutes your username):
+#   printf '%s ALL=(root) NOPASSWD: /Library/ScriptingAdditions/dinky.osax/Contents/MacOS/loader\n' "$USER" \
+#     | sudo tee /etc/sudoers.d/dinky >/dev/null \
+#     && sudo chmod 440 /etc/sudoers.d/dinky \
+#     && sudo visudo -cf /etc/sudoers.d/dinky
+#
+# Remove: sudo rm /etc/sudoers.d/dinky
+netx ALL=(root) NOPASSWD: /Library/ScriptingAdditions/dinky.osax/Contents/MacOS/loader

@@ -66,6 +66,10 @@ final class Coordinator {
     /// GlideStage.
     private var glides: [UInt64: (token: Int, stage: GlideStage?, layout: Layout)] = [:]
     private var glideTokens = 0
+    /// By scrolling tree, a glide driven by the Dock scripting addition: the windows it holds transformed and the
+    /// layout it is gliding to, so a superseding pass clears those transforms. See ScriptingAddition.
+    private var saGlides: [UInt64: (token: Int, ids: [WindowID], layout: Layout)] = [:]
+    private var saGlideTokens = 0
     /// Where dinky last sent each floating window, so a command pressed again mid-glide starts from where the
     /// window is going rather than where it is.
     private(set) var floatingTargets: [WindowID: CGRect] = [:]
@@ -105,6 +109,7 @@ final class Coordinator {
 
     func update(config: Config) {
         self.config = config
+        ScriptingAddition.enabled = config.scrolling.glide == .scriptingAddition
         animator.configure(durationMs: config.animations.durationMs,
                            easing: Easing(rawValue: config.animations.curve.rawValue))
         if config.borders.enabled {
@@ -399,6 +404,14 @@ final class Coordinator {
             glide.stage?.remove(fading: false)
             animator.stop(key)
         }
+        // A scripting-addition glide heading for this layout carries on; one heading elsewhere clears its transforms,
+        // so the windows show at the real frames this pass is about to write.
+        if let sa = saGlides[key] {
+            if sa.layout == layout { return }
+            saGlides[key] = nil
+            ScriptingAddition.reset(sa.ids)
+            animator.stop(key)
+        }
         let pids = Dictionary(uniqueKeysWithValues: layout.order.compactMap { id in model.windows[id].map { (id, $0.pid) } })
         let writeThen = { [weak self] (landed: @escaping () -> Void) in
             guard let self else { return }
@@ -460,7 +473,34 @@ final class Coordinator {
             for id in fullscreen where frames[id] != nil { placed[id] = frames[id] }
             return placed
         }
-        let glidesSnapshots = config.scrolling.glide == .snapshots && fullscreen.isEmpty && Thumbnails.shared.permitted
+        // With the scripting addition, the strip glides by moving the real windows through Dock's connection each
+        // frame: no snapshots, no Screen Recording, and windows slide past the screen edges that Accessibility clamps.
+        // The real frames go to their places underneath at once; the transforms clear once the glide ends and those
+        // frames have landed. Every strip window is placed every frame, the moving ones over the resting ones.
+        // The transforms only translate, so a window whose size also changes this pass (restoring from a filled or
+        // enlarged state, a column width change) must resize through Accessibility, where its app re-renders, rather
+        // than be stretched by a transform; such a pass is left to the snapshot or window glide below.
+        let saResizing = strip.contains { id, frame in
+            guard let size = model.windows[id]?.frame.size else { return false }
+            return abs(size.width - frame.width) > 1 || abs(size.height - frame.height) > 1
+        }
+        if fullscreen.isEmpty, !saResizing, ScriptingAddition.available {
+            let stripIDs = Array(strip.keys)
+            saGlideTokens += 1
+            let token = saGlideTokens
+            saGlides[key] = (token, stripIDs, layout)
+            let saGlide = SAGlide { [weak self] in self?.endSAGlide(key, token) }
+            var initial: [WindowID: CGRect] = [:]
+            for id in stripIDs { initial[id] = starts[id] ?? strip[id] }
+            ScriptingAddition.transform(initial)
+            writeThen { saGlide.framesLanded() }
+            return animator.animate(key, from: starts, to: targets, pids: pids, stretch: stretch,
+                                    sink: { ScriptingAddition.transform(strip.merging($0) { $1 }) }) { saGlide.glideEnded() }
+        }
+        // Snapshots are fixed bitmaps, so a window resizing this pass (restoring from a filled or enlarged state, a
+        // width change) would be stretched by them just as a transform would; such a pass glides the windows directly.
+        let glidesSnapshots = (config.scrolling.glide == .snapshots || config.scrolling.glide == .scriptingAddition)
+            && fullscreen.isEmpty && !saResizing && Thumbnails.shared.permitted
         guard glidesSnapshots, let display = displays.display(containingSpace: key) else {
             return animator.animate(key, from: starts, to: targets, pids: pids, place: place, stretch: stretch, then: write)
         }
@@ -491,6 +531,14 @@ final class Coordinator {
                 stage.glideEnded()
             }
         }
+    }
+
+    /// Ends a scripting-addition glide, clearing the Dock transforms it held, unless a newer pass has already taken
+    /// those windows over (its token differs).
+    private func endSAGlide(_ key: UInt64, _ token: Int) {
+        guard let sa = saGlides[key], sa.token == token else { return }
+        saGlides[key] = nil
+        ScriptingAddition.reset(sa.ids)
     }
 
     /// Moves a floating window to `frame`: gliding there from where it is when passes glide, then written with

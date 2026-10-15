@@ -245,9 +245,12 @@ public struct Scrolling: Equatable {
 
 /// How a scrolling workspace's strip scrolls: its windows moved frame by frame, as fast as each app moves them, or
 /// snapshots of them gliding over a snapshot of what is behind, the windows put in place underneath at once. Snapshots
-/// need Screen Recording; without it the windows move.
+/// need Screen Recording; without it the windows move. `scripting-addition` moves the real windows through Dock's
+/// privileged connection (smooth, and windows can slide off-screen) and needs the Dock scripting addition injected
+/// (SIP disabled; see scripts/build-sa.sh); it falls back to the snapshot/window paths when the addition is absent.
 public enum ScrollingGlide: String, CaseIterable {
     case windows, snapshots
+    case scriptingAddition = "scripting-addition"
 }
 
 /// The modifier that shows the switcher, its side as `[modifiers]` says; `none` turns the switcher off.

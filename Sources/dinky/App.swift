@@ -61,6 +61,9 @@ final class DinkyApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // First, so the follower sees every Space change from here on, the first arrangement's included.
         installActivationFollower()
         AppState.shared.startCoordinator()
+        // Bring the Dock scripting addition up if it is installed but not loaded (e.g. after a Dock restart), so a
+        // scroll glides smoothly from the start. A no-op without the sudoers entry; falls back silently otherwise.
+        ScriptingAddition.ensureLoaded()
         if let windows = AppState.shared.coordinator?.model { noteGoneWindows(in: windows) }
         AppState.shared.numbers.start()
         AppState.shared.numbers.observe { [weak self] in self?.refresh() }
