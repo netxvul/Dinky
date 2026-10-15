@@ -388,6 +388,7 @@ per window, so the capsule draws at once and fresh ones fade in.
 | `corner-radius` | `52` | The capsule's corner radius in points, `0` to `80`, at most half its height. The padding around the thumbnails is the same on every side, `14` points, growing with the radius past `47` so no thumbnail is clipped. The row is about `128` points tall, so it takes about `70` for round ends; the map is `220`, and looks best around `20` to `28`. |
 | `tiles-style` | `'map'` | How a tiles or fixed workspace shows: `'map'`, its tiles as they are, or `'row'`, a row like a scrolling workspace's. |
 | `show-single` | `true` | Whether the capsule shows for a workspace with a lone tiled window, held or from a binding. `false` shows it only with two or more. |
+| `position` | `'auto'` | Where the capsule shows on the display under the pointer: `'auto'` over the pointer when the modifier is held or a swipe shows it, in the middle from a key binding; `'center'` in the middle; `'top'` below the menu bar; `'bottom'` above the Dock; `'mouse'` over the pointer, from a key binding too. Wherever it shows, moving the pointer while the modifier is held moves the pick as if the capsule were under it. |
 
 </div>
 
@@ -454,6 +455,7 @@ on screen as the capsule shows; a window not captured yet shows its app's icon.
 | `card-height` | `85` | Each card's height in points, `60` to `200`; its width follows its display. A row too wide for the display is scaled down. |
 | `thumbnails` | `'windows'` | `'windows'` shows a picture of each window; `'icons'` only app icons; `'schematic'` a fixed picture of each workspace's layout, the same whatever windows it has: tiles one window beside two, accordion three stacked, scrolling two columns between parked slivers, fixed its template's cells, floating three overlapping windows. Its windows are solid grey blocks with a hairline edge, as Windows draws its snap layouts, all in the accent colour on the card picked. Neither of the last two needs Screen Recording. |
 | `corner-radius` | `[window-switcher]`'s | The capsule's corner radius in points, `0` to `80`. |
+| `position` | `[window-switcher]`'s | Where the capsule shows, as [`[window-switcher]`'s `position`](#window-switcher): `'auto'`, `'center'`, `'top'`, `'bottom'` or `'mouse'`. |
 
 </div>
 
@@ -717,6 +719,7 @@ layouts = ['scrolling', 'tiles']  # where it shows: scrolling | tiles | accordio
 corner-radius = 52              # points, 0 to 80; about 70 or more makes the row's ends round
 tiles-style = 'map'             # tiles and fixed: map (their tiles, picked in two dimensions) | row
 show-single = true              # also show it for a workspace with a lone tiled window
+position = 'auto'               # auto (at the pointer when held, the middle from a binding) | center | top | bottom | mouse
 
 # Which key of each pair bindings answer to: both | left | right. With alt = 'left',
 # right Option still types special characters.

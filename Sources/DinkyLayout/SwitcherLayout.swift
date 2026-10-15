@@ -12,6 +12,8 @@ public struct SwitcherLayout: Equatable {
     public static let stackGap: CGFloat = 4
     /// Points kept between the capsule and the screen's edges.
     public static let screenMargin: CGFloat = 8
+    /// Points between a capsule shown at the top or bottom and the menu bar or Dock, as the HUD's `offset`.
+    public static let edgeMargin: CGFloat = 16
 
     public let size: CGSize
     /// Each window's thumbnail, in the order given.
@@ -65,6 +67,13 @@ public struct SwitcherLayout: Equatable {
     /// Where a capsule of `size` goes to sit in the middle of `visible`, in global coordinates (top-left origin).
     public static func centred(_ size: CGSize, in visible: CGRect) -> CGPoint {
         CGPoint(x: (visible.midX - size.width / 2).rounded(), y: (visible.midY - size.height / 2).rounded())
+    }
+
+    /// Where a capsule of `size` goes across the middle of `visible`, `edgeMargin` below its top (the menu bar) or above
+    /// its bottom (the Dock), in global coordinates (top-left origin).
+    public static func edge(_ size: CGSize, in visible: CGRect, top: Bool) -> CGPoint {
+        let y = top ? visible.minY + edgeMargin : max(visible.maxY - edgeMargin - size.height, visible.minY)
+        return CGPoint(x: (visible.midX - size.width / 2).rounded(), y: y.rounded())
     }
 
     /// Where the capsule goes in global coordinates (top-left origin): thumbnail `anchor` centred on `pointer`, kept

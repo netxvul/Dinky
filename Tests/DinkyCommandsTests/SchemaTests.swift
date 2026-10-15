@@ -70,6 +70,7 @@ struct SchemaTests {
         let layouts = switcher["layouts"]!["items"] as! [String: Any]
         #expect(layouts["enum"] as! [String] == SwitcherLayoutKind.allCases.map(\.rawValue))
         #expect(switcher["tiles-style"]!["enum"] as! [String] == SwitcherTilesStyle.allCases.map(\.rawValue))
+        #expect(switcher["position"]!["enum"] as! [String] == SwitcherPosition.allCases.map(\.rawValue))
     }
 
     @Test func `Workspace switcher choices agree`() {
@@ -78,6 +79,7 @@ struct SchemaTests {
         #expect(switcher["modifier"]!["enum"] as! [String] == SwitcherModifier.allCases.map(\.rawValue))
         #expect(switcher["displays"]!["enum"] as! [String] == WorkspaceSwitcherDisplays.allCases.map(\.rawValue))
         #expect(switcher["thumbnails"]!["enum"] as! [String] == WorkspaceSwitcherThumbnails.allCases.map(\.rawValue))
+        #expect(switcher["position"]!["enum"] as! [String] == SwitcherPosition.allCases.map(\.rawValue))
     }
 
     @Test func `Rule layouts agree`() {
@@ -140,6 +142,7 @@ struct SchemaTests {
         corner-radius = 20
         tiles-style = 'row'
         show-single = false
+        position = 'top'
 
         [workspace-switcher]
         modifier = 'ctrl'
@@ -150,6 +153,7 @@ struct SchemaTests {
         card-height = 90
         thumbnails = 'icons'
         corner-radius = 18
+        position = 'mouse'
 
         [gestures]
         fingers = 4

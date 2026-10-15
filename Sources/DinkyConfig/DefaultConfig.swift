@@ -100,6 +100,7 @@ extension Config {
     corner-radius = 52              # points, 0 to 80; about 70 or more makes the row's ends round
     tiles-style = 'map'             # tiles and fixed: map (their tiles, picked in two dimensions) | row
     show-single = true              # also show it for a workspace with a lone tiled window
+    position = 'auto'               # auto (at the pointer when held, the middle from a binding) | center | top | bottom | mouse
 
     # Hold the modifier alone for a glass capsule of the workspaces at the pointer, each drawn small in its layout;
     # move across to pick one, release to switch to it.
@@ -112,6 +113,7 @@ extension Config {
     card-height = 85                # points, 60 to 200; the width follows each display's proportions
     thumbnails = 'windows'          # windows (pictures, need Screen Recording) | icons (app icons) | schematic (a fixed picture of the layout)
     # corner-radius = 18            # points, 0 to 80; [window-switcher]'s when left out
+    # position = 'auto'             # auto | center | top | bottom | mouse; [window-switcher]'s when left out
 
     # Swipes on the trackpad, each running commands as a key binding does. A swipe that shows a switcher goes on
     # picking with the same fingers, a step every `step` millimetres; lift them to take the pick.

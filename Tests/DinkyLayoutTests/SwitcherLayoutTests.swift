@@ -18,6 +18,15 @@ struct SwitcherLayoutTests {
         #expect(layout.size == CGSize(width: 494, height: 128))
     }
 
+    @Test func `At the top or bottom, across the middle and clear of the menu bar or Dock`() {
+        let size = CGSize(width: 494, height: 128)
+        #expect(SwitcherLayout.edge(size, in: visible, top: true) == CGPoint(x: 509, y: 41))
+        #expect(SwitcherLayout.edge(size, in: visible, top: false) == CGPoint(x: 509, y: 781))
+        // Never above the top of a display too short for it.
+        let short = CGRect(x: 0, y: 25, width: 1512, height: 100)
+        #expect(SwitcherLayout.edge(size, in: short, top: false).y == 25)
+    }
+
     @Test func `Padding follows the corner radius`() {
         let round = SwitcherLayout(columns: [[1.5], [1.5]], cornerRadius: 64, maxWidth: 2000)
         #expect(round.frames[0].origin == CGPoint(x: 19, y: 19))

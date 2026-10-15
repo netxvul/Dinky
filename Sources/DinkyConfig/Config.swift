@@ -268,6 +268,20 @@ public enum SwitcherTilesStyle: String, CaseIterable {
     case map, row
 }
 
+/// Where a switcher's capsule shows, on the display under the pointer.
+public enum SwitcherPosition: String, CaseIterable {
+    /// Over the pointer when the modifier is held or a swipe shows it, in the middle from a key binding.
+    case auto
+    /// In the middle of the display.
+    case center
+    /// Below the menu bar, across the middle.
+    case top
+    /// Above the Dock, across the middle.
+    case bottom
+    /// Over the pointer, from a key binding too.
+    case mouse
+}
+
 /// `[window-switcher]`: hold the modifier on its own over a workspace laid out by one of `layouts` and a capsule of its
 /// windows shows at the pointer; release to focus the one picked.
 public struct Switcher: Equatable {
@@ -280,6 +294,7 @@ public struct Switcher: Equatable {
     public var tilesStyle = SwitcherTilesStyle.map
     /// Whether the capsule shows for a workspace with a lone tiled window, the modifier held or the binding pressed.
     public var showSingle = true
+    public var position = SwitcherPosition.auto
 
     public init() {}
 
@@ -300,6 +315,7 @@ public struct Switcher: Equatable {
         guard (0...80).contains(cornerRadius) else { throw ConfigError(path: t.path("corner-radius"), "must be 0 to 80") }
         tilesStyle = try t.choice("tiles-style") ?? tilesStyle
         showSingle = try t.bool("show-single") ?? showSingle
+        position = try t.choice("position") ?? position
         try t.done()
     }
 }
@@ -370,6 +386,8 @@ public struct WorkspaceSwitcher: Equatable {
     public var thumbnails = WorkspaceSwitcherThumbnails.windows
     /// Points; nil takes `[window-switcher]`'s.
     public var cornerRadius: Double?
+    /// Nil takes `[window-switcher]`'s.
+    public var position: SwitcherPosition?
 
     public init() {}
 
@@ -388,6 +406,7 @@ public struct WorkspaceSwitcher: Equatable {
         if let cornerRadius, !(0...80).contains(cornerRadius) {
             throw ConfigError(path: t.path("corner-radius"), "must be 0 to 80")
         }
+        position = try t.choice("position") ?? position
         try t.done()
     }
 }

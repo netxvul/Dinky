@@ -288,6 +288,12 @@
           "type": "boolean",
           "default": true,
           "description": "Whether the capsule shows for a workspace with a lone tiled window, held or from a binding. false shows it only with two or more."
+        },
+        "position": {
+          "type": "string",
+          "enum": ["auto", "center", "top", "bottom", "mouse"],
+          "default": "auto",
+          "description": "Where the capsule shows on the display under the pointer. auto: over the pointer when held or swiped, in the middle from a key binding. center: the middle. top: below the menu bar. bottom: above the Dock. mouse: over the pointer, from a key binding too."
         }
       }
     },
@@ -340,6 +346,11 @@
           "minimum": 0,
           "maximum": 80,
           "description": "The capsule's corner radius in points; [window-switcher]'s when left out."
+        },
+        "position": {
+          "type": "string",
+          "enum": ["auto", "center", "top", "bottom", "mouse"],
+          "description": "Where the capsule shows, as [window-switcher]'s position; [window-switcher]'s when left out."
         }
       }
     },

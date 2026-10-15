@@ -181,6 +181,7 @@ struct ConfigTests {
         #expect(defaults.cornerRadius == 52)
         #expect(defaults.tilesStyle == .map)
         #expect(defaults.showSingle)
+        #expect(defaults.position == .auto)
         let switcher = try Config.parse("""
             [window-switcher]
             modifier = 'alt'
@@ -189,6 +190,7 @@ struct ConfigTests {
             corner-radius = 12
             tiles-style = 'row'
             show-single = false
+            position = 'bottom'
             """).windowSwitcher
         #expect(switcher.modifier == .alt)
         #expect(switcher.delayMs == 0)
@@ -196,6 +198,8 @@ struct ConfigTests {
         #expect(switcher.cornerRadius == 12)
         #expect(switcher.tilesStyle == .row)
         #expect(!switcher.showSingle)
+        #expect(switcher.position == .bottom)
+        assertError("[window-switcher]\nposition = 'left'\n", path: "window-switcher.position", line: 2, contains: "'auto', 'center', 'top', 'bottom', 'mouse'")
         assertError("[window-switcher]\ntiles-style = 'grid'\n", path: "window-switcher.tiles-style", line: 2, contains: "'map', 'row'")
         assertError("[window-switcher]\nmodifier = 'fn'\n", path: "window-switcher.modifier", line: 2, contains: "'alt'")
         assertError("[window-switcher]\ndelay-ms = 5000\n", path: "window-switcher.delay-ms", line: 2, contains: "0 to 2000")
@@ -212,6 +216,7 @@ struct ConfigTests {
         #expect(defaults.cardHeight == 85)
         #expect(defaults.thumbnails == .windows)
         #expect(defaults.cornerRadius == nil)
+        #expect(defaults.position == nil)
         let switcher = try Config.parse("""
             [workspace-switcher]
             modifier = 'ctrl'
@@ -222,6 +227,7 @@ struct ConfigTests {
             card-height = 100
             thumbnails = 'icons'
             corner-radius = 18
+            position = 'center'
             """).workspaceSwitcher
         #expect(switcher.modifier == .ctrl)
         #expect(switcher.delayMs == 300)
@@ -231,6 +237,7 @@ struct ConfigTests {
         #expect(switcher.cardHeight == 100)
         #expect(switcher.thumbnails == .icons)
         #expect(switcher.cornerRadius == 18)
+        #expect(switcher.position == .center)
         assertError("[window-switcher]\nmodifier = 'alt'\n[workspace-switcher]\nmodifier = 'alt'\n",
                     path: "workspace-switcher.modifier", line: 4, contains: "[window-switcher]")
         #expect(try Config.parse("[workspace-switcher]\nthumbnails = 'schematic'\n").workspaceSwitcher.thumbnails == .schematic)
