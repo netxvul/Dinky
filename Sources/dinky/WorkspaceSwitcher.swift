@@ -28,8 +28,6 @@ final class WorkspaceSwitcher {
     private var layout = WorkspaceSwitcherLayout(groups: [], cardHeight: 0, maxWidth: 0)
     /// The capsule's top-left corner, in global coordinates with a top-left origin.
     private var origin = CGPoint.zero
-    /// Where pointer moves pick from: the capsule over the pointer, though `position` shows it elsewhere.
-    private var pickOrigin = CGPoint.zero
     private var position = SwitcherPosition.auto
     private var startPointer = CGPoint.zero
     private var pointerMoved = false
@@ -166,8 +164,6 @@ final class WorkspaceSwitcher {
             ?? cards.firstIndex { $0.display.uuid == here.uuid } ?? 0
         let atPointer = layout.origin(anchor: picked, pointer: pointer, visible: visible)
         origin = position.origin(size: layout.size, visible: visible, fromKeyboard: hold.centred, atPointer: atPointer)
-        // Shown by the keyboard, the pointer picks over the capsule; held, it moves the pick as if the capsule were under it.
-        pickOrigin = hold.centred ? origin : atPointer
         startPointer = pointer
         pointerMoved = false
 
@@ -223,7 +219,7 @@ final class WorkspaceSwitcher {
             guard hypot(point.x - startPointer.x, point.y - startPointer.y) >= Self.deadZone else { return }
             pointerMoved = true
         }
-        guard let index = layout.index(atX: point.x - pickOrigin.x), index != view.picked else { return }
+        guard let index = layout.index(atX: point.x - origin.x), index != view.picked else { return }
         view.pick(index)
         tapTrackpad()
     }

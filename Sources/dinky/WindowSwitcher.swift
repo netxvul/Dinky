@@ -70,8 +70,6 @@ final class WindowSwitcher {
     private var arrangement = Arrangement.row(SwitcherLayout(columns: [], maxWidth: 0))
     /// The capsule's top-left corner, in global coordinates with a top-left origin.
     private var origin = CGPoint.zero
-    /// Where pointer moves pick from: the capsule over the pointer, though `position` shows it elsewhere.
-    private var pickOrigin = CGPoint.zero
     private var startPointer = CGPoint.zero
     private var pointerMoved = false
     /// Bumped on every showing, so a fade-out that finishes after a newer showing leaves the panel up.
@@ -259,8 +257,6 @@ final class WindowSwitcher {
     /// Sets `origin` where `position` puts a capsule of `size`, `atPointer` being where it goes over the pointer.
     private func place(_ size: CGSize, visible: CGRect, atPointer: CGPoint) {
         origin = config.position.origin(size: size, visible: visible, fromKeyboard: hold.centred, atPointer: atPointer)
-        // Shown by the keyboard, the pointer picks over the capsule; held, it moves the pick as if the capsule were under it.
-        pickOrigin = hold.centred ? origin : atPointer
     }
 
     /// A key's step: across a row, round from end to end, or onto the nearest tile that way on a map.
@@ -281,7 +277,7 @@ final class WindowSwitcher {
             guard hypot(point.x - startPointer.x, point.y - startPointer.y) >= Self.deadZone else { return }
             pointerMoved = true
         }
-        let local = CGPoint(x: point.x - pickOrigin.x, y: point.y - pickOrigin.y)
+        let local = CGPoint(x: point.x - origin.x, y: point.y - origin.y)
         guard let index = arrangement.index(at: local), index != view.picked else { return }
         view.pick(index)
         tapTrackpad()
