@@ -22,6 +22,8 @@ final class DinkyApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     /// Other tiling window managers seen running at the last refresh.
     private var otherTilers: [String] = []
+    /// When other tilers were last scanned for: that enumerates every process, so it is throttled (see `refresh`).
+    private var lastTilerCheck = Date.distantPast
     /// The blocks the menu bar item's image was last drawn from, so a refresh that changes nothing draws nothing.
     private var shownBlocks: MenuBarBlocks?
     private var socket: SocketServer?
@@ -68,8 +70,9 @@ final class DinkyApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         AppState.shared.numbers.start()
         AppState.shared.numbers.observe { [weak self] in self?.refresh() }
         AppState.shared.displays.observe { [weak self] _ in self?.refresh() }
-        // Nothing publishes the enabled state, the config error or other tilers starting and quitting.
-        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.refresh() }
+        // A fallback for what has no event: the enabled state, the config error, other tilers coming and going. The
+        // menu bar's workspace and display changes refresh on their own notifications, so this can be unhurried.
+        Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.refresh() }
         refresh()
         print("app: status item up, listening on \(socketPath)")
         print("STATUS:READY")  // fut's run extension watches for this line
@@ -79,10 +82,15 @@ final class DinkyApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func refresh() {
         let state = AppState.shared
         let focused = state.displays.focusedDisplay()
-        let tilers = runningOtherTilers()
-        if tilers != otherTilers {
-            otherTilers = tilers
-            if !tilers.isEmpty { print("app: \(otherTilersWarning(tilers))") }
+        // Spotting another tiler enumerates every running process, so poll for it every few seconds rather than on
+        // every refresh; tilers rarely come and go, and the only cost of noticing late is the warning showing late.
+        if Date().timeIntervalSince(lastTilerCheck) > 5 {
+            lastTilerCheck = Date()
+            let tilers = runningOtherTilers()
+            if tilers != otherTilers {
+                otherTilers = tilers
+                if !tilers.isEmpty { print("app: \(otherTilersWarning(tilers))") }
+            }
         }
         let trouble = state.configError != nil || !otherTilers.isEmpty
         let mark = trouble ? "!" : ""
