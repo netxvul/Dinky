@@ -11,8 +11,9 @@ import DinkyLayout
 //
 // Frames are stepped and written at 60 a second, even on a 120 Hz display: each app moves its own windows, and most
 // keep up with a move every 16 ms but not every 8, so the steadier pace looks smoother. An app that takes longer than
-// `FrameScheduler.slowStep` over one step stops being moved for the rest of the glide, and its windows land with the
-// tree's final write: stalling and leaping along would show more than one move at the end.
+// `FrameScheduler.slowStep` over one step is then moved only every third frame rather than dropped for the rest of the
+// glide, so it keeps gliding at a pace it can hold instead of freezing and jumping to its tile at the end; frames
+// coalesce per window in the scheduler, so a throttled app never has a backlog to leap through.
 //
 // A tree can glide something other than its windows instead, such as snapshots of them (see GlideStage): its frames go
 // to its `sink` and nowhere else, at the display's full rate, since no app has to keep up. Main thread only.
@@ -34,6 +35,8 @@ final class Animator: NSObject {
     private var sinks: [UInt64: ([WindowID: CGRect]) -> Void] = [:]
     /// The frame last written for each moving window, so a parked window that stays put is not written every frame.
     private var written: [WindowID: CGRect] = [:]
+    /// Counts steps, to move a slow app on only some of them.
+    private var stepCount = 0
     /// By tree, the rest of its latest pass, run once its windows have arrived.
     private var finishes: [UInt64: () -> Void] = [:]
     private var link: CADisplayLink?
@@ -217,10 +220,14 @@ final class Animator: NSObject {
             let placed = placer.place(placer.base.merging(ours) { $1 })
             for id in ours.keys { frames[id] = placed[id] ?? frames[id] }
         }
+        stepCount &+= 1
         var jobs: [FrameJob] = []
-        for (id, frame) in frames where written[id] != frame && !applier.isSlow(moving[id]!.pid) {
+        for (id, frame) in frames where written[id] != frame {
+            let pid = moving[id]!.pid
+            // A slow app keeps gliding at a third of the rate rather than freezing for the rest of the glide.
+            if applier.isSlow(pid), stepCount % 3 != 0 { continue }
             written[id] = frame
-            jobs.append(FrameJob(pid: moving[id]!.pid, id: id, frame: frame))
+            jobs.append(FrameJob(pid: pid, id: id, frame: frame))
         }
         for id in arrived { written[id] = nil }
         applier.step(jobs)
