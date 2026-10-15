@@ -9,11 +9,11 @@ import DinkyLayout
 // windows ride in strip coordinates, unparked, and each frame the tree's `place` puts them all on screen together,
 // so a long scroll passes the columns between across the screen in turn.
 //
-// Frames are stepped and written at 60 a second, even on a 120 Hz display: each app moves its own windows, and most
-// keep up with a move every 16 ms but not every 8, so the steadier pace looks smoother. An app that takes longer than
-// `FrameScheduler.slowStep` over one step is then moved only every third frame rather than dropped for the rest of the
-// glide, so it keeps gliding at a pace it can hold instead of freezing and jumping to its tile at the end; frames
-// coalesce per window in the scheduler, so a throttled app never has a backlog to leap through.
+// Frames are stepped and written at the display's rate (120 a second on a ProMotion display). Each app moves its own
+// windows; one that takes longer than `FrameScheduler.slowStep` over a step is then moved only every third frame
+// rather than dropped for the rest of the glide, so it keeps gliding at a pace it can hold instead of freezing and
+// jumping to its tile at the end; frames coalesce per window in the scheduler, so a throttled app never has a backlog
+// to leap through.
 //
 // A tree can glide something other than its windows instead, such as snapshots of them (see GlideStage): its frames go
 // to its `sink` and nowhere else, at the display's full rate, since no app has to keep up. Main thread only.
@@ -158,10 +158,9 @@ final class Animator: NSObject {
             link = (NSScreen.main ?? NSScreen.screens.first)?.displayLink(target: self, selector: #selector(tick))
             link?.add(to: .main, forMode: .common)
         }
-        // Only snapshots to move: as fast as the display goes. Any window: 60 a second.
-        let full = entries.values.allSatisfy { sinks[$0.key] != nil }
-        link?.preferredFrameRateRange = full ? CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
-                                             : CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+        // Aim for the display's full rate, snapshots and real windows alike; an app that cannot keep up is moved
+        // every third step instead (see `step`), so it glides at its own pace rather than dragging the rate down.
+        link?.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
         link?.isPaused = false
         lastStepAt = CACurrentMediaTime()
         if watchdog == nil {
