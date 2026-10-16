@@ -26,7 +26,7 @@ extension Workspace {
     /// How much of a parked column beyond the nearest one stays on screen, under the nearest: a point clear of
     /// AppKit's limit. Its edge is then `peek - tuck` inside the peek in front of it, past the 22.5 points an
     /// inactive window's shadow reaches, so its shadow hides under that peek too.
-    static let tuck: CGFloat = 2
+    public static let tuck: CGFloat = 2
 
     /// How much narrower than its tile a window that snaps its size may be taken to be, from its last seen width,
     /// when placing it off the left edge, where its width decides how much of it stays on screen.

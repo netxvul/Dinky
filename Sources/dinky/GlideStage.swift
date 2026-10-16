@@ -236,9 +236,10 @@ final class GlideStage {
             layer.contents = image
             layer.contentsScale = scale
             layer.contentsGravity = .resize
-            layer.shadowOpacity = 0.3
-            layer.shadowRadius = 12
-            layer.shadowOffset = .zero
+            layer.shadowOpacity = Self.shadowOpacity * edgeShadow(frame)
+            layer.shadowRadius = 8
+            // Down: a shadow's offset points up on screen, even under the flipped root.
+            layer.shadowOffset = CGSize(width: 0, height: -8)
             let radius = corners[id] ?? 10
             layer.shadowPath = CGPath(roundedRect: CGRect(origin: .zero, size: frame.size), cornerWidth: radius,
                                       cornerHeight: radius, transform: nil)
@@ -256,8 +257,23 @@ final class GlideStage {
     func move(_ frames: [WindowID: CGRect]) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        for (id, frame) in frames { layers[id]?.frame = frame.offsetBy(dx: -area.minX, dy: -area.minY) }
+        for (id, frame) in frames {
+            layers[id]?.frame = frame.offsetBy(dx: -area.minX, dy: -area.minY)
+            layers[id]?.shadowOpacity = Self.shadowOpacity * edgeShadow(frame)
+        }
         CATransaction.commit()
+    }
+
+    /// The snapshots' shadow, fitted to an inactive window's own (measured on macOS 27): faint above, strongest below.
+    private static let shadowOpacity: Float = 0.2
+
+    /// How much of its shadow a snapshot at `frame` shows: all of it in view, none tucked under the peek at an edge
+    /// (`Workspace.tuck` on screen), where it would only pile up above and below the peek in front, and in between
+    /// as it slides out from under it.
+    private func edgeShadow(_ frame: CGRect) -> Float {
+        guard frame.minX < area.minX - 1 || frame.maxX > area.maxX + 1 else { return 1 }
+        let shows = min(frame.maxX, area.maxX) - max(frame.minX, area.minX)
+        return Float(min(max((shows - Workspace.tuck) / (Workspace.peek - Workspace.tuck), 0), 1))
     }
 
     /// The glide is over: the stage goes once the windows have landed, or after `landingLimit`.
