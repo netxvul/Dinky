@@ -6,19 +6,31 @@ import CoreGraphics
 // are centred, and focusing a column scrolls just far enough to show it whole.
 //
 // macOS cannot clip another app's window at the screen edge, so a window scrolled out of view is parked
-// instead: on an edge with nothing beyond it, it hangs off the screen with `peek` points left on, in a gutter
-// the columns keep an inner gap clear of; on an edge with another display beyond it, it stops flush at the
-// border, behind the columns in view, so it never shows on the other display.
+// instead: on an edge with nothing beyond it, the column nearest the screen hangs off it with `peek` points left
+// on, in a gutter the columns keep an inner gap clear of, and the columns beyond tuck under that one with only
+// `tuck` points left on, so a single shadow shows at the edge rather than one per parked window piled up; on an
+// edge with another display beyond it, a window stops flush at the border, behind the columns in view, so it
+// never shows on the other display.
 //
 // Fullscreen, with `fullscreenPushesStrip`, widens the fullscreen window's column to the whole width the columns
 // get, clear of the gutters, and scrolls to it, so its neighbours slide off and park in the gutters, a gap from it,
-// as any column scrolled away does. The scroll
-// offset is left alone meanwhile, so when fullscreen ends the strip goes back to where it was.
+// as any column scrolled away does. The scroll offset is left alone meanwhile, so when fullscreen ends the strip
+// goes back to where it was.
 
 extension Workspace {
-    /// How much of a parked window stays on screen. The WindowServer takes any position that leaves a little of
-    /// a window on screen, but pulls one asked to go wholly off back until 40 points show.
-    static let peek: CGFloat = 25
+    /// How much of the parked column nearest the screen stays on it. A window's own app (AppKit) keeps any position
+    /// that leaves at least a point of the window on screen, but pulls one asked to go wholly off, or to leave less
+    /// than a point, back until 40 points show.
+    public static let peek: CGFloat = 25
+
+    /// How much of a parked column beyond the nearest one stays on screen, under the nearest: a point clear of
+    /// AppKit's limit. Its edge is then `peek - tuck` inside the peek in front of it, past the 22.5 points an
+    /// inactive window's shadow reaches, so its shadow hides under that peek too.
+    static let tuck: CGFloat = 2
+
+    /// How much narrower than its tile a window that snaps its size may be taken to be, from its last seen width,
+    /// when placing it off the left edge, where its width decides how much of it stays on screen.
+    static let snapAllowance: CGFloat = 16
 
     /// Narrowest a column can be resized to, as a share of the screen.
     static let minimumColumnWidth = 0.1
@@ -158,39 +170,86 @@ extension Workspace {
     /// them.
     public func placeStrip(_ frames: [WindowID: CGRect]) -> [WindowID: CGRect] { parked(frames) }
 
-    /// Where the strip's windows go on screen, see `parked(_:)`. At a wall, a window scrolled out past it hides
-    /// behind the column in view nearest the wall instead, taking the frame of that column's biggest window, so
-    /// none of it shows in the outer gap, between the columns, or between the windows of a column of several.
-    /// It only grows past that frame to its minimum size, away from the wall. With no column in view it stays
-    /// flush at the wall. While fullscreen pushes, the column in view is the fullscreen window's, so a window hiding
-    /// behind it keeps its own size rather than taking the whole screen's.
+    /// Where the strip's windows go on screen. A window stays where the strip puts it while more of it shows than
+    /// its edge allows, so the columns in view and their neighbours keep their gaps; past that it stops at the edge.
+    /// On an edge with nothing beyond it, a column stops with `peek` showing, unless the column between it and the
+    /// screen shows less than `peek - tuck` more than that: then it stops `peek - tuck` inside that column's edge,
+    /// down to `tuck`. So the column nearest the screen peeks out, the ones beyond it tuck under it, and one sliding
+    /// out or in moves continuously between the two, its edge and shadow under the column in front all the while.
+    /// A window that would not stay tucked (`untuckable`) stops at `peek`. Off the left edge, how much shows depends
+    /// on the window's width, so a window that came out narrower than its tile is placed by the width it had.
+    ///
+    /// At a wall, a window stays wholly on screen instead, and one scrolled out past the wall hides behind the
+    /// column in view nearest the wall, taking the frame of that column's biggest window, so none of it shows in
+    /// the outer gap, between the columns, or between the windows of a column of several. It only grows past that
+    /// frame to its minimum size, away from the wall. With no column in view it stays flush at the wall. While
+    /// fullscreen pushes, the column in view is the fullscreen window's, so a window hiding behind it keeps its own
+    /// size rather than taking the whole screen's.
     func parked(_ frames: [WindowID: CGRect]) -> [WindowID: CGRect] {
         let keepsSize = !pushedColumns.isEmpty
-        let covers = root.children.compactMap { column -> CGRect? in
-            let rects = column.windows.compactMap { frames[$0] }
+        let columns = root.children.map { $0.windows.filter { frames[$0] != nil } }
+        let covers = columns.compactMap { ids -> CGRect? in
+            let rects = ids.map { frames[$0]! }
             guard !rects.isEmpty, rects.allSatisfy({ $0.minX >= bounds.minX - 1 && $0.maxX <= bounds.maxX + 1 }) else { return nil }
             return rects.max { $0.width * $0.height < $1.width * $1.height }
         }
         let left = covers.min { $0.minX < $1.minX }, right = covers.max { $0.maxX < $1.maxX }
+        // How much of each window must stay on screen at each edge, column by column from the screen outwards,
+        // following how much the column in front shows. Rounded towards more of the window on screen, since part of
+        // a point counts as none. A column stacked above the one in front of it (as on the far side of a long glide,
+        // stacked for where it ends) would show its sliver and shadow over that one, so it stays at `peek` instead.
+        let behind = Self.peek - Self.tuck
+        let rank = Dictionary(uniqueKeysWithValues: root.stackingOrder.enumerated().map { ($1, $0) })
+        func shows(_ column: Int, behind front: CGFloat, _ frontColumn: Int?) -> CGFloat {
+            guard let frontColumn, rank[column]! > rank[frontColumn]! else { return Self.peek }
+            return min(max(front - behind, Self.tuck), Self.peek)
+        }
+        var leftLimit: [WindowID: CGFloat] = [:], rightLimit: [WindowID: CGFloat] = [:]
+        var front = CGFloat.infinity, frontColumn: Int?
+        for (column, ids) in columns.enumerated().reversed() where !ids.isEmpty {
+            let shows = shows(column, behind: front, frontColumn)
+            front = -.infinity
+            frontColumn = column
+            for id in ids {
+                let frame = frames[id]!, width = shownWidth(of: id, frame)
+                let limit = (bounds.minX + (untuckable.contains(id) ? Self.peek : shows) - width).rounded(.up)
+                leftLimit[id] = limit
+                front = max(front, max(frame.minX, limit) + width - bounds.minX)
+            }
+        }
+        front = .infinity
+        frontColumn = nil
+        for (column, ids) in columns.enumerated() where !ids.isEmpty {
+            let shows = shows(column, behind: front, frontColumn)
+            front = -.infinity
+            frontColumn = column
+            for id in ids {
+                let frame = frames[id]!
+                let limit = (bounds.maxX - (untuckable.contains(id) ? Self.peek : shows)).rounded(.down)
+                rightLimit[id] = limit
+                front = max(front, bounds.maxX - min(frame.minX, limit))
+            }
+        }
         return Dictionary(uniqueKeysWithValues: frames.map { id, frame in
             let offLeft = frame.minX < bounds.minX - 1, offRight = frame.maxX > bounds.maxX + 1
-            guard offLeft != offRight, walls.contains(offLeft ? .left : .right),
-                  let cover = offLeft ? left : right else { return (id, parked(frame)) }
-            let minimum = minimumSizes[id] ?? .zero
-            let width = keepsSize ? frame.width : max(cover.width, minimum.width)
-            let height = keepsSize ? frame.height : max(cover.height, minimum.height)
-            return (id, CGRect(x: offLeft ? cover.minX : cover.maxX - width, y: cover.minY, width: width, height: height))
+            if offLeft != offRight, walls.contains(offLeft ? .left : .right), let cover = offLeft ? left : right {
+                let minimum = minimumSizes[id] ?? .zero
+                let width = keepsSize ? frame.width : max(cover.width, minimum.width)
+                let height = keepsSize ? frame.height : max(cover.height, minimum.height)
+                return (id, CGRect(x: offLeft ? cover.minX : cover.maxX - width, y: cover.minY, width: width, height: height))
+            }
+            var x = frame.minX
+            x = min(x, walls.contains(.right) ? bounds.maxX - frame.width : rightLimit[id] ?? bounds.maxX - Self.peek)
+            x = max(x, walls.contains(.left) ? bounds.minX : leftLimit[id] ?? bounds.minX + Self.peek - frame.width)
+            return (id, CGRect(x: x, y: frame.minY, width: frame.width, height: frame.height))
         })
     }
 
-    /// Where a window of the strip goes on screen: where the strip puts it while at least `peek` of it is on
-    /// screen, so a neighbour of the columns in view stays a gap from them, else hanging off the edge with `peek`
-    /// left on, under that neighbour. At a wall it stays wholly on screen instead, behind the columns.
-    func parked(_ frame: CGRect) -> CGRect {
-        var x = frame.minX
-        x = min(x, walls.contains(.right) ? bounds.maxX - frame.width : bounds.maxX - Self.peek)
-        x = max(x, walls.contains(.left) ? bounds.minX : bounds.minX + Self.peek - frame.width)
-        return CGRect(x: x, y: frame.minY, width: frame.width, height: frame.height)
+    /// The width `frame` takes on screen: its own, or the width the window last had if it came out a little
+    /// narrower, as an app that snaps its size to a grid does.
+    func shownWidth(of id: WindowID, _ frame: CGRect) -> CGFloat {
+        guard let seen = observedWidths[id] else { return frame.width }
+        return frame.width - min(max(frame.width - seen, 0), Self.snapAllowance)
     }
 
     /// Whether the strip shows the whole window now. Always true outside the scrolling layout. Neighbours a

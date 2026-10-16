@@ -29,8 +29,11 @@ final class Animator: NSObject {
     private let applier: FrameApplier
     private var entries: [WindowID: Entry] = [:]
     /// By tree, how its frames go on screen, for a strip: `place` takes every window's frame in strip coordinates,
-    /// those resting at their targets, `base`, with the moving ones where they are now.
-    private var placers: [UInt64: (base: [WindowID: CGRect], place: ([WindowID: CGRect]) -> [WindowID: CGRect])] = [:]
+    /// those resting at their targets, `base`, with the moving ones where they are now. A resting window's place can
+    /// change as the others move (a parked one tucking under the column arriving at the edge), so `resting` has where
+    /// each one is on screen, with its app, and it is written when that changes.
+    private var placers: [UInt64: (base: [WindowID: CGRect], place: ([WindowID: CGRect]) -> [WindowID: CGRect],
+                                   resting: [WindowID: (pid: pid_t, frame: CGRect)])] = [:]
     /// By tree, where its frames go instead of to its windows.
     private var sinks: [UInt64: ([WindowID: CGRect]) -> Void] = [:]
     /// The frame last written for each moving window, so a parked window that stays put is not written every frame.
@@ -77,14 +80,17 @@ final class Animator: NSObject {
     /// Move the tree's windows from `starts` to `targets`, then run `finish`. Windows already there, or with
     /// no start, are left to `finish`; with none left to move, it runs at once. With `place`, the starts and targets
     /// are in strip coordinates and `place` puts them on screen on every frame; a window that was moving without it,
-    /// or with it, starts over from `starts`.
+    /// or with it, starts over from `starts`. `resting` has where the strip's windows are on screen now, so one that
+    /// does not glide is moved as soon as `place` puts it elsewhere.
     func animate(_ key: UInt64, from starts: [WindowID: CGRect], to targets: [WindowID: CGRect],
                  pids: [WindowID: pid_t], place: (([WindowID: CGRect]) -> [WindowID: CGRect])? = nil,
-                 stretch: Double = 1, sink: (([WindowID: CGRect]) -> Void)? = nil, then finish: @escaping () -> Void) {
+                 resting: [WindowID: CGRect] = [:], stretch: Double = 1, sink: (([WindowID: CGRect]) -> Void)? = nil,
+                 then finish: @escaping () -> Void) {
         // A new glide: every app gets another chance to keep up.
         if entries.isEmpty { applier.clearSlow() }
         let wasPlaced = placers[key] != nil
-        placers[key] = place.map { (targets, $0) }
+        let still = Dictionary(uniqueKeysWithValues: resting.compactMap { id, frame in pids[id].map { (id, ($0, frame)) } })
+        placers[key] = place.map { (targets, $0, still) }
         sinks[key] = sink
         for (id, entry) in entries where entry.key == key && (targets[id] == nil || wasPlaced != (place != nil)) {
             entries[id] = nil
@@ -213,14 +219,20 @@ final class Animator: NSObject {
             if !ours.isEmpty { sink(ours) }
         }
         // A strip's windows go on screen together, each tree's resting ones where they rest.
+        var restingJobs: [FrameJob] = []
         for (key, placer) in placers {
             let ours = frames.filter { moving[$0.key]?.key == key }
             guard !ours.isEmpty else { continue }
             let placed = placer.place(placer.base.merging(ours) { $1 })
             for id in ours.keys { frames[id] = placed[id] ?? frames[id] }
+            for (id, still) in placer.resting where moving[id] == nil {
+                guard let frame = placed[id], frame != still.frame, !applier.isSlow(still.pid) || stepCount % 3 == 2 else { continue }
+                placers[key]!.resting[id]!.frame = frame
+                restingJobs.append(FrameJob(pid: still.pid, id: id, frame: frame))
+            }
         }
         stepCount &+= 1
-        var jobs: [FrameJob] = []
+        var jobs = restingJobs
         for (id, frame) in frames where written[id] != frame {
             let pid = moving[id]!.pid
             // A slow app keeps gliding at a third of the rate rather than freezing for the rest of the glide.

@@ -407,3 +407,160 @@ struct ScrollingFullscreenTests {
         }
     }
 }
+
+struct ScrollingTuckTests {
+    private let tuck = Workspace.tuck
+
+    /// The columns off each edge, nearest the screen first.
+    private func parked(_ ws: Workspace) -> (left: [WindowID], right: [WindowID]) {
+        let strip = ws.stripFrames
+        let left = ws.windows.filter { strip[$0]!.minX < ws.bounds.minX - 1 }
+        let right = ws.windows.filter { strip[$0]!.maxX > ws.bounds.maxX + 1 }
+        return (left.reversed(), right)
+    }
+
+    @Test func `Only the nearest column off each edge peeks, the ones beyond tuck under it`() {
+        var ws = strip(8)
+        ws.focus(4)
+        let frames = ws.layout().frames, (left, right) = parked(ws)
+        #expect(left.count >= 2 && right.count >= 2)
+        #expect(frames[left[0]]!.maxX == ws.bounds.minX + peek)
+        for id in left.dropFirst() { #expect(frames[id]!.maxX == ws.bounds.minX + tuck) }
+        #expect(frames[right[0]]!.minX == ws.bounds.maxX - peek)
+        for id in right.dropFirst() { #expect(frames[id]!.minX == ws.bounds.maxX - tuck) }
+        let order = ws.layout().order
+        for id in left.dropFirst() { #expect(order.firstIndex(of: left[0])! < order.firstIndex(of: id)!, "under the peek") }
+    }
+
+    @Test func `Scrolling moves every window continuously, a tucked one always under the column in front`() {
+        for gaps in [Gaps.zero, Gaps(all: 8)] {
+            var ws = strip(9, gaps: gaps)
+            ws.focus(1)
+            let strip = ws.stripFrames
+            var last: [WindowID: CGRect]?
+            for dx in stride(from: 0, through: -4000, by: -1) {
+                let placed = ws.placeStrip(strip.mapValues { $0.offsetBy(dx: CGFloat(dx), dy: 0) })
+                for id in ws.windows {
+                    let frame = placed[id]!
+                    #expect(frame.maxX - ws.bounds.minX >= 1 && ws.bounds.maxX - frame.minX >= 1, "never wholly off")
+                    if let before = last?[id] { #expect(abs(frame.minX - before.minX) <= 1, "\(id) jumped at \(dx)") }
+                }
+                // Off the left edge, a column showing less than the peek has its edge, and so its shadow, under a
+                // column nearer the screen, which stacks above it.
+                for (i, behind) in ws.windows.enumerated() {
+                    let shows = placed[behind]!.maxX - ws.bounds.minX
+                    guard placed[behind]!.minX < ws.bounds.minX, shows < peek else { continue }
+                    let front = ws.windows[(i + 1)...].map { placed[$0]!.maxX }.max()!
+                    #expect(front - placed[behind]!.maxX >= 22.5, "\(behind) at \(dx)")
+                }
+                for (i, behind) in ws.windows.enumerated() {
+                    let shows = ws.bounds.maxX - placed[behind]!.minX
+                    guard placed[behind]!.maxX > ws.bounds.maxX, shows < peek else { continue }
+                    let front = ws.windows[..<i].map { placed[$0]!.minX }.min()!
+                    #expect(placed[behind]!.minX - front >= 22.5, "\(behind) at \(dx)")
+                }
+                last = placed
+            }
+        }
+    }
+
+    @Test func `On a long glide a column never tucks under one stacked below it`() {
+        for gaps in [Gaps.zero, Gaps(all: 8)] {
+            var ws = strip(9, gaps: gaps)
+            ws.focus(1)
+            let start = ws.stripFrames
+            ws.focus(9)
+            let end = ws.stripFrames, rank = Dictionary(uniqueKeysWithValues: ws.layout().order.enumerated().map { ($1, $0) })
+            for step in 0...200 {
+                let t = CGFloat(step) / 200
+                let frames = start.mapValues { $0 }.merging(end) { a, b in a.offsetBy(dx: ((b.minX - a.minX) * t).rounded(), dy: 0) }
+                let placed = ws.placeStrip(frames)
+                for (i, behind) in ws.windows.enumerated() {
+                    let left = placed[behind]!.minX < ws.bounds.minX, right = placed[behind]!.maxX > ws.bounds.maxX
+                    let shows = left ? placed[behind]!.maxX - ws.bounds.minX : ws.bounds.maxX - placed[behind]!.minX
+                    guard left || right, shows < peek else { continue }
+                    let nearer = left ? Array(ws.windows[(i + 1)...]) : Array(ws.windows[..<i])
+                    let covers = nearer.contains { id in
+                        rank[id]! < rank[behind]! && (left ? placed[id]!.maxX - placed[behind]!.maxX : placed[behind]!.minX - placed[id]!.minX) >= 22
+                    }
+                    #expect(covers, "\(behind) at \(t) has nothing stacked above it covering its edge")
+                }
+            }
+        }
+    }
+
+    @Test func `A window that would not stay tucked parks at the peek`() {
+        var ws = strip(8)
+        ws.focus(4)
+        let far = parked(ws).left[1]
+        ws.untuckable = [far]
+        #expect(ws.layout().frames[far]!.maxX == ws.bounds.minX + peek)
+    }
+
+    @Test func `Off the left edge a window is placed by the width it came out at`() {
+        var ws = strip(8)
+        ws.focus(4)
+        let far = parked(ws).left[1]
+        let width = ws.layout().frames[far]!.width
+        ws.observedWidths[far] = width - 7
+        #expect(ws.layout().frames[far]!.minX + width - 7 == ws.bounds.minX + tuck)
+        ws.observedWidths[far] = width - 300
+        #expect(ws.layout().frames[far]!.minX + width - Workspace.snapAllowance == ws.bounds.minX + tuck,
+                "a width far off is stale, not snapped")
+    }
+
+    @Test func `A pushing fullscreen window's outer neighbours tuck`() {
+        var ws = strip(6)
+        ws.focus(3)
+        ws.toggleFullscreen()
+        let frames = ws.layout().frames
+        #expect(frames[2]!.maxX == ws.bounds.minX + peek)
+        #expect(frames[1]!.maxX == ws.bounds.minX + tuck)
+        #expect(frames[4]!.minX == ws.bounds.maxX - peek)
+        #expect(frames[5]!.minX == ws.bounds.maxX - tuck && frames[6]!.minX == ws.bounds.maxX - tuck)
+    }
+
+    @Test func `A pile is put in order under every window of its front column`() {
+        var ws = strip(6, gaps: Gaps(all: 8))
+        ws.focus(3)
+        ws.join(.left)
+        #expect(shape(ws.root) == "h[1 v[2 3] 4 5 6]")
+        ws.focus(5)
+        let layout = ws.layout(), (left, _) = parked(ws)
+        #expect(left == [2, 3, 1] || left == [3, 2, 1], "the column of 2 and 3 peeks, 1 tucks under it")
+        #expect(layout.frames[1]!.maxX == ws.bounds.minX + Workspace.tuck)
+        // The front column's front window is on top of the pile, but 1 is over its other window.
+        let front = layout.order.first { [2, 3].contains($0) }!, other: WindowID = front == 2 ? 3 : 2
+        let current = layout.order.filter { $0 != 1 && $0 != other } + [1, other]
+        let raises = layout.raises(current: current)
+        #expect(!raises.isEmpty && raises.allSatisfy { [2, 3].contains($0) })
+    }
+
+    @Test func `A window placed by a narrower width is grouped by where it shows`() {
+        var ws = strip(6, gaps: Gaps(all: 8))
+        ws.focus(4)
+        ws.focus(3)
+        let (left, _) = parked(ws), lead = left[0], width = ws.layout().frames[lead]!.width
+        #expect(left.count >= 2)
+        ws.observedWidths[lead] = width - 14
+        let layout = ws.layout()
+        #expect(layout.frames[lead]!.maxX > layout.frames[3]!.minX, "its written frame reaches past the gap")
+        // The column in view is on top, the lead under a tucked window: the lead is raised, nothing in view.
+        let current = layout.order.filter { !left.contains($0) } + left.dropFirst() + [lead]
+        #expect(layout.raises(current: current) == [lead])
+    }
+
+    @Test func `Each edge's pile is put in order on its own, raising only its peek`() {
+        var ws = strip(8)
+        ws.focus(4)
+        let layout = ws.layout(), (left, right) = parked(ws)
+        #expect(layout.raises(current: layout.order).isEmpty)
+        // The left peek fell under a tucked window; the right pile is fine.
+        var current = layout.order.filter { $0 != left[0] }
+        current.insert(left[0], at: current.firstIndex(of: left[1])! + 1)
+        #expect(layout.raises(current: current) == [left[0]])
+        // Both piles out of order: each raises its own peek, even with the front window on top.
+        current = layout.order.filter { $0 != left[0] && $0 != right[0] } + [left[0], right[0]]
+        #expect(Set(layout.raises(current: current)) == [left[0], right[0]])
+    }
+}

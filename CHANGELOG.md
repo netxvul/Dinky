@@ -52,6 +52,7 @@
 
 ### Fixes
 
+- On a scrolling workspace, only the column nearest each display edge peeks out; the ones beyond it tuck under it with 2 points on screen, so the edge shows one window's shadow. Before, every parked column hung at the same spot and their shadows piled up into a dark band. With `glide = 'snapshots'`, the peeks stay put through a scroll instead of vanishing and fading back.
 - `focus` from a floating window looks for the nearest window on that window's display. Before, it looked on the main display, so on another display it found the wrong window or none.
 - Clicking a picture in picture video, a browser's, IINA's or any other app's, no longer switches to the workspace of the app's window. The video floats on every Space and is no tile, so `follow-app-activation` took the click for a Cmd-Tab to an app with no window here. Leaving picture in picture, with a browser's "back to tab" or the button that takes the video back to IINA's window, still goes to that window's workspace: a click that closes a floating window and shows a window again, or turns its app's window key, on another Space is followed.
 - In the scrolling layout, a column scrolled out towards another display hides wholly behind the column in view nearest that display, in the place of its biggest window. Before, it stopped flush at the display's edge and showed in the outer gap, so the column in view looked as if it floated over it.

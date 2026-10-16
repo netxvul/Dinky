@@ -45,6 +45,12 @@ public struct Layout: Equatable, Sendable {
     public var order: [WindowID] = []
     /// The rectangle each container was laid out in, by its path from the root. Empty containers included.
     var containerRects: [[Int]: CGRect] = [:]
+    /// Where windows show, for a layout that parks some partly off it (a scrolling strip): stacking only counts
+    /// what shows there. See `raises(current:)`.
+    public var screen: CGRect?
+    /// Where windows that come out narrower than their frames (an app snapping its size) are on screen, when that
+    /// decides what shows: off the left edge of a strip.
+    public var narrower: [WindowID: CGRect] = [:]
 
     public init(frames: [WindowID: CGRect] = [:], order: [WindowID] = []) {
         self.frames = frames

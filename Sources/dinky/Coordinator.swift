@@ -62,6 +62,9 @@ final class Coordinator {
     /// By scrolling tree, its strip frames as last applied, unparked and parked, so the next glide starts each window
     /// where the strip had it rather than where it was parked.
     private var lastStrips: [UInt64: (strip: [WindowID: CGRect], placed: [WindowID: CGRect], fullscreen: Set<WindowID>)] = [:]
+    /// The width each window was last written at and the width it came out at, which an app that snaps its size
+    /// leaves a little narrower. See `observedWidths(in:)`.
+    private var landedWidths: [WindowID: (asked: CGFloat, got: CGFloat)] = [:]
     /// By scrolling tree, a glide of snapshots under way or being made ready, and the layout it is gliding to. See
     /// GlideStage.
     private var glides: [UInt64: (token: Int, stage: GlideStage?, layout: Layout)] = [:]
@@ -285,6 +288,7 @@ final class Coordinator {
         adopting.remove(id)
         applier.forget(id)
         animator.forget(id)
+        landedWidths[id] = nil
         heldTabs[id] = nil
         notTabs.remove(id)
         floatingTargets[id] = nil
@@ -396,6 +400,7 @@ final class Coordinator {
     private func apply(_ key: UInt64) {
         guard var workspace = workspaces[key] else { return }
         workspace.minimumSizes = minimumSizes(in: workspace)
+        workspace.observedWidths = observedWidths(in: workspace)
         workspaces[key] = workspace
         let layout = workspace.layout()
         // A glide of snapshots already heading for this layout carries on; one heading elsewhere gives way to this pass,
@@ -422,7 +427,15 @@ final class Coordinator {
                     landed()
                     guard let self, self.enabled else { return }
                     self.animator.noteLanded(results)
-                    self.edit(key) { $0.minimumSizes = self.minimumSizes(in: $0) }
+                    for result in results { if let got = result.got { self.landedWidths[result.job.id] = (result.job.frame.width, got.width) } }
+                    let untucked = layout.screen.map { Self.untucked(results, on: $0) } ?? []
+                    let unconfirmed = self.applier.unconfirmedMinimums
+                    // A window that came out narrower than its tile is placed by its width from now on, at once.
+                    self.edit(key) { workspace in
+                        workspace.minimumSizes = self.minimumSizes(in: workspace)
+                        workspace.observedWidths = self.observedWidths(in: workspace)
+                        workspace.untuckable.formUnion(untucked.filter { workspace.contains($0) && !unconfirmed.contains($0) })
+                    }
                     self.flush()
                     // A refusal counts on the second pass; run it soon rather than on the next event.
                     if !self.applier.unconfirmedMinimums.isDisjoint(with: layout.order) {
@@ -472,6 +485,9 @@ final class Coordinator {
         applier.assume(Dictionary(uniqueKeysWithValues: strip.keys.compactMap { id in
             id == dragging ? nil : model.windows[id].map { (id, $0.frame.size) }
         }), pids: pids)
+        // Where the strip's windows that are not gliding are now: where the last pass put them. Parking follows the
+        // columns in front, so one of them can still have to move while the others glide.
+        let resting = (previous?.placed ?? [:]).filter { id, _ in strip[id] != nil && id != dragging && !fullscreen.contains(id) }
         let place = { (frames: [WindowID: CGRect]) -> [WindowID: CGRect] in
             var input = strip
             for (id, frame) in frames where !fullscreen.contains(id) { input[id] = frame }
@@ -508,10 +524,14 @@ final class Coordinator {
         let glidesSnapshots = (config.scrolling.glide == .snapshots || config.scrolling.glide == .scriptingAddition)
             && fullscreen.isEmpty && !saResizing && Thumbnails.shared.permitted
         guard glidesSnapshots, let display = displays.display(containingSpace: key) else {
-            return animator.animate(key, from: starts, to: targets, pids: pids, place: place, stretch: stretch, then: write)
+            return animator.animate(key, from: starts, to: targets, pids: pids, place: place, resting: resting,
+                                    stretch: stretch, then: write)
         }
         // Snapshots of the strip glide over a snapshot of what is behind it, while the windows go to their places
-        // underneath at once. Without the snapshots in time, the windows glide.
+        // underneath at once. Without the snapshots in time, the windows glide. The snapshots are parked as the
+        // windows are at an edge with nothing beyond it, so the peeks there stay through the glide; past a wall,
+        // where a window hides behind the columns, a snapshot glides on in strip coordinates, where the stage does
+        // not reach, rather than over the column in view.
         animator.stop(key)
         glideTokens += 1
         let token = glideTokens
@@ -523,20 +543,61 @@ final class Coordinator {
             guard let self, glides[key]?.token == token else { stage?.remove(fading: false); return }
             guard let stage else {
                 glides[key] = nil
-                animator.animate(key, from: starts, to: targets, pids: pids, place: place, stretch: stretch, then: write)
+                animator.animate(key, from: starts, to: targets, pids: pids, place: place, resting: resting,
+                                 stretch: stretch, then: write)
                 return
             }
             glides[key]!.stage = stage
             stage.onRemoved = { [weak self] in
                 if self?.glides[key]?.token == token { self?.glides[key] = nil }
             }
-            stage.show(at: starts.filter { strip[$0.key] != nil }, order: layout.order, corners: corners)
+            var current = starts.filter { strip[$0.key] != nil }
+            let (bounds, walls) = (workspace.bounds, workspace.walls)
+            let parked = { (frames: [WindowID: CGRect]) -> [WindowID: CGRect] in
+                let placed = place(frames)
+                return Dictionary(uniqueKeysWithValues: frames.map { id, frame in
+                    let pastWall = frame.minX < bounds.minX - 1 && walls.contains(.left)
+                        || frame.maxX > bounds.maxX + 1 && walls.contains(.right)
+                    return (id, pastWall ? frame : placed[id] ?? frame)
+                })
+            }
+            stage.show(at: parked(current), order: layout.order, corners: corners)
             // A frame later, so the stage is up before the windows move under it.
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 60) { writeThen { stage.windowsLanded() } }
-            animator.animate(key, from: starts, to: targets, pids: pids, stretch: stretch, sink: { stage.move($0) }) {
+            animator.animate(key, from: starts, to: targets, pids: pids, stretch: stretch, sink: { frames in
+                current.merge(frames) { $1 }
+                stage.move(parked(current))
+            }) {
                 stage.glideEnded()
             }
         }
+    }
+
+    /// Windows of a strip that were asked to tuck under the nearest parked column, with less than `peek` on `screen`,
+    /// but whose app moved them back with more than that showing, at the width asked for: AppKit does so with a
+    /// window asked to leave less than a point on screen. They park at `peek` from then on. One that came out at
+    /// another width is placed by that width next time instead (`observedWidths`).
+    private static func untucked(_ results: [FrameResult], on screen: CGRect) -> [WindowID] {
+        results.compactMap { result in
+            guard let got = result.got, abs(got.width - result.job.frame.width) <= 1 else { return nil }
+            let asked = result.job.frame
+            let left = asked.maxX - screen.minX, right = screen.maxX - asked.minX
+            if asked.minX < screen.minX, left < Workspace.peek, got.minX > asked.minX + 1,
+               got.maxX - screen.minX > Workspace.peek { return result.job.id }
+            if asked.maxX > screen.maxX, right < Workspace.peek, got.minX < asked.minX - 1,
+               screen.maxX - got.minX > Workspace.peek { return result.job.id }
+            return nil
+        }
+    }
+
+    /// Each window's width as it came out the last time it was written at the width its tile has now, for the windows
+    /// of a strip. A width seen at another tile width says nothing about this one.
+    private func observedWidths(in workspace: Workspace) -> [WindowID: CGFloat] {
+        guard workspace.isScrolling else { return [:] }
+        let strip = workspace.stripFrames
+        return Dictionary(uniqueKeysWithValues: strip.compactMap { id, frame in
+            landedWidths[id].flatMap { $0.asked == frame.width ? (id, $0.got) : nil }
+        })
     }
 
     /// Ends a scripting-addition glide, clearing the Dock transforms it held, unless a newer pass has already taken

@@ -49,6 +49,11 @@ public struct Workspace: Equatable, Sendable {
     public var fullscreen: WindowID? { fullscreenWindows.first }
     /// Sizes windows refused to go below. Tiles grow to them when their siblings can give the space.
     public var minimumSizes: [WindowID: CGSize] = [:]
+    /// Scrolling: each window's width as last seen on screen, which an app that snaps its size leaves a little
+    /// off its tile's. See `shownWidth(of:_:)`.
+    public var observedWidths: [WindowID: CGFloat] = [:]
+    /// Scrolling: windows that would not stay tucked under the nearest parked column, so they park at `peek`.
+    public var untuckable: Set<WindowID> = []
     /// Scrolling: the width of a new column, as a share of the width inside the outer gaps.
     public var columnWidth = 0.5
     /// Scrolling: each window's column width, as a share. Every window of a column has its column's width.
@@ -134,6 +139,8 @@ public struct Workspace: Equatable, Sendable {
             root = Self.fixedRoot(rows: rows, columns: columns)
         }
         columnWidths[id] = nil
+        observedWidths[id] = nil
+        untuckable.remove(id)
         let wasFullscreen = fullscreenWindows.contains(id)
         if focused == id {
             focused = nil
@@ -448,6 +455,13 @@ public struct Workspace: Equatable, Sendable {
         let shown = fullscreenWindows.filter { result.frames[$0] != nil }
         if !pushesFullscreen { for id in shown { result.frames[id] = gaps.inset(bounds) } }
         result.order = shown + result.order.filter { !shown.contains($0) }
+        if isScrolling {
+            result.screen = bounds
+            for (id, frame) in result.frames where frame.minX < bounds.minX {
+                let width = shownWidth(of: id, frame)
+                if width < frame.width { result.narrower[id] = CGRect(x: frame.minX, y: frame.minY, width: width, height: frame.height) }
+            }
+        }
         return result
     }
 
