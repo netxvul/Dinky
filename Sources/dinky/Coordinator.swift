@@ -34,6 +34,11 @@ final class Coordinator {
     var dirty: Set<UInt64> = []
     /// Classification attempts for windows whose AX element has not appeared yet.
     var attempts: [WindowID: Int] = [:]
+    /// Windows floated because their AX element could not be reached, so dinky could not have moved them into a
+    /// tile, with when it last looked again. See `retryUnreachable(_:)`.
+    var unreachable: [WindowID: CFTimeInterval] = [:]
+    /// By tiled window, how many passes in a row could not read it back.
+    private var unread: [WindowID: Int] = [:]
     /// Newly shown windows at the exact frame of a tile of their app, held out of the trees for a moment in case
     /// they are a tab switch: by newcomer, the tile's window. See Tabs.swift.
     var heldTabs: [WindowID: WindowID] = [:]
@@ -249,6 +254,7 @@ final class Coordinator {
     /// Classifies a window the first time it is on screen, then keeps it in the tree of its current Space
     /// while it is shown: minimized windows, windows of hidden apps and inactive tabs read as minimized.
     func track(_ window: Window) {
+        retryUnreachable(window)
         if placements[window.id] == nil {
             // AX only lists windows on a Space that is on screen; the rest are classified when theirs is.
             guard window.isNormal, isVisible(window.spaceID) else { return }
@@ -274,6 +280,35 @@ final class Coordinator {
         placements[window.id]!.space = new
     }
 
+    /// Floats tiled windows that two passes in a row could not read back: their AX element is gone (an app that
+    /// stopped answering Accessibility), so they would hold a tile they never move into. They are looked at again
+    /// when they take focus.
+    private func noteUnread(_ results: [FrameResult]) {
+        for result in results {
+            let id = result.job.id
+            guard result.got == nil, placements[id]?.floating == false, model.windows[id] != nil else { unread[id] = nil; continue }
+            unread[id, default: 0] += 1
+            guard unread[id]! >= 2 else { continue }
+            unread[id] = nil
+            NSLog("dinky: window %u cannot be read through Accessibility; floating it until it can", id)
+            float(id)
+            unreachable[id] = CACurrentMediaTime()
+        }
+    }
+
+    /// Looks again at a window floated because its AX element could not be reached, at most every few seconds, and
+    /// classifies it afresh once it can be, so it tiles as any window would.
+    func retryUnreachable(_ window: Window) {
+        guard let since = unreachable[window.id], CACurrentMediaTime() - since > 3 else { return }
+        unreachable[window.id] = CACurrentMediaTime()
+        guard axWindow(pid: window.pid, wid: window.id, timeout: 0.25) != nil else { return }
+        unreachable[window.id] = nil
+        attempts[window.id] = nil
+        placements[window.id] = nil
+        track(window)
+        flush()
+    }
+
     /// Floats a window that reached a `float = true` workspace, out of the tree it was tiled in. It floats from then
     /// on, wherever it goes, as `layout floating` would leave it.
     private func float(_ id: WindowID) {
@@ -289,6 +324,8 @@ final class Coordinator {
         applier.forget(id)
         animator.forget(id)
         landedWidths[id] = nil
+        unreachable[id] = nil
+        unread[id] = nil
         heldTabs[id] = nil
         notTabs.remove(id)
         floatingTargets[id] = nil
@@ -319,6 +356,7 @@ final class Coordinator {
             WindowSwitcher.shared.focusLeft(lastFocused)
             WorkspaceSwitcher.shared.focusLeft(lastFocused)
             lastFocused = id
+            if let window = model.windows[id] { retryUnreachable(window) }
             // Only a window takes focus from a display focused without one, not an app with no window here.
             if id != 0 { displays.focusOverride = nil }
             displays.noteFocus()
@@ -428,6 +466,7 @@ final class Coordinator {
                     guard let self, self.enabled else { return }
                     self.animator.noteLanded(results)
                     for result in results { if let got = result.got { self.landedWidths[result.job.id] = (result.job.frame.width, got.width) } }
+                    self.noteUnread(results)
                     let untucked = layout.screen.map { Self.untucked(results, on: $0) } ?? []
                     let unconfirmed = self.applier.unconfirmedMinimums
                     // A window that came out narrower than its tile is placed by its width from now on, at once.

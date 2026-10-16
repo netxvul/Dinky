@@ -14,7 +14,10 @@ extension Coordinator {
         guard let element = axWindow(pid: window.pid, wid: window.id, timeout: FrameApplier.timeout) else {
             let tries = attempts[window.id, default: 0] + 1
             attempts[window.id] = tries
-            guard tries < 5 else { return (true, false) }
+            guard tries < 5 else {
+                unreachable[window.id] = CACurrentMediaTime()
+                return (true, false)
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
                 guard let self, let window = model.windows[window.id] else { return }
                 track(window)
