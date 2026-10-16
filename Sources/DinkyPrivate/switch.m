@@ -206,8 +206,9 @@ static double augmented_sign(double sign)
     return (natural ? natural.boolValue : true) ? -sign : sign;
 }
 
-// mimi mimiCreateAugmentedDockSwipeEvent. rawSign is the payload's, from augmented_sign.
-static CGEventRef mimi_create_event(int phase, double rawSign)
+// mimi mimiCreateAugmentedDockSwipeEvent. rawSign is the payload's, from augmented_sign; progress is how far the
+// swipe has gone, in Spaces, signed as rawSign.
+static CGEventRef mimi_create_event(int phase, double rawSign, double progress)
 {
     CGEventRef event = CGEventCreate(NULL);
     if (!event) return NULL;
@@ -218,7 +219,7 @@ static CGEventRef mimi_create_event(int phase, double rawSign)
     CGEventSetIntegerValueField(event, kGesturePhase, phase);
     CGEventSetIntegerValueField(event, kGesturePhaseAlias, phase);
 
-    CGEventSetDoubleValueField(event, kGestureSwipeProgress, rawSign);
+    CGEventSetDoubleValueField(event, kGestureSwipeProgress, progress);
     CGEventSetDoubleValueField(event, kGestureSwipePositionX, kMimiPositionX);
     CGEventSetDoubleValueField(event, kGestureZoomDeltaY, kMimiZoomDeltaY);
     CGEventSetDoubleValueField(event, kSourceUnixProcessIDAlias, (double)mach_absolute_time());
@@ -251,13 +252,18 @@ static bool legacy_post_swipe(double sign)
 }
 
 // mimi mimiPostAugmentedDockSwipe, or the legacy swipe before macOS 27. sign is +1 toward higher Space indices.
+// Unlike mimi, the swipe begins at no progress and ends at once, with no changed step: a began or changed step
+// that has already gone a whole Space makes the Dock draw a frame of the display part way across, the Space being
+// left beside the one arriving with a black seam between them, before the release lands it. Measured on macOS 27
+// with frames captured at the display's rate: mimi's three steps showed that frame in 9 of 12 switches, these two
+// in none of 16, and landed as fast.
 static bool mimi_post_swipe(double sign)
 {
     if (!requires_augmentation()) return legacy_post_swipe(sign);
     double rawSign = augmented_sign(sign);
-    static const int phases[] = {kPhaseBegan, kPhaseChanged, kPhaseEnded};
+    static const int phases[] = {kPhaseBegan, kPhaseEnded};
     for (size_t i = 0; i < sizeof(phases) / sizeof(phases[0]); i++) {
-        CGEventRef event = mimi_create_event(phases[i], rawSign);
+        CGEventRef event = mimi_create_event(phases[i], rawSign, phases[i] == kPhaseBegan ? 0 : rawSign);
         if (!event) {
             fprintf(stderr, "switch: failed to build augmented dock swipe event (phase=%d)\n", phases[i]);
             return false;
