@@ -325,6 +325,20 @@ struct ScrollingFullscreenTests {
         #expect(ws.layout().order.first == 2)
     }
 
+    @Test func `Fullscreen at an end of the strip reaches through the empty gutter there`() {
+        var ws = strip(4, gaps: Gaps(all: 10))
+        ws.fullscreenFocus = .follow
+        ws.focus(1)
+        ws.toggleFullscreen()
+        let inset = Gaps(all: 10).inset(ws.bounds)
+        var frame = ws.layout().frames[1]!
+        #expect(frame.minX == inset.minX, "no gutter left of the first column")
+        #expect(frame.maxX == ws.stripArea.maxX - 5, "a gap from the gutter its neighbour parks in")
+        ws.focus(4)
+        frame = ws.layout().frames[4]!
+        #expect(frame.maxX == inset.maxX && frame.minX == ws.stripArea.minX + 5)
+    }
+
     @Test func `Ending fullscreen puts the strip back where it was`() {
         var ws = strip(4)
         ws.focus(2)

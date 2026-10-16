@@ -80,18 +80,27 @@ extension Workspace {
     /// Each column's start and width in points along the strip, from its left edge. Half an inner gap is part
     /// of a column on each side that has a neighbour, so neighbours end up a whole gap apart. A lone column is
     /// as wide as the screen; any other is its share of it, grown to fit its windows' minimum widths. A column in
-    /// `pushed` is as wide as `area`, so with its half gaps it stays a whole gap from the gutters either side.
+    /// `pushed` is as wide as `area`, so with its half gaps it stays a whole gap from the gutters either side; at
+    /// an end of the strip, where nothing is parked, it reaches on through the gutter out to the outer gap.
     func columnSpans(in area: CGRect, pushed: Set<Int> = []) -> [(start: CGFloat, width: CGFloat)] {
         let count = root.children.count, gap = gaps.horizontal
         var start: CGFloat = 0
         return root.children.indices.map { i in
             let insets = (i > 0 ? gap / 2 : 0) + (i < count - 1 ? gap / 2 : 0)
             let minimum = root.children[i].minimumExtent(.horizontal, gap: gap, padding: accordionPadding, minimumSizes)
-            let share = pushed.contains(i) ? area.width : (area.width * CGFloat(width(ofColumn: i))).rounded()
+            let share = pushed.contains(i) ? area.width + endGutters(of: i, area).left + endGutters(of: i, area).right
+                : (area.width * CGFloat(width(ofColumn: i))).rounded()
             let width = count == 1 ? area.width : max(share, minimum + insets)
             defer { start += width }
             return (start, width)
         }
+    }
+
+    /// The gutters beside column `index` at the ends of the strip, where nothing is parked: the width between `area`
+    /// and the outer gap on the side with no column beyond it.
+    func endGutters(of index: Int, _ area: CGRect) -> (left: CGFloat, right: CGFloat) {
+        let inset = gaps.inset(bounds)
+        return (index == 0 ? area.minX - inset.minX : 0, index == root.children.count - 1 ? inset.maxX - area.maxX : 0)
     }
 
     /// The scroll offset the layout uses. The strip never scrolls past either end, and the column at an end
@@ -133,7 +142,7 @@ extension Workspace {
         let gap = gaps.horizontal, last = root.children.count - 1
         var offset = offset(for: spans, in: area)
         if let column = focused.flatMap({ root.path(of: $0)?.first }), pushed.contains(column) {
-            offset = spans[column].start
+            offset = spans[column].start + endGutters(of: column, area).left
         }
         let unpushed = pushed.isEmpty ? spans : columnSpans(in: area)
         result.containerRects[[]] = inset
