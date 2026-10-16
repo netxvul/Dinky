@@ -515,6 +515,13 @@ final class Coordinator {
                 starts[id] = was
             }
         }
+        // Nothing of the strip to glide, as on arriving at a Space: written at once, with no stage put up over windows
+        // that are already where they go, which would only flash their snapshots' shadows over the real ones.
+        let anyMoves = targets.contains { id, target in
+            guard let start = starts[id] else { return false }
+            return !start.isClose(to: target, within: 1) && !animator.rests(id, at: start, askedFor: target)
+        }
+        guard anyMoves else { return write() }
         // A long scroll takes longer, a little more for each column it passes, so a window an app is slow to move
         // falls less far behind the others in a frame.
         let moved = strip.compactMap { id, frame in starts[id].map { abs(frame.minX - $0.minX) } }.max() ?? 0
