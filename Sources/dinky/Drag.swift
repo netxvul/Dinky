@@ -43,7 +43,9 @@ extension Coordinator {
               let expected = layout.frames[id] else { return }
         if window.frame.isClose(to: expected, within: 2) { return }
         if let edges = movedEdges(from: expected, to: window.frame) {
-            edit(key) { $0.resize(id, to: window.frame.size, moving: edges) }
+            let resized = edit(key) { $0.resize(id, to: window.frame.size, moving: edges) } ?? false
+            print("\(stamp()) drag: resized \(id) from \(expected.size) to \(window.frame.size), edges \(edges.map { "\($0)" }.sorted()), "
+                  + (resized ? "taken" : "not taken\(workspaces[key]?.fullscreenWindows.isEmpty == false ? " (fullscreen)" : "")"))
         } else if dropping, let point, let drop = dropTarget(of: id, at: point, in: key, layout: layout) {
             print("\(stamp()) drag: dropped \(id) onto \(drop.target), \(drop.zone)")
             edit(key) { $0.drop(id, onto: drop.target, drop.zone) }
