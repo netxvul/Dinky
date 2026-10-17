@@ -528,6 +528,16 @@ final class Coordinator {
             return animator.animate(key, from: starts, to: layout.frames, pids: pids, then: write)
         }
 
+        /// Whether windows being written their frames ahead of or after the strip's glide, under `token`, still are:
+        /// no later pass has taken over, and dinky is on.
+        func pushing(_ token: Int) -> () -> Bool {
+            { [weak self] in
+                guard let self, pushes[key]?.token == token else { return false }
+                if !enabled { pushes[key] = nil }
+                return enabled
+            }
+        }
+
         /// Glides the strip to `layout`, with the windows in `held` kept where they are until the others have arrived.
         func glideStrip(holding held: Set<WindowID>) {
             // Where each window is: one that has just taken its fullscreen frame as the window server has it, which
@@ -560,17 +570,35 @@ final class Coordinator {
             // A held window then moves to where its tile starts, at the size it has, before it shrinks into the tile: its
             // app takes the move and the size one after the other, and the other way round it would show part of the
             // tile empty in between.
+            // One that moves as well shrinks under a still of the strip, which stays up until it shows in its tile, as
+            // would its content, laid out for the whole screen, shifted along to the tile meanwhile.
             let land: () -> Void = held.isEmpty ? write : { [weak self] in
                 guard let self else { return }
-                var sizes: [WindowID: CGSize] = [:], moves: [FrameJob] = []
+                var sizes: [WindowID: CGSize] = [:], moves: [FrameJob] = [], still = layout.frames
                 for id in held {
-                    guard let tile = layout.frames[id], let pid = pids[id], let size = frameNow(id)?.size else { continue }
-                    sizes[id] = size
-                    moves.append(FrameJob(pid: pid, id: id, frame: CGRect(origin: tile.origin, size: size)))
+                    guard let tile = layout.frames[id], let pid = pids[id], let frame = frameNow(id) else { continue }
+                    sizes[id] = frame.size
+                    still[id] = frame
+                    moves.append(FrameJob(pid: pid, id: id, frame: CGRect(origin: tile.origin, size: frame.size)))
                 }
-                applier.assume(sizes, pids: pids)
-                applier.step(moves)
-                write()
+                pushTokens += 1
+                let token = pushTokens
+                pushes[key] = (token, layout)
+                var wrote = false
+                let moving = moves.contains { abs($0.frame.minX - (still[$0.id]?.minX ?? $0.frame.minX)) > 1 }
+                underStill(on: key, ids: moving ? Array(strip.keys) : [], at: still, order: layout.order, write: { [weak self] in
+                    guard let self else { return }
+                    applier.assume(sizes, pids: pids)
+                    applier.step(moves)
+                    writeThen { wrote = true }
+                }, shown: {
+                    wrote || held.allSatisfy { id in
+                        let info = dinky_window_info(id)
+                        return !info.exists || layout.frames[id].map { info.frame.isClose(to: $0, within: 2) } ?? true
+                    }
+                }, live: pushing(token)) { [weak self] in
+                    self?.pushes[key] = nil
+                }
             }
             // Nothing of the strip to glide, as on arriving at a Space: written at once, with no stage put up over windows
             // that are already where they go, which would only flash their snapshots' shadows over the real ones.
@@ -690,32 +718,71 @@ final class Coordinator {
         // The strip glides on once they show at their frames, or where their apps keep them instead, as the write's
         // readback finds them; or after two seconds all the same, for an app that is not answering, leaving them to glide
         // from wherever they have got to. A write's readback alone is no sign: an app that answers late still has to
-        // show the frame.
+        // show the frame. A window that grows to the left as well grows under a still of the strip: its app takes the
+        // size and the move one after the other, and keeps the size from passing the screen edge until it has moved,
+        // so it would show for a moment moved but not grown, its old place empty.
         var settled: [WindowID: CGRect] = [:]
-        let until = CACurrentMediaTime() + 2
-        func glideOnceShown() {
-            guard pushes[key]?.token == token else { return }
-            guard enabled else { pushes[key] = nil; return }
-            let shown = entering.allSatisfy { id in
+        let growing = Layout(frames: layout.frames.filter { entering.contains($0.key) }, order: layout.order.filter(entering.contains))
+        let current = Dictionary(uniqueKeysWithValues: strip.keys.compactMap { id in model.windows[id].map { (id, $0.frame) } })
+        let moving = entering.contains { id in (layout.frames[id]?.minX ?? 0) < (current[id]?.minX ?? 0) - 1 }
+        underStill(on: key, ids: moving ? Array(strip.keys) : [], at: current, order: layout.order, write: { [weak self] in
+            self?.applier.apply(growing, pids: pids, front: workspace.focused) { [weak self] results in
+                DispatchQueue.main.async {
+                    self?.animator.noteLanded(results)
+                    for result in results { settled[result.job.id] = result.got }
+                }
+            }
+        }, shown: {
+            entering.allSatisfy { id in
                 let info = dinky_window_info(id)
                 guard info.exists, let frame = layout.frames[id] else { return true }
                 return info.frame.isClose(to: frame, within: 2) || settled[id].map { info.frame.isClose(to: $0, within: 2) } == true
             }
-            guard shown || CACurrentMediaTime() > until else {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 120) { glideOnceShown() }
-                return
-            }
-            pushes[key] = nil
+        }, live: pushing(token)) { [weak self] in
+            self?.pushes[key] = nil
             glideStrip(holding: [])
         }
-        let growing = Layout(frames: layout.frames.filter { entering.contains($0.key) }, order: layout.order.filter(entering.contains))
-        applier.apply(growing, pids: pids, front: workspace.focused) { [weak self] results in
-            DispatchQueue.main.async {
-                self?.animator.noteLanded(results)
-                for result in results { settled[result.job.id] = result.got }
+    }
+
+    /// Runs `write`, for windows whose apps take a move and a size one after the other and would show them half done
+    /// in between, with a still of the strip's windows `ids` at `frames` up over the display meanwhile, stacked as
+    /// `order`; then, once `shown` is true, checked every display frame, or after two seconds all the same, takes the
+    /// still away and runs `done`. With no `ids`, no Screen Recording or no still in time, `write` runs on its own.
+    /// Once `live` is false, nothing more runs and the still goes.
+    private func underStill(on key: UInt64, ids: [WindowID], at frames: [WindowID: CGRect], order: [WindowID],
+                            write: @escaping () -> Void, shown: @escaping () -> Bool, live: @escaping () -> Bool,
+                            then done: @escaping () -> Void) {
+        let until = CACurrentMediaTime() + 2
+        func wait(_ stage: GlideStage?) {
+            guard live() else { stage?.remove(fading: false); return }
+            guard shown() || CACurrentMediaTime() > until else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 120) { wait(stage) }
+                return
+            }
+            stage?.remove(fading: true)
+            done()
+        }
+        guard !ids.isEmpty, Thumbnails.shared.permitted, let display = displays.display(containingSpace: key) else {
+            write()
+            return wait(nil)
+        }
+        GlideStage.capture(ids, on: display) { [weak self] stage in
+            guard let self, live() else { stage?.remove(fading: false); return }
+            guard let stage else {
+                write()
+                return wait(nil)
+            }
+            let corners = Dictionary(uniqueKeysWithValues: ids.compactMap { id in
+                self.model.windows[id].map { (id, CGFloat($0.cornerRadius)) }
+            })
+            stage.show(at: frames, order: order, corners: corners)
+            // A frame later, so the still is up before the windows change under it.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 60) {
+                guard live() else { stage.remove(fading: false); return }
+                write()
+                wait(stage)
             }
         }
-        glideOnceShown()
     }
 
     /// Windows of a strip that were asked to tuck under the nearest parked column, with less than `peek` on `screen`,
