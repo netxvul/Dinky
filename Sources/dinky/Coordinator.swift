@@ -65,8 +65,10 @@ final class Coordinator {
     /// would only show the mess.
     private var snap: Set<UInt64> = []
     /// By scrolling tree, its strip frames as last applied, unparked and parked, so the next glide starts each window
-    /// where the strip had it rather than where it was parked.
-    private var lastStrips: [UInt64: (strip: [WindowID: CGRect], placed: [WindowID: CGRect], fullscreen: Set<WindowID>)] = [:]
+    /// where the strip had it rather than where it was parked; and its fullscreen windows then, over the strip or
+    /// pushing it, a window that stopped pushing counting as pushing until it has left its fullscreen frame.
+    private var lastStrips: [UInt64: (strip: [WindowID: CGRect], placed: [WindowID: CGRect], fullscreen: Set<WindowID>,
+                                      pushed: Set<WindowID>)] = [:]
     /// The width each window was last written at and the width it came out at, which an app that snaps its size
     /// leaves a little narrower. See `observedWidths(in:)`.
     private var landedWidths: [WindowID: (asked: CGFloat, got: CGFloat)] = [:]
@@ -78,6 +80,10 @@ final class Coordinator {
     /// layout it is gliding to, so a superseding pass clears those transforms. See ScriptingAddition.
     private var saGlides: [UInt64: (token: Int, ids: [WindowID], layout: Layout)] = [:]
     private var saGlideTokens = 0
+    /// By scrolling tree, windows starting to push fullscreen being written their whole frames before the strip
+    /// glides, and the layout the strip glides to then.
+    private var pushes: [UInt64: (token: Int, layout: Layout)] = [:]
+    private var pushTokens = 0
     /// Where dinky last sent each floating window, so a command pressed again mid-glide starts from where the
     /// window is going rather than where it is.
     private(set) var floatingTargets: [WindowID: CGRect] = [:]
@@ -457,6 +463,12 @@ final class Coordinator {
             ScriptingAddition.reset(sa.ids)
             animator.stop(key)
         }
+        // Windows taking their whole fullscreen frames before the strip glides to this layout carry on; for another
+        // layout, this pass takes them from wherever they have got to.
+        if let push = pushes[key] {
+            if push.layout == layout { return }
+            pushes[key] = nil
+        }
         let pids = Dictionary(uniqueKeysWithValues: layout.order.compactMap { id in model.windows[id].map { (id, $0.pid) } })
         let writeThen = { [weak self] (landed: @escaping () -> Void) in
             guard let self else { return }
@@ -489,134 +501,221 @@ final class Coordinator {
         let write = { writeThen {} }
         // Windows shown fullscreen over the strip. A strip that pushes has none: its fullscreen windows are part of it.
         let fullscreen = workspace.pushesFullscreen ? [] : Set(workspace.fullscreenWindows)
+        // Windows filling their widened columns, pushing their neighbours off.
+        let pushed: Set<WindowID> = workspace.pushesFullscreen ? Set(workspace.fullscreenWindows) : []
         let strip = workspace.stripFrames, previous = lastStrips[key]
-        lastStrips[key] = strip.isEmpty ? nil : (strip, layout.frames, fullscreen)
+        // Pushing fullscreen resizes a window while its neighbours only move, and an app takes far longer to resize a
+        // window than to move one: gliding together, the neighbours would slide off ahead of its edge, leaving a gap to
+        // the desktop between them. So a window starting to push takes its whole frame first, over its neighbours, and
+        // they glide off behind it once it has; one stopping holds its frame while they glide back behind it, and
+        // takes its tile after. A window counts as starting or stopping until its size is the one it is going to.
+        let resizes = { [self] (id: WindowID) -> Bool in
+            guard id != dragging, let target = layout.frames[id], let frame = model.windows[id]?.frame else { return false }
+            return (abs(frame.width - target.width) > 1 || abs(frame.height - target.height) > 1)
+                && !animator.rests(id, at: frame, askedFor: target)
+        }
+        let entering = pushed.filter(resizes)
+        let leaving: Set<WindowID> = entering.isEmpty
+            ? (previous?.pushed ?? []).filter { !pushed.contains($0) && strip[$0] != nil && resizes($0) } : []
+        lastStrips[key] = strip.isEmpty ? nil : (strip, layout.frames, fullscreen, pushed.union(leaving))
         guard animates, snap.remove(key) == nil else { return write() }
         // Stacking first, so the window coming to the front of an accordion slides in on top.
         applier.raiseIntoOrder(layout, pids: pids, front: workspace.focused)
-        var starts = Dictionary(uniqueKeysWithValues: layout.order.compactMap { id in
-            id == dragging ? nil : model.windows[id].map { (id, $0.frame) }
-        })
-        guard !strip.isEmpty else { return animator.animate(key, from: starts, to: layout.frames, pids: pids, then: write) }
-        // A strip glides as a whole, in strip coordinates, parked on every frame. A window resting where the last pass
-        // put it starts where the strip had it then, even an app's that snapped to a grid or kept a minimum size a few
-        // points off, which would otherwise glide apart from the rest; one still gliding carries on from where it is.
-        // A new window, or one the user moved or resized, starts from where it is.
-        // Windows shown fullscreen over the strip (`[fullscreen] scrolling = 'over'`) glide to the screen as usual; the
-        // strip still parks the others around where it has them. Pushing fullscreen windows glide with the strip.
-        var targets = layout.frames
-        for (id, frame) in strip where !fullscreen.contains(id) {
-            targets[id] = frame
-            // Start a resting window where the strip had it, for a continuous scroll — but not one that was
-            // fullscreen last pass: it rests at its fullscreen frame, not a strip one, and must glide down from there.
-            if let start = starts[id], let was = previous?.strip[id], let placed = previous?.placed[id],
-               !(previous?.fullscreen.contains(id) ?? false),
-               animator.isAnimating(id) || animator.rests(id, at: start, askedFor: placed) {
-                starts[id] = was
+        guard !strip.isEmpty else {
+            let starts = Dictionary(uniqueKeysWithValues: layout.order.compactMap { id in
+                id == dragging ? nil : model.windows[id].map { (id, $0.frame) }
+            })
+            return animator.animate(key, from: starts, to: layout.frames, pids: pids, then: write)
+        }
+
+        /// Glides the strip to `layout`, with the windows in `held` kept where they are until the others have arrived.
+        func glideStrip(holding held: Set<WindowID>) {
+            // Where each window is: one that has just taken its fullscreen frame as the window server has it, which
+            // the window model may not have heard yet.
+            let frameNow = { [self] (id: WindowID) -> CGRect? in
+                let info = entering.contains(id) ? dinky_window_info(id) : nil
+                return info?.exists == true ? info!.frame : model.windows[id]?.frame
+            }
+            var starts = Dictionary(uniqueKeysWithValues: layout.order.compactMap { id in
+                id == dragging ? nil : frameNow(id).map { (id, $0) }
+            })
+            // A strip glides as a whole, in strip coordinates, parked on every frame. A window resting where the last pass
+            // put it starts where the strip had it then, even an app's that snapped to a grid or kept a minimum size a few
+            // points off, which would otherwise glide apart from the rest; one still gliding carries on from where it is.
+            // A new window, or one the user moved or resized, starts from where it is.
+            // Windows shown fullscreen over the strip (`[fullscreen] scrolling = 'over'`) glide to the screen as usual; the
+            // strip still parks the others around where it has them. Pushing fullscreen windows glide with the strip.
+            var targets = layout.frames
+            for (id, frame) in strip where !fullscreen.contains(id) {
+                targets[id] = frame
+                // Start a resting window where the strip had it, for a continuous scroll — but not one that was
+                // fullscreen last pass: it rests at its fullscreen frame, not a strip one, and must glide down from there.
+                if let start = starts[id], let was = previous?.strip[id], let placed = previous?.placed[id],
+                   !(previous?.fullscreen.contains(id) ?? false),
+                   animator.isAnimating(id) || animator.rests(id, at: start, askedFor: placed) {
+                    starts[id] = was
+                }
+            }
+            for id in held { targets[id] = starts[id] ?? targets[id] }
+            // A held window then moves to where its tile starts, at the size it has, before it shrinks into the tile: its
+            // app takes the move and the size one after the other, and the other way round it would show part of the
+            // tile empty in between.
+            let land: () -> Void = held.isEmpty ? write : { [weak self] in
+                guard let self else { return }
+                var sizes: [WindowID: CGSize] = [:], moves: [FrameJob] = []
+                for id in held {
+                    guard let tile = layout.frames[id], let pid = pids[id], let size = frameNow(id)?.size else { continue }
+                    sizes[id] = size
+                    moves.append(FrameJob(pid: pid, id: id, frame: CGRect(origin: tile.origin, size: size)))
+                }
+                applier.assume(sizes, pids: pids)
+                applier.step(moves)
+                write()
+            }
+            // Nothing of the strip to glide, as on arriving at a Space: written at once, with no stage put up over windows
+            // that are already where they go, which would only flash their snapshots' shadows over the real ones.
+            let anyMoves = targets.contains { id, target in
+                guard let start = starts[id] else { return false }
+                return !start.isClose(to: target, within: 1) && !animator.rests(id, at: start, askedFor: target)
+            }
+            guard anyMoves else { return land() }
+            // A long scroll takes longer, a little more for each column it passes, so a window an app is slow to move
+            // falls less far behind the others in a frame.
+            let moved = strip.compactMap { id, frame in starts[id].map { abs(frame.minX - $0.minX) } }.max() ?? 0
+            let column = max(workspace.bounds.width * CGFloat(workspace.columnWidth), 1)
+            let stretch = AnimationCurve.stripStretch(base: Double(config.animations.durationMs) / 1000,
+                                                      columns: Double(moved / column))
+            applier.assume(Dictionary(uniqueKeysWithValues: strip.keys.compactMap { id in
+                id == dragging ? nil : frameNow(id).map { (id, $0.size) }
+            }), pids: pids)
+            // Where the strip's windows that are not gliding are now: where the last pass put them. Parking follows the
+            // columns in front, so one of them can still have to move while the others glide.
+            let resting = (previous?.placed ?? [:]).filter { id, _ in strip[id] != nil && id != dragging && !fullscreen.contains(id) }
+            let place = { (frames: [WindowID: CGRect]) -> [WindowID: CGRect] in
+                var input = strip
+                for (id, frame) in frames where !fullscreen.contains(id) { input[id] = frame }
+                var placed = workspace.placeStrip(input)
+                for id in fullscreen where frames[id] != nil { placed[id] = frames[id] }
+                return placed
+            }
+            // With the scripting addition, the strip glides by moving the real windows through Dock's connection each
+            // frame: no snapshots, no Screen Recording, and windows slide past the screen edges that Accessibility clamps.
+            // The real frames go to their places underneath at once; the transforms clear once the glide ends and those
+            // frames have landed. Every strip window is placed every frame, the moving ones over the resting ones.
+            // The transforms only translate, so a window whose size also changes this pass (restoring from a filled or
+            // enlarged state, a column width change) must resize through Accessibility, where its app re-renders, rather
+            // than be stretched by a transform; such a pass is left to the snapshot or window glide below.
+            let saResizing = strip.contains { id, frame in
+                guard let size = frameNow(id)?.size else { return false }
+                return abs(size.width - frame.width) > 1 || abs(size.height - frame.height) > 1
+            }
+            if fullscreen.isEmpty, !saResizing, ScriptingAddition.available {
+                let stripIDs = Array(strip.keys)
+                saGlideTokens += 1
+                let token = saGlideTokens
+                saGlides[key] = (token, stripIDs, layout)
+                let saGlide = SAGlide { [weak self] in self?.endSAGlide(key, token) }
+                var initial: [WindowID: CGRect] = [:]
+                for id in stripIDs { initial[id] = starts[id] ?? strip[id] }
+                ScriptingAddition.transform(initial)
+                writeThen { saGlide.framesLanded() }
+                return animator.animate(key, from: starts, to: targets, pids: pids, stretch: stretch,
+                                        sink: { ScriptingAddition.transform(strip.merging($0) { $1 }) }) { saGlide.glideEnded() }
+            }
+            // Snapshots are fixed bitmaps, so a window resizing this pass (restoring from a filled or enlarged state, a
+            // width change) would be stretched by them just as a transform would; such a pass glides the windows directly.
+            let glidesSnapshots = (config.scrolling.glide == .snapshots || config.scrolling.glide == .scriptingAddition)
+                && fullscreen.isEmpty && !saResizing && Thumbnails.shared.permitted
+            guard glidesSnapshots, let display = displays.display(containingSpace: key) else {
+                return animator.animate(key, from: starts, to: targets, pids: pids, place: place, resting: resting,
+                                        stretch: stretch, then: land)
+            }
+            // Snapshots of the strip glide over a snapshot of what is behind it, while the windows go to their places
+            // underneath at once. Without the snapshots in time, the windows glide. The snapshots are parked as the
+            // windows are at an edge with nothing beyond it, so the peeks there stay through the glide; past a wall,
+            // where a window hides behind the columns, a snapshot glides on in strip coordinates, where the stage does
+            // not reach, rather than over the column in view.
+            animator.stop(key)
+            glideTokens += 1
+            let token = glideTokens
+            glides[key] = (token, nil, layout)
+            let corners = Dictionary(uniqueKeysWithValues: strip.keys.compactMap { id in
+                model.windows[id].map { (id, CGFloat($0.cornerRadius)) }
+            })
+            GlideStage.capture(Array(strip.keys), on: display) { [weak self] stage in
+                guard let self, glides[key]?.token == token else { stage?.remove(fading: false); return }
+                guard let stage else {
+                    glides[key] = nil
+                    animator.animate(key, from: starts, to: targets, pids: pids, place: place, resting: resting,
+                                     stretch: stretch, then: land)
+                    return
+                }
+                glides[key]!.stage = stage
+                stage.onRemoved = { [weak self] in
+                    if self?.glides[key]?.token == token { self?.glides[key] = nil }
+                }
+                var current = starts.filter { strip[$0.key] != nil }
+                let (bounds, walls) = (workspace.bounds, workspace.walls)
+                let parked = { (frames: [WindowID: CGRect]) -> [WindowID: CGRect] in
+                    let placed = place(frames)
+                    return Dictionary(uniqueKeysWithValues: frames.map { id, frame in
+                        let pastWall = frame.minX < bounds.minX - 1 && walls.contains(.left)
+                            || frame.maxX > bounds.maxX + 1 && walls.contains(.right)
+                        return (id, pastWall ? frame : placed[id] ?? frame)
+                    })
+                }
+                stage.show(at: parked(current), order: layout.order, corners: corners)
+                // A frame later, so the stage is up before the windows move under it.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 60) { writeThen { stage.windowsLanded() } }
+                animator.animate(key, from: starts, to: targets, pids: pids, stretch: stretch, sink: { frames in
+                    current.merge(frames) { $1 }
+                    stage.move(parked(current))
+                }) {
+                    stage.glideEnded()
+                }
             }
         }
-        // Nothing of the strip to glide, as on arriving at a Space: written at once, with no stage put up over windows
-        // that are already where they go, which would only flash their snapshots' shadows over the real ones.
-        let anyMoves = targets.contains { id, target in
-            guard let start = starts[id] else { return false }
-            return !start.isClose(to: target, within: 1) && !animator.rests(id, at: start, askedFor: target)
-        }
-        guard anyMoves else { return write() }
-        // A long scroll takes longer, a little more for each column it passes, so a window an app is slow to move
-        // falls less far behind the others in a frame.
-        let moved = strip.compactMap { id, frame in starts[id].map { abs(frame.minX - $0.minX) } }.max() ?? 0
-        let column = max(workspace.bounds.width * CGFloat(workspace.columnWidth), 1)
-        let stretch = AnimationCurve.stripStretch(base: Double(config.animations.durationMs) / 1000,
-                                                  columns: Double(moved / column))
-        applier.assume(Dictionary(uniqueKeysWithValues: strip.keys.compactMap { id in
-            id == dragging ? nil : model.windows[id].map { (id, $0.frame.size) }
-        }), pids: pids)
-        // Where the strip's windows that are not gliding are now: where the last pass put them. Parking follows the
-        // columns in front, so one of them can still have to move while the others glide.
-        let resting = (previous?.placed ?? [:]).filter { id, _ in strip[id] != nil && id != dragging && !fullscreen.contains(id) }
-        let place = { (frames: [WindowID: CGRect]) -> [WindowID: CGRect] in
-            var input = strip
-            for (id, frame) in frames where !fullscreen.contains(id) { input[id] = frame }
-            var placed = workspace.placeStrip(input)
-            for id in fullscreen where frames[id] != nil { placed[id] = frames[id] }
-            return placed
-        }
-        // With the scripting addition, the strip glides by moving the real windows through Dock's connection each
-        // frame: no snapshots, no Screen Recording, and windows slide past the screen edges that Accessibility clamps.
-        // The real frames go to their places underneath at once; the transforms clear once the glide ends and those
-        // frames have landed. Every strip window is placed every frame, the moving ones over the resting ones.
-        // The transforms only translate, so a window whose size also changes this pass (restoring from a filled or
-        // enlarged state, a column width change) must resize through Accessibility, where its app re-renders, rather
-        // than be stretched by a transform; such a pass is left to the snapshot or window glide below.
-        let saResizing = strip.contains { id, frame in
-            guard let size = model.windows[id]?.frame.size else { return false }
-            return abs(size.width - frame.width) > 1 || abs(size.height - frame.height) > 1
-        }
-        if fullscreen.isEmpty, !saResizing, ScriptingAddition.available {
-            let stripIDs = Array(strip.keys)
-            saGlideTokens += 1
-            let token = saGlideTokens
-            saGlides[key] = (token, stripIDs, layout)
-            let saGlide = SAGlide { [weak self] in self?.endSAGlide(key, token) }
-            var initial: [WindowID: CGRect] = [:]
-            for id in stripIDs { initial[id] = starts[id] ?? strip[id] }
-            ScriptingAddition.transform(initial)
-            writeThen { saGlide.framesLanded() }
-            return animator.animate(key, from: starts, to: targets, pids: pids, stretch: stretch,
-                                    sink: { ScriptingAddition.transform(strip.merging($0) { $1 }) }) { saGlide.glideEnded() }
-        }
-        // Snapshots are fixed bitmaps, so a window resizing this pass (restoring from a filled or enlarged state, a
-        // width change) would be stretched by them just as a transform would; such a pass glides the windows directly.
-        let glidesSnapshots = (config.scrolling.glide == .snapshots || config.scrolling.glide == .scriptingAddition)
-            && fullscreen.isEmpty && !saResizing && Thumbnails.shared.permitted
-        guard glidesSnapshots, let display = displays.display(containingSpace: key) else {
-            return animator.animate(key, from: starts, to: targets, pids: pids, place: place, resting: resting,
-                                    stretch: stretch, then: write)
-        }
-        // Snapshots of the strip glide over a snapshot of what is behind it, while the windows go to their places
-        // underneath at once. Without the snapshots in time, the windows glide. The snapshots are parked as the
-        // windows are at an edge with nothing beyond it, so the peeks there stay through the glide; past a wall,
-        // where a window hides behind the columns, a snapshot glides on in strip coordinates, where the stage does
-        // not reach, rather than over the column in view.
+
+        guard !entering.isEmpty else { return glideStrip(holding: leaving) }
+        // A glide still under way, as after a focus change just before, would go on moving them, and write its layout
+        // over theirs once it ends.
         animator.stop(key)
-        glideTokens += 1
-        let token = glideTokens
-        glides[key] = (token, nil, layout)
-        let corners = Dictionary(uniqueKeysWithValues: strip.keys.compactMap { id in
-            model.windows[id].map { (id, CGFloat($0.cornerRadius)) }
-        })
-        GlideStage.capture(Array(strip.keys), on: display) { [weak self] stage in
-            guard let self, glides[key]?.token == token else { stage?.remove(fading: false); return }
-            guard let stage else {
-                glides[key] = nil
-                animator.animate(key, from: starts, to: targets, pids: pids, place: place, resting: resting,
-                                 stretch: stretch, then: write)
+        pushTokens += 1
+        let token = pushTokens
+        pushes[key] = (token, layout)
+        // Raised over what it grows over, the neighbours where they are now.
+        var over = layout
+        for id in strip.keys where !entering.contains(id) { if let frame = model.windows[id]?.frame { over.frames[id] = frame } }
+        applier.raiseIntoOrder(over, pids: pids, front: workspace.focused)
+        // The strip glides on once they show at their frames, or where their apps keep them instead, as the write's
+        // readback finds them; or after two seconds all the same, for an app that is not answering, leaving them to glide
+        // from wherever they have got to. A write's readback alone is no sign: an app that answers late still has to
+        // show the frame.
+        var settled: [WindowID: CGRect] = [:]
+        let until = CACurrentMediaTime() + 2
+        func glideOnceShown() {
+            guard pushes[key]?.token == token else { return }
+            guard enabled else { pushes[key] = nil; return }
+            let shown = entering.allSatisfy { id in
+                let info = dinky_window_info(id)
+                guard info.exists, let frame = layout.frames[id] else { return true }
+                return info.frame.isClose(to: frame, within: 2) || settled[id].map { info.frame.isClose(to: $0, within: 2) } == true
+            }
+            guard shown || CACurrentMediaTime() > until else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 120) { glideOnceShown() }
                 return
             }
-            glides[key]!.stage = stage
-            stage.onRemoved = { [weak self] in
-                if self?.glides[key]?.token == token { self?.glides[key] = nil }
-            }
-            var current = starts.filter { strip[$0.key] != nil }
-            let (bounds, walls) = (workspace.bounds, workspace.walls)
-            let parked = { (frames: [WindowID: CGRect]) -> [WindowID: CGRect] in
-                let placed = place(frames)
-                return Dictionary(uniqueKeysWithValues: frames.map { id, frame in
-                    let pastWall = frame.minX < bounds.minX - 1 && walls.contains(.left)
-                        || frame.maxX > bounds.maxX + 1 && walls.contains(.right)
-                    return (id, pastWall ? frame : placed[id] ?? frame)
-                })
-            }
-            stage.show(at: parked(current), order: layout.order, corners: corners)
-            // A frame later, so the stage is up before the windows move under it.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 60) { writeThen { stage.windowsLanded() } }
-            animator.animate(key, from: starts, to: targets, pids: pids, stretch: stretch, sink: { frames in
-                current.merge(frames) { $1 }
-                stage.move(parked(current))
-            }) {
-                stage.glideEnded()
+            pushes[key] = nil
+            glideStrip(holding: [])
+        }
+        let growing = Layout(frames: layout.frames.filter { entering.contains($0.key) }, order: layout.order.filter(entering.contains))
+        applier.apply(growing, pids: pids, front: workspace.focused) { [weak self] results in
+            DispatchQueue.main.async {
+                self?.animator.noteLanded(results)
+                for result in results { settled[result.job.id] = result.got }
             }
         }
+        glideOnceShown()
     }
 
     /// Windows of a strip that were asked to tuck under the nearest parked column, with less than `peek` on `screen`,
