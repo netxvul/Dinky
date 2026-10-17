@@ -29,6 +29,9 @@ struct Display: Equatable {
     let id: CGDirectDisplayID
     /// Global CG coordinates, top-left origin.
     let frame: CGRect
+    /// The frame minus menu bar and Dock, in the same coordinates. Read with the rest, so a Dock that moves,
+    /// resizes or starts hiding changes the display, and the trees on it are fitted to the area again.
+    let visibleArea: CGRect
     let isMain: Bool
     /// Every Space in Mission Control order, full-screen ones included. Swipes step over all of them.
     let spaces: [UInt64]
@@ -163,7 +166,9 @@ final class DisplayModel {
         dinky_displays().compactMap { d in
             // Skip a display that went away between the Space query and now; its bounds would be stale.
             guard d.displayID != 0, CGDisplayIsOnline(d.displayID) != 0 else { return nil }
-            return Display(uuid: d.uuid, id: d.displayID, frame: CGDisplayBounds(d.displayID),
+            let frame = CGDisplayBounds(d.displayID)
+            return Display(uuid: d.uuid, id: d.displayID, frame: frame,
+                           visibleArea: visibleArea(of: d.displayID, frame: frame),
                            isMain: CGDisplayIsMain(d.displayID) != 0,
                            spaces: d.spaces.map(\.spaceID),
                            userSpaces: d.spaces.filter(\.isUser).map(\.spaceID),

@@ -8,18 +8,18 @@ func screen(of id: CGDirectDisplayID) -> NSScreen? {
     return NSScreen.screens.first { ($0.deviceDescription[number] as? NSNumber)?.uint32Value == id }
 }
 
-// What the layout needs from a display: its NSScreen, name and visible area, and the config's gaps
-// resolved for it.
+/// The display's frame minus menu bar and Dock, in CG coordinates (top-left origin at the primary display);
+/// `frame` when no screen shows it.
+func visibleArea(of id: CGDirectDisplayID, frame: CGRect) -> CGRect {
+    guard let primary = NSScreen.screens.first, let screen = screen(of: id) else { return frame }
+    let visible = screen.visibleFrame
+    return CGRect(x: visible.minX, y: primary.frame.maxY - visible.maxY, width: visible.width, height: visible.height)
+}
+
+// What the layout needs from a display: its NSScreen and name, and the config's gaps resolved for it.
 extension Display {
     /// The name System Settings shows, such as "Built-in Retina Display".
     var name: String { screen(of: id)?.localizedName ?? "" }
-
-    /// The frame minus menu bar and Dock, in CG coordinates (top-left origin at the primary display).
-    var visibleArea: CGRect {
-        guard let primary = NSScreen.screens.first, let screen = screen(of: id) else { return frame }
-        let visible = screen.visibleFrame
-        return CGRect(x: visible.minX, y: primary.frame.maxY - visible.maxY, width: visible.width, height: visible.height)
-    }
 }
 
 extension DisplayModel {
