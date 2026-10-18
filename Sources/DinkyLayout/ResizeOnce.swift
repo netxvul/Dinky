@@ -104,6 +104,12 @@ public enum ResizeOnce {
         grows(current, target) && current.minX - target.minX > max(1, target.maxX - current.maxX)
     }
 
+    /// Whether a window going from `current` to `target` narrows mostly from the left: its left edge goes further right
+    /// than its right edge goes left.
+    public static func shrinksRight(_ current: CGRect, _ target: CGRect) -> Bool {
+        target.width < current.width - 1 && target.minX - current.minX > max(1, current.maxX - target.maxX)
+    }
+
     /// What a window growing to the left from `current` is written first, before it glides: its right edge taken just
     /// past the screen's, `edge`, by `nudge`, so its app lets every size after grow it there. Written as size, position,
     /// size, the size takes it to the screen edge and the move past it, by no more than the inner gap. Nil for one already

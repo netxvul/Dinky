@@ -71,6 +71,14 @@ struct ResizeOnceTests {
         #expect(!ResizeOnce.growsLeft(rect(33, 41, 1471, 869), rect(760, 41, 723, 869)))
     }
 
+    @Test func `Narrows from the left where its left edge goes further than its right`() {
+        // The right column going from the whole screen to 60%.
+        #expect(ResizeOnce.shrinksRight(rect(33, 41, 1446, 869), rect(611, 41, 868, 869)))
+        // The left column narrowing at its right edge, and growing.
+        #expect(!ResizeOnce.shrinksRight(rect(33, 41, 1446, 869), rect(33, 41, 868, 869)))
+        #expect(!ResizeOnce.shrinksRight(rect(611, 41, 868, 869), rect(33, 41, 1446, 869)))
+    }
+
     @Test func `Is led in to just past the screen edge, unless already past it`() {
         // Sized to the edge where it is, then moved past it by the nudge.
         #expect(ResizeOnce.leadIn(from: rect(760, 41, 723, 869), edge: edge) == rect(762, 41, 752, 869))

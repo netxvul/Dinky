@@ -526,8 +526,18 @@ final class Coordinator {
         let leavingChange = Dictionary(uniqueKeysWithValues: (lastFullscreen[key] ?? []).subtracting(fullscreenNow).map {
             ($0, change($0, workspace.pushesFullscreen && strip[$0] != nil))
         })
+        // Any other window changing size and moving, as a column or tile `cycle-size` widens or narrows: one growing to
+        // the left grows by its left edge as one going fullscreen does, one narrowing from the left glides at its size
+        // and takes its own with the write, so neither shows its right side pulled in.
+        let resizing = Set(layout.order.filter { id in
+            !fullscreenNow.contains(id) && leavingChange[id] == nil && change(id, false) == .once
+        })
+        let narrowing = resizing.filter { id in
+            guard let frame = frameOf(id), let target = layout.frames[id] else { return false }
+            return ResizeOnce.shrinksRight(frame, target)
+        }
         let growing = Set(changing.filter { $0.value == .once && grows($0.key) }.keys)
-        let growLeft = growing.filter(growsLeft)
+        let growLeft = growing.filter(growsLeft).union(resizing.filter(growsLeft))
         let growOnce = growing.subtracting(growLeft)
         let growWhole = Set(changing.filter { $0.value == .whole && grows($0.key) }.keys)
         let staged = growOnce.union(growWhole)
@@ -535,7 +545,7 @@ final class Coordinator {
         // own with the write; held, it stays where it is till then.
         let entering = staged.union(growLeft)
         let shrinkOnce = Set(changing.filter { $0.value == .once && !grows($0.key) }.keys)
-            .union(entering.isEmpty ? Set(leavingChange.filter { $0.value == .once }.keys) : [])
+            .union(entering.isEmpty ? Set(leavingChange.filter { $0.value == .once }.keys) : []).union(narrowing)
         let held = Set(changing.filter { $0.value == .whole && !grows($0.key) }.keys)
             .union(entering.isEmpty ? Set(leavingChange.filter { $0.value == .whole }.keys) : [])
         let leavingAll = Set(leavingChange.filter { $0.value != .none }.keys)
