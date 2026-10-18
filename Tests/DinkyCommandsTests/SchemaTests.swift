@@ -240,6 +240,7 @@ struct SchemaTests {
         workspace-changed = []
         focus-changed = 'exec-and-forget true'
         mode-changed = 'exec-and-forget true'
+        display-changed = 'exec-and-forget true'
 
         [[rules]]
         app-id = 'com.apple.Safari'

@@ -59,6 +59,11 @@
 
 - `hyper` and `meh` name the usual modifier combinations: `hyper-1` is `alt-ctrl-cmd-shift-1`, and `meh-1` is `alt-ctrl-shift-1`.
 
+### Hooks
+
+- New `display-changed` hook runs when a display connects or disconnects, once the workspaces have moved, with `DINKY_DISPLAYS` and `DINKY_PREV_DISPLAYS` set to how many displays there are now and were before. React to docking and undocking without Hammerspoon.
+- `exec-and-forget` has `dinky` itself on `PATH`, so hook scripts can call `dinky` when the app was started from Finder.
+
 ### Fixes
 
 - On a scrolling workspace, only the column nearest each display edge peeks out; the ones beyond it tuck under it with 2 points on screen, so the edge shows one window's shadow. Before, every parked column hung at the same spot and their shadows piled up into a dark band. With `glide = 'snapshots'`, the peeks stay put through a scroll instead of vanishing and fading back.

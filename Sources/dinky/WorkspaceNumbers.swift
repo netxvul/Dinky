@@ -14,6 +14,8 @@ final class WorkspaceNumbers {
     /// Workspace number to Space.
     private(set) var binding: [Int: UInt64] = [:]
     private var observers: [() -> Void] = []
+    /// Called at the end of every arrangement, once the coordinator has re-read the windows.
+    var onArranged: (() -> Void)?
     private var pending: DispatchWorkItem?
     private var arranging = false
     /// Spaces this removed, whose `spaceDestroyed` events are not news.
@@ -128,6 +130,7 @@ final class WorkspaceNumbers {
         }
         fflush(stdout)
         AppState.shared.coordinator?.reconcile()
+        onArranged?()
     }
 
     /// The displays connected now, as WindowServer lists them. The display model hears of a change a moment

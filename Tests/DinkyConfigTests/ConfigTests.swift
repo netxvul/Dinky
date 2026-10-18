@@ -440,12 +440,14 @@ struct ConfigTests {
         workspace-changed = ['exec-and-forget sketchybar --trigger workspace_change']
         focus-changed = []
         mode-changed = ['exec-and-forget sketchybar --trigger mode_changed', 'retile']
+        display-changed = 'layout accordion'
         """).hooks
         #expect(hooks.startup == ["exec-and-forget brew services restart sketchybar"])
         #expect(hooks.workspaceChanging == ["exec-and-forget sketchybar --trigger workspace_changing"])
         #expect(hooks.workspaceChanged == ["exec-and-forget sketchybar --trigger workspace_change"])
         #expect(hooks.focusChanged == [])
         #expect(hooks.modeChanged == ["exec-and-forget sketchybar --trigger mode_changed", "retile"])
+        #expect(hooks.displayChanged == ["layout accordion"])
         assertError("[hooks]\nmode-changed = [1]\n", path: "hooks.mode-changed", line: 2, contains: "command string")
         assertError("[hooks]\nstartup = ['']\n", path: "hooks.startup", line: 2, contains: "can't be empty")
         assertError("[hooks]\non-startup = 'x'\n", path: "hooks.on-startup", line: 2, contains: "unknown key")

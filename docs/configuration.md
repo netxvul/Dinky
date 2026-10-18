@@ -538,6 +538,7 @@ environment `exec-and-forget` gets.
 | `workspace-changed` | When a display's workspace changes, or a switch gives up. |
 | `focus-changed` | When focus changes, debounced 50 ms. |
 | `mode-changed` | When the binding mode changes, including back to `main` when the config reloads. Sets `DINKY_MODE` and `DINKY_PREV_MODE`. |
+| `display-changed` | When a display connects or disconnects, once the displays have settled and dinky has moved the workspaces to them, about a second later. Sets `DINKY_DISPLAYS` and `DINKY_PREV_DISPLAYS`, how many displays there are now and were before. |
 
 </div>
 
@@ -737,12 +738,14 @@ cmd = 'both'
 shift = 'both'
 
 # dinky commands run on events. exec-and-forget gets $DINKY_WORKSPACE, $DINKY_PREV_WORKSPACE and $DINKY_DISPLAY
-# in the workspace hooks, and $DINKY_MODE, $DINKY_PREV_MODE in mode-changed.
+# in the workspace hooks, $DINKY_MODE, $DINKY_PREV_MODE in mode-changed, and $DINKY_DISPLAYS,
+# $DINKY_PREV_DISPLAYS (how many displays) in display-changed.
 # [hooks]
 # startup = ['exec-and-forget brew services restart sketchybar']
 # workspace-changed = ['exec-and-forget sketchybar --trigger workspace_change']
 # focus-changed = []
 # mode-changed = []
+# display-changed = []
 
 # Every rule whose conditions all match a new window runs, in order.
 [[rules]]

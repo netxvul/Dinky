@@ -43,5 +43,6 @@ public func checkConfig(_ config: Config) -> [ConfigFinding] {
     check(config.hooks.workspaceChanged, at: "hooks.workspace-changed")
     check(config.hooks.focusChanged, at: "hooks.focus-changed")
     check(config.hooks.modeChanged, at: "hooks.mode-changed")
+    check(config.hooks.displayChanged, at: "hooks.display-changed")
     return findings
 }

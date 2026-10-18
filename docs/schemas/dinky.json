@@ -413,7 +413,8 @@
           "description": "Whenever a display's current workspace changes. exec-and-forget gets DINKY_WORKSPACE, DINKY_PREV_WORKSPACE and DINKY_DISPLAY."
         },
         "focus-changed": { "$ref": "#/definitions/hook", "description": "When the focused window changes, debounced by 50 ms." },
-        "mode-changed": { "$ref": "#/definitions/hook", "description": "When the binding mode changes, including back to main when the config reloads. exec-and-forget gets DINKY_MODE and DINKY_PREV_MODE." }
+        "mode-changed": { "$ref": "#/definitions/hook", "description": "When the binding mode changes, including back to main when the config reloads. exec-and-forget gets DINKY_MODE and DINKY_PREV_MODE." },
+        "display-changed": { "$ref": "#/definitions/hook", "description": "When a display connects or disconnects. exec-and-forget gets DINKY_DISPLAYS and DINKY_PREV_DISPLAYS, how many displays there are now and were before." }
       }
     },
     "rules": {
