@@ -69,7 +69,8 @@ static void handler(uint32_t type, void *data, size_t length, void *context)
         // JankyBorders window_modify_handler and yabai 804/808: uint32 wid at 0.
         if (length < 4) return;
         memcpy(&event.windowID, data, sizeof(uint32_t));
-        event.pid = window_pid(event.windowID);
+        // Moves come on every frame of a drag, and only for watched windows, whose owner the model knows.
+        if (type != DinkyEventWindowMove) event.pid = window_pid(event.windowID);
         break;
     }
 
@@ -142,6 +143,12 @@ DinkyWindowInfo dinky_window_info(uint32_t windowID)
     info.isVisible = dinky_is_visible(info.attributes, info.tags);
     info.isMinimized = dinky_is_minimized(info.attributes, info.tags);
     return info;
+}
+
+CGRect dinky_window_frame(uint32_t windowID)
+{
+    CGRect frame;
+    return SLSGetWindowBounds(dinky_connection(), windowID, &frame) == kCGErrorSuccess ? frame : CGRectNull;
 }
 
 NSArray<NSNumber *> *dinky_all_window_ids(void)
