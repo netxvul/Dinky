@@ -135,14 +135,19 @@ extension Workspace {
     /// column comes first in the stacking, then the others by distance from it.
     /// The columns in `pushed` are as wide as the strip's area and their fullscreen windows fill them; the focused
     /// one, if pushed, fills the area whatever the scroll offset, its neighbours parked in the gutters either side. The other windows of a pushed
-    /// column keep the width the column has otherwise, behind its fullscreen window.
+    /// column keep the width the column has otherwise, behind its fullscreen window. With `pushedFullscreenFills`, the
+    /// focused one's fullscreen windows fill the area inside the outer gaps, over the gutters.
     func stripLayout(pushed: Set<Int> = []) -> Layout {
         var result = Layout()
         let area = stripArea, spans = columnSpans(in: area, pushed: pushed), inset = gaps.inset(bounds)
         let gap = gaps.horizontal, last = root.children.count - 1
         var offset = offset(for: spans, in: area)
-        if let column = focused.flatMap({ root.path(of: $0)?.first }), pushed.contains(column) {
+        let focusedColumn = focused.flatMap { root.path(of: $0)?.first }
+        if let column = focusedColumn, pushed.contains(column) {
             offset = spans[column].start + endGutters(of: column, area).left
+        }
+        let fills = { (i: Int, id: WindowID) in
+            pushedFullscreenFills && i == focusedColumn && pushed.contains(i) && fullscreenWindows.contains(id)
         }
         let unpushed = pushed.isEmpty ? spans : columnSpans(in: area)
         result.containerRects[[]] = inset
@@ -154,13 +159,15 @@ extension Workspace {
             let rect = CGRect(x: a, y: area.minY, width: b - a, height: area.height)
             switch root.children[i] {
             case .window(let id):
-                result.frames[id] = rect
+                result.frames[id] = fills(i, id) ? inset : rect
                 result.order.append(id)
             case .container(let c) where pushed.contains(i):
                 let end = (x + unpushed[i].width - trail).rounded()
                 let inner = CGRect(x: a, y: area.minY, width: end - a, height: area.height)
                 c.layout(in: inner, gaps: gaps, padding: accordionPadding, minimums: minimumSizes, path: [i], into: &result)
-                for id in Node.container(c).windows where fullscreenWindows.contains(id) { result.frames[id] = rect }
+                for id in Node.container(c).windows where fullscreenWindows.contains(id) {
+                    result.frames[id] = fills(i, id) ? inset : rect
+                }
             case .container(let c):
                 c.layout(in: rect, gaps: gaps, padding: accordionPadding, minimums: minimumSizes, path: [i], into: &result)
             }

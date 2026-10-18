@@ -18,7 +18,7 @@ final class Coordinator {
     let model = WindowModel()
     var enabled = true {
         didSet {
-            if !enabled { applier.cancel(); animator.cancel(); pushes = [:]; stagingWindows = [:] }
+            if !enabled { applier.cancel(); animator.cancel(); pushes = [:]; stagingWindows = [:]; systemTiling = [:] }
             if enabled, !oldValue { reconcile() }
         }
     }
@@ -88,6 +88,14 @@ final class Coordinator {
     /// The windows being written their whole sizes before they glide, by the token of the staging that has them: as
     /// good as gliding, for whatever asks.
     private var stagingWindows: [WindowID: Int] = [:]
+    /// Windows macOS is filling or putting back itself (see SystemTiling), by the token of the request and whether it is
+    /// filling: as good as gliding, left alone by passes until they land, and fullscreen meanwhile as the system is
+    /// taking them, whatever the tree says, so the pass after they land takes them on from there.
+    private var systemTiling: [WindowID: (token: Int, filling: Bool, pressed: Bool)] = [:]
+    private var systemTilingTokens = 0
+    /// Windows Fill took to fullscreen, and the frame each had before, for Return to Previous Size to bring them back to.
+    private var systemFilled: [WindowID: CGRect] = [:]
+    private let tiler = SystemTiler()
     /// Where dinky last sent each floating window, so a command pressed again mid-glide starts from where the
     /// window is going rather than where it is.
     private(set) var floatingTargets: [WindowID: CGRect] = [:]
@@ -329,6 +337,8 @@ final class Coordinator {
 
     private func forget(_ id: WindowID) {
         stagingWindows[id] = nil
+        systemTiling[id] = nil
+        systemFilled[id] = nil
         pushes[Self.floatingKey(id)] = nil
         attempts[id] = nil
         adoptTargets[id] = nil
@@ -451,7 +461,19 @@ final class Coordinator {
         guard var workspace = workspaces[key] else { return }
         workspace.minimumSizes = minimumSizes(in: workspace)
         workspace.observedWidths = observedWidths(in: workspace)
+        // Pushing, a fullscreen window fills where macOS's own Fill puts it, over its neighbours' peeks, when that is
+        // the area inside the outer gaps: the system can then animate it there itself (see SystemTiling).
+        if let display = displays.display(containingSpace: key) {
+            workspace.pushedFullscreenFills = animates
+                && SystemTiling.fillFrame(on: display).isClose(to: workspace.gaps.inset(workspace.bounds), within: 1)
+        }
         workspaces[key] = workspace
+        // A window the system is still filling or putting back shows as where it is going, whatever the tree says by
+        // now: the others are laid out around that, so none runs off the other way, and the pass after it lands takes
+        // it on to what the tree says (see SystemTiling).
+        for (id, tiling) in systemTiling where workspace.contains(id) {
+            workspace = workspace.showing(id, fullscreen: tiling.filling)
+        }
         let layout = workspace.layout()
         // A glide of snapshots already heading for this layout carries on; one heading elsewhere gives way to this pass,
         // its windows on the places it wrote them to.
@@ -503,10 +525,30 @@ final class Coordinator {
         }
         let edge = display.map { $0.visibleArea.maxX < $0.frame.maxX - 0.5 ? $0.visibleArea.maxX : $0.frame.maxX } ?? 0
         let dock = display.map { $0.visibleArea.maxX < $0.frame.maxX - 0.5 } ?? false
+        let fullscreenNow = Set(workspace.fullscreenWindows), wasFullscreen = lastFullscreen[key] ?? []
+        // The focused window going fullscreen where macOS's own Fill puts it, or coming back to where Fill took it from,
+        // is left to the system's tiling, whose app animates its whole frame on every step (see SystemTiling); this pass,
+        // and those until it lands, leave it alone. Columns it pushes follow it as the window server shows it.
+        var systemTiles: [WindowID: String] = [:]
+        let focusedNow = dinky_border_focused_window()
+        // Only once the tree has caught up with macOS's focus, as after a focus command it has not yet: the menu item
+        // acts on the app's key window.
+        if animates, let display, systemTiling[focusedNow] == nil, workspace.focused == focusedNow,
+           let target = layout.frames[focusedNow], pids[focusedNow] != nil, let current = frameOf(focusedNow) {
+            let fill = SystemTiling.fillFrame(on: display)
+            if fullscreenNow.contains(focusedNow), !wasFullscreen.contains(focusedNow), target.isClose(to: fill, within: 1),
+               !current.isClose(to: fill, within: 1) {
+                systemTiles[focusedNow] = SystemTiling.fill
+            } else if wasFullscreen.contains(focusedNow), !fullscreenNow.contains(focusedNow),
+                      let before = systemFilled[focusedNow], target.isClose(to: before, within: 2) {
+                systemTiles[focusedNow] = SystemTiling.untile
+            }
+        }
+        let leftAlone = Set(systemTiling.keys).intersection(layout.order).union(systemTiles.keys)
         enum Change { case once, whole, none }
         let change = { [self] (id: WindowID, pushing: Bool) -> Change in
-            guard id != dragging, display != nil, let target = layout.frames[id], model.windows[id] != nil,
-                  let frame = frameOf(id), !animator.rests(id, at: frame, askedFor: target),
+            guard id != dragging, !leftAlone.contains(id), display != nil, let target = layout.frames[id],
+                  model.windows[id] != nil, let frame = frameOf(id), !animator.rests(id, at: frame, askedFor: target),
                   ResizeOnce.resizes(frame, target) else { return .none }
             let fits = (strip[id] == nil || workspace.isInView(id) && workspace.columns(around: id).own.count == 1)
                 && ResizeOnce.applies(from: frame, to: target, edge: edge, wall: workspace.walls.contains(.right), dock: dock)
@@ -521,9 +563,8 @@ final class Coordinator {
             guard let frame = frameOf(id), let target = layout.frames[id] else { return false }
             return ResizeOnce.growsLeft(frame, target) && !workspace.walls.contains(.right) && !dock
         }
-        let fullscreenNow = Set(workspace.fullscreenWindows)
         let changing = Dictionary(uniqueKeysWithValues: fullscreenNow.map { ($0, change($0, pushed.contains($0))) })
-        let leavingChange = Dictionary(uniqueKeysWithValues: (lastFullscreen[key] ?? []).subtracting(fullscreenNow).map {
+        let leavingChange = Dictionary(uniqueKeysWithValues: wasFullscreen.subtracting(fullscreenNow).map {
             ($0, change($0, workspace.pushesFullscreen && strip[$0] != nil))
         })
         // Any other window changing size and moving, as a column or tile `cycle-size` widens or narrows: one growing to
@@ -549,9 +590,11 @@ final class Coordinator {
         let held = Set(changing.filter { $0.value == .whole && !grows($0.key) }.keys)
             .union(entering.isEmpty ? Set(leavingChange.filter { $0.value == .whole }.keys) : [])
         let leavingAll = Set(leavingChange.filter { $0.value != .none }.keys)
+        // Windows left to the system are stacked with the rest but not written.
+        let writable = pids.filter { !leftAlone.contains($0.key) }
         let writeThen = { [weak self] (landed: @escaping () -> Void) in
             guard let self else { return }
-            applier.apply(layout, pids: pids, front: workspace.focused) { [weak self] results in
+            applier.apply(layout, pids: writable, front: workspace.focused) { [weak self] results in
                 DispatchQueue.main.async {
                     landed()
                     guard let self, self.enabled else { return }
@@ -583,12 +626,38 @@ final class Coordinator {
         }
         let write = { writeThen {} }
         lastStrips[key] = strip.isEmpty ? nil : (strip, layout.frames, fullscreen)
+        // One the system is tiling counts as where the system is taking it, so the pass after it lands puts it back, or
+        // fills it again, through the system too, when the tree has changed its mind meanwhile.
         lastFullscreen[key] = fullscreenNow.union(leavingAll)
+        for id in leftAlone {
+            let filling = systemTiles[id].map { $0 == SystemTiling.fill } ?? systemTiling[id]?.filling ?? false
+            if filling { lastFullscreen[key]?.insert(id) } else { lastFullscreen[key]?.remove(id) }
+        }
+        for id in wasFullscreen.subtracting(fullscreenNow) where !leftAlone.contains(id) { systemFilled[id] = nil }
+        for (id, identifier) in systemTiles {
+            guard let pid = pids[id], let start = frameOf(id) else { continue }
+            tileBySystem(id, identifier, pid: pid, from: start) { [weak self] tiled in
+                guard let self else { return }
+                // Not put back after all: still fullscreen as it was, to come back as dinky does it, and not offered
+                // to the system again.
+                if !tiled, identifier == SystemTiling.untile {
+                    lastFullscreen[key]?.insert(id)
+                    systemFilled[id] = nil
+                }
+                dirty.insert(key)
+                if let space = placements[id]?.space { dirty.insert(space) }
+                flush()
+            }
+        }
         guard animates, snap.remove(key) == nil else { return write() }
         // Stacking first, so the window coming to the front of an accordion slides in on top.
         applier.raiseIntoOrder(layout, pids: pids, front: workspace.focused)
         let sized = staged.union(shrinkOnce), special = sized.union(held).union(growLeft)
-        let frameNow = { [self] (id: WindowID) -> CGRect? in special.contains(id) ? frameOf(id) : model.windows[id]?.frame }
+        // Where the window server has those changing size, or that just went fullscreen or came back, which the system's
+        // own tiling can have moved without the window model hearing of it yet.
+        let frameNow = { [self] (id: WindowID) -> CGRect? in
+            special.contains(id) || fullscreenNow.contains(id) || wasFullscreen.contains(id) ? frameOf(id) : model.windows[id]?.frame
+        }
         // Those growing to the left are taken past the screen edge first, then held there as their left edges glide to
         // their targets, taking longer.
         func anchors(to targets: [WindowID: CGRect]) -> [WindowID: ResizeOnce.Anchor] {
@@ -610,9 +679,9 @@ final class Coordinator {
         /// Glides a tree that is no strip to `layout`.
         func glideTree() {
             let starts = Dictionary(uniqueKeysWithValues: layout.order.compactMap { id in
-                id == dragging ? nil : frameNow(id).map { (id, $0) }
+                id == dragging || leftAlone.contains(id) ? nil : frameNow(id).map { (id, $0) }
             })
-            var targets = layout.frames
+            var targets = layout.frames.filter { !leftAlone.contains($0.key) }
             hold(&targets, from: starts)
             applier.assume(starts.filter { special.contains($0.key) }.mapValues(\.size), pids: pids)
             animator.animate(key, from: starts, to: targets, pids: pids, slower: drawn, anchors: anchors(to: targets),
@@ -622,7 +691,7 @@ final class Coordinator {
         /// Glides the strip to `layout`.
         func glideStrip() {
             var starts = Dictionary(uniqueKeysWithValues: layout.order.compactMap { id in
-                id == dragging ? nil : frameNow(id).map { (id, $0) }
+                id == dragging || leftAlone.contains(id) ? nil : frameNow(id).map { (id, $0) }
             })
             // A strip glides as a whole, in strip coordinates, parked on every frame. A window resting where the last pass
             // put it starts where the strip had it then, even an app's that snapped to a grid or kept a minimum size a few
@@ -642,6 +711,7 @@ final class Coordinator {
                     starts[id] = special.contains(id) ? CGRect(origin: was.origin, size: start.size) : was
                 }
             }
+            for id in leftAlone { targets[id] = nil }
             hold(&targets, from: starts)
             // Nothing of the strip to glide, as on arriving at a Space: written at once, with no stage put up over windows
             // that are already where they go, which would only flash their snapshots' shadows over the real ones. Not
@@ -662,7 +732,9 @@ final class Coordinator {
             }), pids: pids)
             // Where the strip's windows that are not gliding are now: where the last pass put them. Parking follows the
             // columns in front, so one of them can still have to move while the others glide.
-            let resting = (previous?.placed ?? [:]).filter { id, _ in strip[id] != nil && id != dragging && !fullscreen.contains(id) }
+            let resting = (previous?.placed ?? [:]).filter { id, _ in
+                strip[id] != nil && id != dragging && !fullscreen.contains(id) && !leftAlone.contains(id)
+            }
             // A window not resizing as it glides and the columns beside it move together, and each move of theirs is a
             // move only, which apps keep up with; but one can take a frame or two longer over a move now and then, just
             // after a resize most of all, so on every frame the one moving away from the other is held at the other's edge
@@ -672,15 +744,27 @@ final class Coordinator {
                 strip[id] != nil && !fullscreen.contains(id) && workspace.isInView(id) && workspace.columns(around: id).own.count == 1
             }.map { ($0, workspace.columns(around: $0)) }
             let guardGap = workspace.gaps.horizontal + ResizeOnce.nudge + 1
+            // A window the system is tiling, pushing the columns beside it: they are held at its edges as the window
+            // server shows it, the same way, though nothing of dinky's moves it.
+            let systemLeads = leftAlone.filter { id in
+                strip[id] != nil && !fullscreen.contains(id) && workspace.isInView(id) && workspace.columns(around: id).own.count == 1
+            }.map { ($0, workspace.columns(around: $0)) }
+            let shown = { (id: WindowID) -> CGRect? in
+                let info = dinky_window_info(id)
+                return info.exists ? info.frame : nil
+            }
             let place = { (frames: [WindowID: CGRect]) -> [WindowID: CGRect] in
                 var input = strip
                 for (id, frame) in frames where !fullscreen.contains(id) { input[id] = frame }
                 for (lead, beside) in leads {
                     input = ResizeOnce.guarded(input, lead: lead, left: beside.left, right: beside.right, gap: guardGap,
-                                               anchored: growLeft.contains(lead)) { id in
-                        let info = dinky_window_info(id)
-                        return info.exists ? info.frame : nil
-                    }
+                                               anchored: growLeft.contains(lead), shown: shown)
+                }
+                for (lead, beside) in systemLeads {
+                    guard let frame = shown(lead) else { continue }
+                    input[lead] = frame
+                    input = ResizeOnce.guarded(input, lead: lead, left: beside.left, right: beside.right, gap: guardGap,
+                                               shown: shown)
                 }
                 var placed = workspace.placeStrip(input)
                 // Placed as the guard has it: hanging past the screen edge at its size, such a window is no window
@@ -697,7 +781,7 @@ final class Coordinator {
             // enlarged state, a column width change) must resize through Accessibility, where its app re-renders, rather
             // than be stretched by a transform; such a pass is left to the snapshot or window glide below. So is one with a
             // window staged at its size just now, whose snapshot, taken before, would come out stretched, or held.
-            let saResizing = !special.isEmpty || strip.contains { id, frame in
+            let saResizing = !special.isEmpty || leftAlone.contains(where: { strip[$0] != nil }) || strip.contains { id, frame in
                 guard let size = frameNow(id)?.size else { return false }
                 return abs(size.width - frame.width) > 1 || abs(size.height - frame.height) > 1
             }
@@ -727,6 +811,11 @@ final class Coordinator {
             }).merging(drawn) { $1 }
             for (lead, beside) in leads where growLeft.contains(lead) {
                 for id in (beside.left + beside.right).joined() { slower[id] = ResizeOnce.drawn }
+            }
+            // The columns a window going fullscreen through the system pushes off take longer than its animation, so
+            // they never get ahead of it and finish where it shows: they follow it, under it.
+            for (lead, beside) in systemLeads where fullscreenNow.contains(lead) {
+                for id in (beside.left + beside.right).joined() { slower[id] = SystemTiling.followers }
             }
             guard glidesSnapshots, let display = displays.display(containingSpace: key) else {
                 return animator.animate(key, from: starts, to: targets, pids: pids, place: place, resting: resting,
@@ -882,10 +971,14 @@ final class Coordinator {
     /// Moves a floating window to `frame`: gliding there from where it is when passes glide, then written with
     /// readback and raised as a pass's windows are. With `resizingOnce`, as for filling the display, a window that
     /// moves as well as resizing changes size once, where that cannot be seen, and only moves as it glides (see
-    /// ResizeOnce): growing, it takes its whole size first; shrinking, it takes its new size once there.
-    func placeFloating(_ id: WindowID, at frame: CGRect, resizingOnce: Bool = false) {
+    /// ResizeOnce): growing, it takes its whole size first; shrinking, it takes its new size once there; and one filling
+    /// the display where macOS's Fill does, or coming back to where Fill took it from, is left to the system's tiling,
+    /// unless `bySystem` is false (see SystemTiling).
+    func placeFloating(_ id: WindowID, at frame: CGRect, resizingOnce: Bool = false, bySystem: Bool = true) {
         guard let window = model.windows[id] else { return }
         floatingTargets[id] = frame
+        // The system is moving it: placed once it has landed (see `tileBySystem`).
+        if systemTiling[id] != nil { return }
         let key = Self.floatingKey(id)
         pushes[key] = nil
         let pids = [id: window.pid]
@@ -902,6 +995,23 @@ final class Coordinator {
         let display = displays.display(ofWindow: id)
         let dock = display.map { $0.visibleArea.maxX < $0.frame.maxX - 0.5 } ?? false
         let edge = display.map { dock ? $0.visibleArea.maxX : $0.frame.maxX } ?? 0
+        if resizingOnce, bySystem, let display, dinky_border_focused_window() == id,
+           !animator.isAnimating(id) {
+            let fill = SystemTiling.fillFrame(on: display)
+            let identifier = frame.isClose(to: fill, within: 1) && !start.isClose(to: fill, within: 1) ? SystemTiling.fill
+                : systemFilled[id].map { frame.isClose(to: $0, within: 2) } == true ? SystemTiling.untile : nil
+            if let identifier {
+                animator.stop(key)
+                return tileBySystem(id, identifier, pid: window.pid, from: start) { [weak self] tiled in
+                    guard let self, placements[id]?.floating == true, let latest = floatingTargets[id] else { return }
+                    if !tiled, identifier == SystemTiling.untile { systemFilled[id] = nil }
+                    // Placed meanwhile somewhere else: there now, through the system again where it can.
+                    if latest != frame { return placeFloating(id, at: latest, resizingOnce: true) }
+                    tiled ? write() : placeFloating(id, at: frame, resizingOnce: true, bySystem: false)
+                }
+            }
+        }
+        if resizingOnce { systemFilled[id] = nil }
         guard resizingOnce, ResizeOnce.movesAndResizes(start, frame), let display,
               ResizeOnce.applies(from: start, to: frame, edge: edge, wall: walls(of: display).contains(.right), dock: dock) else {
             return animator.animate(key, from: [id: start], to: [id: frame], pids: pids, then: write)
@@ -936,6 +1046,57 @@ final class Coordinator {
         }
     }
 
+    /// Leaves a window to macOS's own tiling (see SystemTiling): presses `identifier` for it, then watches the window
+    /// server until it has moved and stopped, and runs `landed` with true, to lay it out as usual and put right the point
+    /// or so the system's frame can be off. Meanwhile it counts as gliding and passes leave it alone. An app that does not
+    /// take the press, or a window that does not set off, runs `landed` with false, to glide it as dinky does.
+    private func tileBySystem(_ id: WindowID, _ identifier: String, pid: pid_t, from start: CGRect,
+                              landed: @escaping (Bool) -> Void) {
+        systemTilingTokens += 1
+        let token = systemTilingTokens
+        systemTiling[id] = (token, identifier == SystemTiling.fill, false)
+        let live = { [weak self] in self?.systemTiling[id]?.token == token && self?.enabled == true }
+        // An app too slow to take the press in time is left to dinky; should it act on it late, its own animation still
+        // ends where dinky puts the window.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            guard let self, systemTiling[id]?.token == token, systemTiling[id]?.pressed == false else { return }
+            systemTiling[id] = nil
+            landed(false)
+        }
+        tiler.press(identifier, pid: pid, window: id) { [weak self] pressed in
+            guard let self, live() else { return }
+            guard pressed else {
+                systemTiling[id] = nil
+                return landed(false)
+            }
+            systemTiling[id]?.pressed = true
+            systemFilled[id] = identifier == SystemTiling.fill ? start : nil
+            // From where it is now: a step of a glide it was in can have landed since.
+            let began = CACurrentMediaTime(), pressedAt = dinky_window_info(id)
+            let from = pressedAt.exists ? pressedAt.frame : start
+            var last = from, since = began
+            func check() {
+                guard live() else { return }
+                let info = dinky_window_info(id), now = CACurrentMediaTime()
+                if info.exists, info.frame != last { last = info.frame; since = now }
+                let moved = !last.isClose(to: from, within: 1), still = now - since
+                // Still for a while once it has moved for about as long as the system's animation takes: it can pause
+                // near the end before its last frame, which would land over a frame written sooner, and an app busy
+                // with a step can pause in the middle. Or never set off; or gone, or so long that something else has it.
+                let done = moved && still > 0.15 && now - began > 0.35 || !moved && now - began > 1
+                    || !info.exists || now - began > 2.5
+                guard done else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 120) { check() }
+                    return
+                }
+                systemTiling[id] = nil
+                if !moved, identifier == SystemTiling.fill { systemFilled[id] = nil }
+                landed(moved)
+            }
+            check()
+        }
+    }
+
     /// Stops a floating window's staging for a glide, as when it stops floating: the glide is no longer its to take.
     func endFloatingStage(_ id: WindowID) {
         pushes[Self.floatingKey(id)] = nil
@@ -943,7 +1104,7 @@ final class Coordinator {
 
     /// Where a floating window is, or where it is gliding to.
     func floatingFrame(of id: WindowID) -> CGRect? {
-        if animator.isAnimating(id) || stagingWindows[id] != nil, let target = floatingTargets[id] { return target }
+        if isAnimating(id), let target = floatingTargets[id] { return target }
         let info = dinky_window_info(id)
         return info.exists ? info.frame : model.windows[id]?.frame
     }
@@ -958,7 +1119,9 @@ final class Coordinator {
     }
 
     /// Whether dinky is gliding the window to its tile right now.
-    func isAnimating(_ id: WindowID) -> Bool { animator.isAnimating(id) || stagingWindows[id] != nil }
+    func isAnimating(_ id: WindowID) -> Bool {
+        animator.isAnimating(id) || stagingWindows[id] != nil || systemTiling[id] != nil
+    }
 
     /// The windows dinky is gliding to their tiles right now.
     var animatingWindows: [WindowID] { animator.animating }

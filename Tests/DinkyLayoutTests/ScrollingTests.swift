@@ -325,6 +325,31 @@ struct ScrollingFullscreenTests {
         #expect(ws.layout().order.first == 2)
     }
 
+    @Test func `Filling, a pushing fullscreen window covers the gutters and its neighbours' peeks`() {
+        var ws = fullscreen(gaps: Gaps(all: 10))
+        ws.pushedFullscreenFills = true
+        let frames = ws.layout().frames
+        #expect(frames[2] == Gaps(all: 10).inset(ws.bounds), "where the system's Fill puts it")
+        #expect(frames[1]!.maxX == ws.bounds.minX + peek, "the neighbours park as before, under it")
+        #expect(frames[3]!.minX == ws.bounds.maxX - peek)
+        // Only the focused window's column fills; ending fullscreen puts the strip back as before.
+        ws.toggleFullscreen()
+        ws.pushedFullscreenFills = false
+        var plain = strip(4, gaps: Gaps(all: 10))
+        plain.focus(2)
+        #expect(ws.layout().frames == plain.layout().frames)
+    }
+
+    @Test func `A window shown fullscreen or not lays the strip out so, whatever the tree says`() {
+        let full = fullscreen(gaps: Gaps(all: 10))
+        var plain = strip(4, gaps: Gaps(all: 10))
+        plain.focus(2)
+        // Still being filled, or put back, by something else: the others go around where it is going.
+        #expect(plain.showing(2, fullscreen: true).layout().frames == full.layout().frames)
+        #expect(full.showing(2, fullscreen: false).layout().frames == plain.layout().frames)
+        #expect(full.showing(2, fullscreen: true).layout().frames == full.layout().frames)
+    }
+
     @Test func `Fullscreen at an end of the strip reaches through the empty gutter there`() {
         var ws = strip(4, gaps: Gaps(all: 10))
         ws.fullscreenFocus = .follow

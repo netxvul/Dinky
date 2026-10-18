@@ -43,6 +43,10 @@ public struct Workspace: Equatable, Sendable {
     /// Scrolling: whether fullscreen widens the window's column across the screen and pushes its neighbours off it,
     /// rather than covering them where they are. See Scrolling.swift.
     public var fullscreenPushesStrip = true
+    /// Scrolling, while fullscreen pushes: whether the focused fullscreen window fills the area inside the outer gaps,
+    /// over its neighbours' peeks, rather than the strip's area between them. Where macOS's own Fill puts a window, so
+    /// the system can animate it there itself.
+    public var pushedFullscreenFills = false
     /// The focused window waiting to go fullscreen with `fullscreenFollowsLater`. See `promotePendingFullscreen`.
     public internal(set) var pendingFullscreen: WindowID?
     /// The window shown fullscreen in front, if any: the focused one.
@@ -444,6 +448,15 @@ public struct Workspace: Equatable, Sendable {
     mutating func endFullscreen() {
         fullscreenWindows = []
         pendingFullscreen = nil
+    }
+
+    /// The tree as it shows with `id` fullscreen, `on`, or not, whatever it says itself: for a window something else is
+    /// still taking there or back, so the others are laid out around where it shows. In front when fullscreen.
+    public func showing(_ id: WindowID, fullscreen on: Bool) -> Workspace {
+        var copy = self
+        copy.fullscreenWindows.removeAll { $0 == id }
+        if on { copy.fullscreenWindows.insert(id, at: 0) }
+        return copy
     }
 
     /// Frames and stacking for every window. Fullscreen windows cover the bounds minus outer gaps and come first,
