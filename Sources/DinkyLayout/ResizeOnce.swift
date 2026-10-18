@@ -13,6 +13,9 @@ public enum ResizeOnce {
     /// Inside the inner gap, where the move shows nothing.
     public static let nudge: CGFloat = 2
 
+    /// How many times as long a window moving away from the columns beside it takes as they do, so it trails them.
+    public static let trailing = 1.5
+
     /// Whether going from `current` to `target` changes the window's size and also moves it.
     public static func movesAndResizes(_ current: CGRect, _ target: CGRect) -> Bool {
         resizes(current, target) && (abs(current.minX - target.minX) > 1 || abs(current.minY - target.minY) > 1)

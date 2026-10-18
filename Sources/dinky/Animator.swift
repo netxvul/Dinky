@@ -81,10 +81,12 @@ final class Animator: NSObject {
     /// no start, are left to `finish`; with none left to move, it runs at once. With `place`, the starts and targets
     /// are in strip coordinates and `place` puts them on screen on every frame; a window that was moving without it,
     /// or with it, starts over from `starts`. `resting` has where the strip's windows are on screen now, so one that
-    /// does not glide is moved as soon as `place` puts it elsewhere.
+    /// does not glide is moved as soon as `place` puts it elsewhere. A window in `slower` takes that many times as
+    /// long as `stretch` has the others take.
     func animate(_ key: UInt64, from starts: [WindowID: CGRect], to targets: [WindowID: CGRect],
                  pids: [WindowID: pid_t], place: (([WindowID: CGRect]) -> [WindowID: CGRect])? = nil,
-                 resting: [WindowID: CGRect] = [:], stretch: Double = 1, sink: (([WindowID: CGRect]) -> Void)? = nil,
+                 resting: [WindowID: CGRect] = [:], stretch: Double = 1, slower: [WindowID: Double] = [:],
+                 sink: (([WindowID: CGRect]) -> Void)? = nil,
                  then finish: @escaping () -> Void) {
         // A new glide: every app gets another chance to keep up.
         if entries.isEmpty { applier.clearSlow() }
@@ -100,9 +102,10 @@ final class Animator: NSObject {
             if entries[id] != nil {
                 entries[id]!.animation.retarget(target)
                 entries[id]!.key = key
-                entries[id]!.stretch = stretch
+                entries[id]!.stretch = stretch * (slower[id] ?? 1)
             } else if let start = starts[id], let pid = pids[id], !isResting(id, at: start, for: target) {
-                entries[id] = Entry(animation: FrameAnimation(from: start, to: target), pid: pid, key: key, stretch: stretch)
+                entries[id] = Entry(animation: FrameAnimation(from: start, to: target), pid: pid, key: key,
+                                    stretch: stretch * (slower[id] ?? 1))
             }
         }
         finishes[key] = finish

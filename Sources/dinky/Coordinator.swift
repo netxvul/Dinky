@@ -686,9 +686,15 @@ final class Coordinator {
             // width change) would be stretched by them just as a transform would; such a pass glides the windows directly.
             let glidesSnapshots = (config.scrolling.glide == .snapshots || config.scrolling.glide == .scriptingAddition)
                 && fullscreen.isEmpty && !saResizing && Thumbnails.shared.permitted
+            // A window moving away from the columns beside it, as one coming back from fullscreen does, takes a little
+            // longer than they do, so it follows them rather than being held at their edges: an app coming back into view
+            // can be slow over its first moves, and the window held at its edge would lurch along in its steps.
+            let slower = Dictionary(uniqueKeysWithValues: leads.compactMap { lead, _ in
+                shrinkOnce.union(held).contains(lead) ? (lead, ResizeOnce.trailing) : nil
+            })
             guard glidesSnapshots, let display = displays.display(containingSpace: key) else {
                 return animator.animate(key, from: starts, to: targets, pids: pids, place: place, resting: resting,
-                                        stretch: stretch, then: write)
+                                        stretch: stretch, slower: slower, then: write)
             }
             // Snapshots of the strip glide over a snapshot of what is behind it, while the windows go to their places
             // underneath at once. Without the snapshots in time, the windows glide. The snapshots are parked as the
