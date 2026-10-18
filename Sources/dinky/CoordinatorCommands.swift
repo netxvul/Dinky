@@ -89,6 +89,7 @@ extension Coordinator {
         heldTabs[id] = nil
         filledFrom[id] = nil
         griddedFrom[id] = nil
+        endFloatingStage(id)
         placements[id] = Placement(floating: floating, space: nil)
         track(window)
         flush()
@@ -110,22 +111,23 @@ extension Coordinator {
 
     /// The tiling commands on a floating window: `change` gets where the window is (or is gliding to) and the
     /// display's visible area inside its gaps, and returns where it goes, or nil to leave it. Nil once done or
-    /// left, else why not.
-    func floating(_ id: WindowID, _ change: (_ frame: CGRect, _ area: CGRect) -> CGRect?) -> String? {
+    /// left, else why not. `resizingOnce` as `placeFloating` takes it.
+    func floating(_ id: WindowID, resizingOnce: Bool = false,
+                  _ change: (_ frame: CGRect, _ area: CGRect) -> CGRect?) -> String? {
         guard enabled else { return "dinky is off" }
         guard placements[id]?.floating == true else { return "the focused window does not float" }
         guard let display = displays.display(ofWindow: id), let frame = floatingFrame(of: id) else {
             return "window \(id) is on no display"
         }
         if let target = change(frame, gaps(on: display).inset(display.visibleArea)), target != frame {
-            placeFloating(id, at: target)
+            placeFloating(id, at: target, resizingOnce: resizingOnce)
         }
         return nil
     }
 
     /// `fullscreen` for a floating window: fill the display, or go back to the frame it had before.
     func toggleFloatingFullscreen(_ id: WindowID) -> String? {
-        floating(id) { frame, area in
+        floating(id, resizingOnce: true) { frame, area in
             let filled = FloatingFrame.filling(area)
             // By where dinky sent it: an app that snaps to a grid (Terminal) never lands on the frame exactly.
             if let before = filledFrom[id], floatingTargets[id] == filled {

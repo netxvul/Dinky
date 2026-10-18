@@ -179,6 +179,13 @@ extension Workspace {
     /// them.
     public func placeStrip(_ frames: [WindowID: CGRect]) -> [WindowID: CGRect] { parked(frames) }
 
+    /// The windows of `id`'s column, and of the columns left and right of it, each side nearest column first.
+    public func columns(around id: WindowID) -> (own: [WindowID], left: [[WindowID]], right: [[WindowID]]) {
+        guard isScrolling, let column = root.path(of: id)?.first else { return ([], [], []) }
+        let columns = root.children.map(\.windows)
+        return (columns[column], columns[..<column].reversed(), Array(columns[(column + 1)...]))
+    }
+
     /// Where the strip's windows go on screen. A window stays where the strip puts it while more of it shows than
     /// its edge allows, so the columns in view and their neighbours keep their gaps; past that it stops at the edge.
     /// On an edge with nothing beyond it, a column stops with `peek` showing, unless the column between it and the
