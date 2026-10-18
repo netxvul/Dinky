@@ -61,6 +61,53 @@ struct ResizeOnceTests {
             == rect(33, 41, 1463, 869))
     }
 
+    @Test func `Grows to the left where its left edge goes further than its right`() {
+        // The right column going fullscreen.
+        #expect(ResizeOnce.growsLeft(rect(760, 41, 723, 869), rect(33, 41, 1471, 869)))
+        // The left column, and a middle tile growing as far either way.
+        #expect(!ResizeOnce.growsLeft(rect(29, 41, 723, 869), rect(8, 41, 1471, 869)))
+        #expect(!ResizeOnce.growsLeft(rect(508, 41, 496, 869), rect(8, 41, 1496, 869)))
+        // Coming back is no growing.
+        #expect(!ResizeOnce.growsLeft(rect(33, 41, 1471, 869), rect(760, 41, 723, 869)))
+    }
+
+    @Test func `Is led in to just past the screen edge, unless already past it`() {
+        // Sized to the edge where it is, then moved past it by the nudge.
+        #expect(ResizeOnce.leadIn(from: rect(760, 41, 723, 869), edge: edge) == rect(762, 41, 752, 869))
+        #expect(ResizeOnce.leadIn(from: rect(760, 41, 752, 869), edge: edge) == rect(762, 41, 752, 869))
+        #expect(ResizeOnce.leadIn(from: rect(760, 41, 800, 869), edge: edge) == nil)
+    }
+
+    @Test func `Glides by its left edge, its right edge held past the screen's`() {
+        let target = rect(33, 41, 1471, 869)
+        #expect(ResizeOnce.anchored(rect(500, 41, 900, 869), to: target, edge: edge) == rect(500, 41, 1014, 869))
+        // Further past the edge already, it stays there.
+        #expect(ResizeOnce.anchored(rect(500, 41, 1100, 869), to: target, edge: edge) == rect(500, 41, 1100, 869))
+        // At the target's left edge, it is where the glide has it.
+        #expect(ResizeOnce.anchored(rect(33, 41, 1471, 869), to: target, edge: edge) == target)
+    }
+
+    @Test func `An anchor holds a glide's frames past the edge on the way to its target`() {
+        let anchor = ResizeOnce.Anchor(target: rect(33, 41, 1471, 869), edge: edge)
+        #expect(anchor.frame(rect(500, 41, 900, 869)) == rect(500, 41, 1014, 869))
+        #expect(anchor.frame(rect(33, 41, 1471, 869)) == rect(33, 41, 1471, 869))
+    }
+
+    @Test func `An anchored window is held by the edge beside the column, its other edge kept`() {
+        // Coming back by its left edge, the window (2) gets ahead of the left column (1) its app is slow to move.
+        let frames: [WindowID: CGRect] = [1: rect(-100, 41, 723, 869), 2: rect(700, 41, 804, 869)]
+        let shown: [WindowID: CGRect] = [1: rect(-400, 41, 723, 869), 2: rect(650, 41, 854, 869)]
+        let anchored = ResizeOnce.guarded(frames, lead: 2, left: [[1]], right: [], gap: 11, anchored: true) { shown[$0] }
+        #expect(anchored[2] == rect(334, 41, 1170, 869))
+        let moved = ResizeOnce.guarded(frames, lead: 2, left: [[1]], right: [], gap: 11) { shown[$0] }
+        #expect(moved[2] == rect(334, 41, 804, 869))
+        // On the right, its right edge waits for the column coming in, its left edge where it is.
+        let right: [WindowID: CGRect] = [2: rect(8, 41, 1000, 869), 3: rect(1100, 41, 700, 869)]
+        let rightShown: [WindowID: CGRect] = [3: rect(1300, 41, 700, 869)]
+        let held = ResizeOnce.guarded(right, lead: 2, left: [], right: [[3]], gap: 11, anchored: true) { rightShown[$0] }
+        #expect(held[2] == rect(8, 41, 1281, 869))
+    }
+
     @Test func `A column sliding off ahead of a lagging window stays at its edge`() {
         // Going fullscreen: the left column (1) slides off left faster than the window (2) shows itself moving over it.
         let frames: [WindowID: CGRect] = [1: rect(-800, 41, 895, 869), 2: rect(150, 41, 1446, 869)]

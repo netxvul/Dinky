@@ -16,6 +16,10 @@ public enum ResizeOnce {
     /// How many times as long a window moving away from the columns beside it takes as they do, so it trails them.
     public static let trailing = 1.5
 
+    /// How many times as long a window growing to the left takes, and the columns it pushes with it: its app shows each
+    /// step's size a frame or so before its move, its right side out by the step meanwhile, so the steps are kept short.
+    public static let drawn = 1.5
+
     /// Whether going from `current` to `target` changes the window's size and also moves it.
     public static func movesAndResizes(_ current: CGRect, _ target: CGRect) -> Bool {
         resizes(current, target) && (abs(current.minX - target.minX) > 1 || abs(current.minY - target.minY) > 1)
@@ -66,15 +70,69 @@ public enum ResizeOnce {
         CGRect(origin: target.origin, size: size)
     }
 
+    // A window growing to the left, as the right of two columns going fullscreen does, would take its whole size where
+    // it is if it changed size once: its right edge out past the screen, its content laid out at the new width from the
+    // old left edge, then the whole of it sliding left, so it seems to spring out to the right first. Instead it grows
+    // as a window dragged by its left edge does: its right edge just past the screen's, its left edge gliding left. A
+    // size grows a window from its left edge, which AppKit stops at the screen edge while the window is on screen, so
+    // the right edge is first taken past it (`leadIn`), and on every step after, size first, then position, the size
+    // goes through. Between the two an app shows the window wider where it was for a frame or so, its right side a
+    // step further out past the screen edge, so the steps are kept short (`drawn`).
+
+    /// How a window growing to the left glides to `target`: held past the screen's right edge, `edge`, on the way (see
+    /// `anchored(_:to:edge:)`), and led past it first (see `leadIn(from:edge:)`).
+    public struct Anchor: Equatable, Sendable {
+        public var target: CGRect
+        public var edge: CGFloat
+
+        public init(target: CGRect, edge: CGFloat) {
+            self.target = target
+            self.edge = edge
+        }
+
+        /// Where the window is written when its glide has it at `frame`.
+        public func frame(_ frame: CGRect) -> CGRect { ResizeOnce.anchored(frame, to: target, edge: edge) }
+    }
+
+    /// How much wider than asked a window growing to the left is written past the screen edge once its lead-in came out
+    /// short of it, as one whose app snaps its size to a grid can: a grid cell, so each size still leaves it past the edge.
+    public static let snapSlack: CGFloat = 16
+
+    /// Whether a window going from `current` to `target` grows mostly to the left: its left edge goes further left than
+    /// its right edge goes right.
+    public static func growsLeft(_ current: CGRect, _ target: CGRect) -> Bool {
+        grows(current, target) && current.minX - target.minX > max(1, target.maxX - current.maxX)
+    }
+
+    /// What a window growing to the left from `current` is written first, before it glides: its right edge taken just
+    /// past the screen's, `edge`, by `nudge`, so its app lets every size after grow it there. Written as size, position,
+    /// size, the size takes it to the screen edge and the move past it, by no more than the inner gap. Nil for one already
+    /// past the edge.
+    public static func leadIn(from current: CGRect, edge: CGFloat) -> CGRect? {
+        guard current.maxX < edge + 1 else { return nil }
+        return CGRect(x: current.minX + nudge, y: current.minY, width: edge - current.minX, height: current.height)
+    }
+
+    /// Where a window growing to the left to `target` is written on its way, with its left edge where the glide has it,
+    /// at `frame`'s: its right edge held past the screen's, `edge`, as `leadIn` takes it, or further where the glide
+    /// already has it further. Once its left edge is within a couple of points of the target's, which a spring that
+    /// overshoots does not cross back, it is where the glide has it.
+    public static func anchored(_ frame: CGRect, to target: CGRect, edge: CGFloat) -> CGRect {
+        guard frame.minX > target.minX + 2 else { return frame }
+        let right = max(edge + nudge, frame.maxX)
+        return CGRect(x: frame.minX, y: frame.minY, width: right - frame.minX, height: frame.height)
+    }
+
     /// Strip frames part way through a glide, held so that no gap wider than `gap` opens between `lead`, a window
     /// changing size once, and the columns beside it, whichever falls behind: an app can take a frame or two longer
     /// over a move now and then, just after a resize most of all. On each side, the one moving away from the other stays
     /// at the other's edge as the window server shows it (`shown`): the columns beside `lead`, which move together so the
     /// parked ones go along, no further out than `lead` shows; `lead` no further from them than they show. Only ever
     /// pulls a window towards its neighbour, so the two never hold each other up. `left` and `right` are the columns
-    /// either side, nearest first; `lead` in view, where strip and screen coordinates agree.
+    /// either side, nearest first; `lead` in view, where strip and screen coordinates agree. An `anchored` lead, one
+    /// resizing at an edge as it glides (see `anchored(_:to:edge:)`), is held by that edge alone, its other edge kept.
     public static func guarded(_ frames: [WindowID: CGRect], lead: WindowID, left: [[WindowID]], right: [[WindowID]],
-                               gap: CGFloat, shown: (WindowID) -> CGRect?) -> [WindowID: CGRect] {
+                               gap: CGFloat, anchored: Bool = false, shown: (WindowID) -> CGRect?) -> [WindowID: CGRect] {
         guard var leadFrame = frames[lead] else { return frames }
         var out = frames
         let leadShown = shown(lead)
@@ -84,13 +142,16 @@ public enum ResizeOnce {
         if let near = left.first, let nearMaxX = near.compactMap({ out[$0]?.maxX }).max() {
             if let leadShown { shift(left, by: max(0, leadShown.minX - gap - nearMaxX)) }
             if let nearShown = near.compactMap({ shown($0)?.maxX }).max() {
-                leadFrame.origin.x = min(leadFrame.minX, nearShown + gap)
+                let minX = min(leadFrame.minX, nearShown + gap)
+                if anchored { leadFrame.size.width = leadFrame.maxX - minX }
+                leadFrame.origin.x = minX
             }
         }
         if let near = right.first, let nearMinX = near.compactMap({ out[$0]?.minX }).min() {
             if let leadShown { shift(right, by: min(0, leadShown.maxX + gap - nearMinX)) }
             if let nearShown = near.compactMap({ shown($0)?.minX }).min() {
-                leadFrame.origin.x = max(leadFrame.minX, nearShown - gap - leadFrame.width)
+                let maxX = max(leadFrame.maxX, nearShown - gap)
+                if anchored { leadFrame.size.width = maxX - leadFrame.minX } else { leadFrame.origin.x = maxX - leadFrame.width }
             }
         }
         out[lead] = leadFrame

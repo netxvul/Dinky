@@ -32,6 +32,16 @@ struct AnimationTests {
         #expect(a.frame == rect(1000, 0, 100, 100))
     }
 
+    @Test func `Carries on from where it was written instead`() {
+        var a = FrameAnimation(from: rect(0, 0, 100, 100), to: rect(1000, 0, 100, 100))
+        for _ in 0..<5 { _ = a.step(spring, dt: 1.0 / 60, timeout: 5) }
+        a.carryOn(from: rect(400, 0, 300, 100))
+        #expect(a.frame == rect(400, 0, 300, 100))
+        let frames = run(&a)
+        #expect(frames.first!.minX > 400)
+        #expect(a.frame == rect(1000, 0, 100, 100))
+    }
+
     @Test func `Retargeting keeps going from where it is`() {
         var a = FrameAnimation(from: rect(0, 0, 100, 100), to: rect(1000, 0, 100, 100))
         for _ in 0..<5 { _ = a.step(spring, dt: 1.0 / 60, timeout: 5) }

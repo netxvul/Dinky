@@ -37,6 +37,45 @@ private final class FakeWindows: @unchecked Sendable {
     }
 }
 
+/// One window as AppKit sizes it through Accessibility: a size that would take it past the screen's right edge from on
+/// screen stops there, unless it is already a point past it, and its app snaps widths down to a multiple of `cell`. A
+/// write is size, position, size, as FrameApplier's. `shown` has its frame after every write or move.
+private final class AppKitLike: @unchecked Sendable {
+    private let lock = NSLock()
+    private var frame: CGRect
+    private let edge: CGFloat, cell: CGFloat
+    private var frames: [CGRect] = []
+    var shown: [CGRect] { lock.withLock { frames } }
+
+    init(frame: CGRect, edge: CGFloat, cell: CGFloat) {
+        self.frame = frame
+        self.edge = edge
+        self.cell = cell
+    }
+
+    private func size(_ width: CGFloat) {
+        var width = width
+        if frame.maxX < edge + 1, frame.minX + width > edge { width = edge - frame.minX }
+        frame.size.width = (width / cell).rounded(.down) * cell
+    }
+
+    func scheduler() -> FrameScheduler {
+        FrameScheduler(settle: 0, read: { _ in self.lock.withLock { self.frame } }, write: { job in
+            self.lock.withLock {
+                self.size(job.frame.width)
+                self.frame.origin = job.frame.origin
+                self.size(job.frame.width)
+                self.frames.append(self.frame)
+            }
+        }, move: { job in
+            self.lock.withLock {
+                self.frame.origin = job.frame.origin
+                self.frames.append(self.frame)
+            }
+        })
+    }
+}
+
 private func job(_ pid: Int32, _ id: WindowID, _ x: CGFloat) -> FrameJob {
     FrameJob(pid: pid, id: id, frame: CGRect(x: x, y: 0, width: 100, height: 100))
 }
@@ -311,6 +350,95 @@ struct FrameSchedulerStepTests {
         #expect(result.first?.hasPrefix("write") == true)
         #expect(result.last == "write 20")
         #expect(!result.dropFirst().dropLast().contains { $0.hasPrefix("write") })
+    }
+
+    @Test func `A window growing to the left is led past the edge once, from where it is, however the steps coalesce`() {
+        let lock = NSLock()
+        var calls: [String] = [], frame = CGRect(x: 760, y: 0, width: 723, height: 100)
+        let entered = DispatchSemaphore(value: 0), gate = DispatchSemaphore(value: 0)
+        var held = false
+        let scheduler = FrameScheduler(settle: 0, read: { _ in lock.withLock { frame } }, write: { job in
+            // The first write waits, so the steps behind it pile up.
+            if lock.withLock({ defer { held = true }; return !held }) { entered.signal(); gate.wait() }
+            lock.withLock { calls.append("write \(Int(job.frame.minX)) \(Int(job.frame.width))"); frame = job.frame }
+        })
+        func step(_ x: CGFloat, leadEdge: CGFloat? = 1512) -> FrameJob {
+            FrameJob(pid: 1, id: 10, frame: CGRect(x: x, y: 0, width: 1514 - x, height: 100), leadEdge: leadEdge)
+        }
+        scheduler.step([step(700)])
+        #expect(entered.wait(timeout: .now() + 2) == .success)
+        scheduler.step([step(600)])
+        scheduler.step([step(500)])
+        gate.signal()
+        Thread.sleep(forTimeInterval: 0.1)
+        // Sized to the edge where it is and moved past it by the nudge, then stepped.
+        #expect(lock.withLock { calls } == ["write 762 752", "write 700 814", "write 500 1014"])
+
+        // A step without an edge ends the run. Already past the edge, the window needs no lead-in; back on screen after
+        // a full pass, it is led in again from there.
+        lock.withLock { calls = [] }
+        scheduler.step([step(400, leadEdge: nil)])
+        Thread.sleep(forTimeInterval: 0.05)
+        scheduler.step([step(300)])
+        Thread.sleep(forTimeInterval: 0.05)
+        _ = submitAndWait(scheduler, [FrameJob(pid: 1, id: 10, frame: CGRect(x: 200, y: 0, width: 1000, height: 100))])
+        scheduler.step([step(100)])
+        Thread.sleep(forTimeInterval: 0.05)
+        #expect(lock.withLock { calls } == ["write 400 1114", "write 300 1214", "write 200 1000", "write 202 1312",
+                                             "write 100 1414"])
+    }
+
+    @Test func `A window its app leaves short of the edge is moved past it, and its steps there written wider`() {
+        let lock = NSLock()
+        var calls: [String] = [], frame = CGRect(x: 760, y: 0, width: 723, height: 100)
+        // Snaps its width down to a multiple of ten, as a terminal snaps to its character grid.
+        let scheduler = FrameScheduler(settle: 0, read: { _ in lock.withLock { frame } }, write: { job in
+            lock.withLock {
+                frame = CGRect(x: job.frame.minX, y: 0, width: (job.frame.width / 10).rounded(.down) * 10, height: 100)
+                calls.append("write \(Int(frame.minX)) \(Int(frame.width))")
+            }
+        }, move: { job in
+            lock.withLock { frame.origin.x = job.frame.minX; calls.append("move \(Int(frame.minX))") }
+        })
+        scheduler.step([FrameJob(pid: 1, id: 10, frame: CGRect(x: 700, y: 0, width: 814, height: 100), leadEdge: 1512)])
+        Thread.sleep(forTimeInterval: 0.05)
+        // Led in to 750 wide, its right edge on the screen edge, then moved past it; its step 16 wider: 830 from 816.
+        #expect(lock.withLock { calls } == ["write 762 750", "move 764", "write 700 830"])
+        #expect(lock.withLock { frame.maxX } > 1513)
+    }
+
+    @Test func `A window led past the edge stays past it on every step, its app snapping its size or not`() {
+        for cell in [1, 8, 10] as [CGFloat] {
+            for x in [760, 761, 763] as [CGFloat] {
+                let windows = AppKitLike(frame: CGRect(x: x, y: 0, width: 723, height: 100), edge: 1512, cell: cell)
+                let scheduler = windows.scheduler()
+                for left in stride(from: x - 20, through: 40, by: -60) {
+                    scheduler.step([FrameJob(pid: 1, id: 10, frame: CGRect(x: left, y: 0, width: 1514 - left, height: 100),
+                                             leadEdge: 1512)])
+                    Thread.sleep(forTimeInterval: 0.01)
+                }
+                Thread.sleep(forTimeInterval: 0.05)
+                // Every frame shown once the lead-in has taken it past the edge stays past it, but for one a snapping
+                // app can leave up to a cell short before the step's read finds that out and moves it on.
+                let shown = windows.shown.drop { $0.maxX < 1513 }
+                let back = shown.filter { $0.maxX < 1513 }
+                #expect(!shown.isEmpty)
+                #expect(back.count <= 1 && back.allSatisfy { $0.maxX > 1512 - cell }, "cell \(cell), from \(x): \(shown.map(\.maxX))")
+                #expect(shown.suffix(3).allSatisfy { $0.maxX >= 1513 })
+            }
+        }
+    }
+
+    @Test func `A lead-in the app has not taken yet is left alone`() {
+        // Read back at its old width, as an app still taking the size: neither widened nor moved.
+        let lock = NSLock()
+        var calls: [String] = []
+        let lagging = FrameScheduler(settle: 0, read: { _ in CGRect(x: 760, y: 0, width: 723, height: 100) }, write: { job in
+            lock.withLock { calls.append("write \(Int(job.frame.minX)) \(Int(job.frame.width))") }
+        }, move: { job in lock.withLock { calls.append("move \(Int(job.frame.minX))") } })
+        lagging.step([FrameJob(pid: 1, id: 10, frame: CGRect(x: 700, y: 0, width: 814, height: 100), leadEdge: 1512)])
+        Thread.sleep(forTimeInterval: 0.05)
+        #expect(lock.withLock { calls } == ["write 762 752", "write 700 814"])
     }
 
     @Test func `A size an animation step asked for is not a minimum`() {

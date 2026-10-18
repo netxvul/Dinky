@@ -51,6 +51,12 @@ final class FrameApplier {
         scheduler.minimumSizes[id] ?? app.flatMap { app in lock.withLock { appMinimums[app] } }
     }
 
+    /// Called on a background queue once a step of a window growing to the left is written. See `FrameScheduler.onLeadStep`.
+    var onLeadStep: ((WindowID) -> Void)? {
+        get { scheduler.onLeadStep }
+        set { scheduler.onLeadStep = newValue }
+    }
+
     /// Whether the app was too slow to follow an animation step in the current glide. See `FrameScheduler.isSlow`.
     func isSlow(_ pid: pid_t) -> Bool { scheduler.isSlow(pid) }
 

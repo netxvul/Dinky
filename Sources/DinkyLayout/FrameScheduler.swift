@@ -6,11 +6,16 @@ public struct FrameJob: Equatable, Sendable {
     public var pid: Int32
     public var id: WindowID
     public var frame: CGRect
+    /// For an animation step of a window growing to the left, the screen's right edge, which the window is taken just
+    /// past from where it is before the first of a run of steps carrying it, once, so no step's size stops there. See
+    /// `ResizeOnce.leadIn(from:edge:)`.
+    public var leadEdge: CGFloat?
 
-    public init(pid: Int32, id: WindowID, frame: CGRect) {
+    public init(pid: Int32, id: WindowID, frame: CGRect, leadEdge: CGFloat? = nil) {
         self.pid = pid
         self.id = id
         self.frame = frame
+        self.leadEdge = leadEdge
     }
 }
 
@@ -93,6 +98,15 @@ public final class FrameScheduler: @unchecked Sendable {
         }
     }
 
+    /// Called on a process's queue once an animation step of a window growing to the left is written, with its lead-in
+    /// if it needed one: whoever glides the window can set it off then, rather than have it stand while the lead-in is
+    /// written and then jump.
+    public var onLeadStep: ((WindowID) -> Void)? {
+        get { lock.withLock { leadStep } }
+        set { lock.withLock { leadStep = newValue } }
+    }
+    private var leadStep: ((WindowID) -> Void)?
+
     /// Queue animation steps: each replaces any step of the same window not written yet, and is written once
     /// without reading back. A step whose size is the one last written for its window only moves it.
     public func step(_ jobs: [FrameJob]) {
@@ -143,7 +157,11 @@ public final class FrameScheduler: @unchecked Sendable {
             minimums[id] = nil
             candidates[id] = nil
             // What steps wrote is the queue's alone, so it is cleared there, after anything already queued.
-            for app in apps.values { app.queue.async { app.written[id] = nil; app.stepSizes[id] = nil } }
+            for app in apps.values {
+                app.queue.async {
+                    app.written[id] = nil; app.stepSizes[id] = nil; app.ledIn[id] = nil; app.slack[id] = nil; app.probes[id] = nil
+                }
+            }
         }
     }
 
@@ -168,21 +186,73 @@ public final class FrameScheduler: @unchecked Sendable {
             return (app.steps, app.pending, app.batches, !app.prepared, self.generation)
         }
         if needsPrepare { prepare(app.pid) }
-        let began = Date()
-        for job in steps {
+        var began = Date()
+        for var job in steps {
+            // A run of steps growing a window to the left is led in before any step that carries it, so newer steps
+            // replacing older ones cannot skip it, from where the window is then, and its first frames past the edge are
+            // read back (see `probe`). Their time is not the steps': a resize once does not make an app too slow to follow.
+            if let edge = job.leadEdge, app.ledIn[job.id] != edge {
+                app.slack[job.id] = nil
+                app.probes[job.id] = Self.snapProbes
+                let leading = Date()
+                leadIn(job, past: edge, in: app)
+                began += Date().timeIntervalSince(leading)
+                app.ledIn[job.id] = edge
+            }
+            if job.leadEdge == nil { app.ledIn[job.id] = nil; app.slack[job.id] = nil; app.probes[job.id] = nil }
+            if let edge = job.leadEdge, job.frame.maxX > edge { job.frame.size.width += app.slack[job.id] ?? 0 }
             app.written[job.id] == job.frame.size ? move(job) : write(job)
             app.written[job.id] = job.frame.size
             app.stepSizes[job.id, default: []].insert(job.frame.size)
+            if let edge = job.leadEdge, job.frame.maxX > edge, app.probes[job.id, default: 0] > 0 {
+                let probing = Date()
+                probe(job, asked: job.frame, past: edge, in: app)
+                began += Date().timeIntervalSince(probing)
+            }
+            if job.leadEdge != nil { lock.withLock { leadStep }?(job.id) }
         }
         if !steps.isEmpty, Date().timeIntervalSince(began) > Self.slowStep { lock.withLock { _ = slow.insert(app.pid) } }
         let results = run(jobs, stepSizes: app.stepSizes) { self.lock.withLock { self.generation } == generation }
         for result in results {
             if result.written { app.written[result.job.id] = nil }
             app.stepSizes[result.job.id] = nil
+            app.ledIn[result.job.id] = nil
+            app.slack[result.job.id] = nil
+            app.probes[result.job.id] = nil
         }
         // In place, or already where its minimum lets it be: whatever it refused before, it has caught up.
         lock.withLock { for result in results where result.matched || !result.written { candidates[result.job.id] = nil } }
         for batch in batches { batch.report(results) }
+    }
+
+    /// How many frames of a run growing a window to the left are read back for a size its app snapped (see `probe`):
+    /// any one width can happen to fit the app's grid.
+    static let snapProbes = 3
+
+    /// Takes the window of a step just past the screen edge `edge` from where it is (see `ResizeOnce.leadIn`), and reads
+    /// it back. Runs on the process's queue.
+    private func leadIn(_ job: FrameJob, past edge: CGFloat, in app: App) {
+        guard let now = read(job), let leadIn = ResizeOnce.leadIn(from: now, edge: edge) else { return }
+        write(FrameJob(pid: job.pid, id: job.id, frame: leadIn))
+        app.written[job.id] = leadIn.size
+        app.stepSizes[job.id, default: []].insert(leadIn.size)
+        probe(job, asked: leadIn, past: edge, in: app)
+    }
+
+    /// Reads back a window just written `asked`, past the screen edge `edge`, as one of the first frames of a run growing
+    /// it to the left. An app that snaps its size to a grid leaves it narrower where asked, by up to a cell: its frames
+    /// past the edge are written `ResizeOnce.snapSlack` wider from then on, so their sizes still leave it there, and one
+    /// left on the screen, where AppKit would stop those sizes, is moved on past the edge. Not one further short or
+    /// elsewhere, which is an app still taking the frame. Runs on the process's queue.
+    private func probe(_ job: FrameJob, asked: CGRect, past edge: CGFloat, in app: App) {
+        app.probes[job.id, default: 0] -= 1
+        guard let got = read(job) else { return }
+        let short = asked.width - got.width
+        guard short > 0.5, short <= ResizeOnce.snapSlack, abs(got.minX - asked.minX) <= 0.5 else { return }
+        app.slack[job.id] = ResizeOnce.snapSlack
+        app.probes[job.id] = 0
+        guard got.maxX < edge + 1 else { return }
+        move(FrameJob(pid: job.pid, id: job.id, frame: got.offsetBy(dx: edge + ResizeOnce.nudge - got.maxX, dy: 0)))
     }
 
     /// Write, settle, read back; write the misses once more, settle, read back again. Writes only while `live`.
@@ -261,6 +331,12 @@ public final class FrameScheduler: @unchecked Sendable {
         /// Every size steps asked of each window since the last full pass that included it. Apps that resize
         /// lazily can still be at one of them when the full write reads back. Queue only.
         var stepSizes: [WindowID: Set<CGSize>] = [:]
+        /// The screen edge each window's steps have been led past, while steps carry one. Queue only.
+        var ledIn: [WindowID: CGFloat] = [:]
+        /// How much wider than asked each window's steps past the screen edge are written. See `ResizeOnce.snapSlack`.
+        var slack: [WindowID: CGFloat] = [:]
+        /// How many more of each window's frames past the screen edge are read back. See `probe`.
+        var probes: [WindowID: Int] = [:]
         var scheduled = false
         var prepared = false
 

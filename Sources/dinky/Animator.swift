@@ -24,6 +24,14 @@ final class Animator: NSObject {
         var key: UInt64
         /// How long this pass takes, as a multiple of the configured time: longer for a long strip scroll.
         var stretch = 1.0
+        /// How it glides growing to the left, if it does. See `ResizeOnce.Anchor`.
+        var anchor: ResizeOnce.Anchor?
+        /// Since when it has stood at its start, growing to the left, until its first step is written and it was led
+        /// past the screen edge with it, which can take its app a frame or more: set off sooner, it would jump.
+        var heldSince: CFTimeInterval?
+
+        /// Where its steps write it now.
+        var frame: CGRect { anchor.map { $0.frame(animation.frame) } ?? animation.frame }
     }
 
     private let applier: FrameApplier
@@ -48,6 +56,8 @@ final class Animator: NSObject {
     private var lastStepAt = CACurrentMediaTime()
     private var watchdog: Timer?
     private var curve = AnimationCurve.spring(Spring(response: 0.15, damping: 0.9))
+    /// How long a window growing to the left stands at its start at most, waiting for its lead-in to be written.
+    private static let leadInWait: CFTimeInterval = 0.25
     private var timeout = 1.0
     /// Where windows came to rest the last time they were written unanimated, by the frame they were asked for.
     /// An app that snaps to a grid (Terminal) or keeps a minimum size never reaches its tile exactly, and
@@ -59,6 +69,7 @@ final class Animator: NSObject {
     init(applier: FrameApplier) {
         self.applier = applier
         super.init()
+        applier.onLeadStep = { [weak self] id in DispatchQueue.main.async { self?.entries[id]?.heldSince = nil } }
         // The link is made for one screen; with that screen gone it never fires again.
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil,
                                                queue: .main) { [weak self] _ in self?.screensChanged() }
@@ -77,16 +88,20 @@ final class Animator: NSObject {
     /// The windows moving now.
     var animating: [WindowID] { Array(entries.keys) }
 
+    /// Where a gliding window's steps write it now; nil for one not gliding.
+    func frame(of id: WindowID) -> CGRect? { entries[id]?.frame }
+
     /// Move the tree's windows from `starts` to `targets`, then run `finish`. Windows already there, or with
     /// no start, are left to `finish`; with none left to move, it runs at once. With `place`, the starts and targets
     /// are in strip coordinates and `place` puts them on screen on every frame; a window that was moving without it,
     /// or with it, starts over from `starts`. `resting` has where the strip's windows are on screen now, so one that
     /// does not glide is moved as soon as `place` puts it elsewhere. A window in `slower` takes that many times as
-    /// long as `stretch` has the others take.
+    /// long as `stretch` has the others take. A window in `anchors` grows to the left as it glides, its right edge held
+    /// past the screen's; one that did so before and no longer does carries on from where it was written.
     func animate(_ key: UInt64, from starts: [WindowID: CGRect], to targets: [WindowID: CGRect],
                  pids: [WindowID: pid_t], place: (([WindowID: CGRect]) -> [WindowID: CGRect])? = nil,
                  resting: [WindowID: CGRect] = [:], stretch: Double = 1, slower: [WindowID: Double] = [:],
-                 sink: (([WindowID: CGRect]) -> Void)? = nil,
+                 anchors: [WindowID: ResizeOnce.Anchor] = [:], sink: (([WindowID: CGRect]) -> Void)? = nil,
                  then finish: @escaping () -> Void) {
         // A new glide: every app gets another chance to keep up.
         if entries.isEmpty { applier.clearSlow() }
@@ -100,12 +115,17 @@ final class Animator: NSObject {
         }
         for (id, target) in targets {
             if entries[id] != nil {
+                if entries[id]!.anchor != nil, anchors[id] == nil { entries[id]!.animation.carryOn(from: entries[id]!.frame) }
+                if entries[id]!.anchor == nil, anchors[id] != nil { entries[id]!.heldSince = CACurrentMediaTime() }
+                if anchors[id] == nil { entries[id]!.heldSince = nil }
                 entries[id]!.animation.retarget(target)
                 entries[id]!.key = key
                 entries[id]!.stretch = stretch * (slower[id] ?? 1)
+                entries[id]!.anchor = anchors[id]
             } else if let start = starts[id], let pid = pids[id], !isResting(id, at: start, for: target) {
                 entries[id] = Entry(animation: FrameAnimation(from: start, to: target), pid: pid, key: key,
-                                    stretch: stretch * (slower[id] ?? 1))
+                                    stretch: stretch * (slower[id] ?? 1), anchor: anchors[id],
+                                    heldSince: anchors[id] == nil ? nil : CACurrentMediaTime())
             }
         }
         finishes[key] = finish
@@ -210,9 +230,15 @@ final class Animator: NSObject {
         var frames: [WindowID: CGRect] = [:], arrived: [WindowID] = []
         let moving = entries
         for id in moving.keys {
+            // Standing at its start until its lead-in is written, or for long enough that the app has not answered.
+            if let since = entries[id]!.heldSince, lastStepAt - since < Self.leadInWait {
+                frames[id] = entries[id]!.frame
+                continue
+            }
+            entries[id]!.heldSince = nil
             let stretch = entries[id]!.stretch
             let done = entries[id]!.animation.step(curve.stretched(stretch), dt: dt, timeout: timeout * stretch)
-            frames[id] = entries[id]!.animation.frame
+            frames[id] = entries[id]!.frame
             if done { entries[id] = nil; arrived.append(id) }
         }
         // A tree gliding something else takes its frames, and its windows are left alone.
@@ -241,7 +267,7 @@ final class Animator: NSObject {
             // A slow app keeps gliding at a third of the rate rather than freezing for the rest of the glide.
             if applier.isSlow(pid), stepCount % 3 != 0 { continue }
             written[id] = frame
-            jobs.append(FrameJob(pid: pid, id: id, frame: frame))
+            jobs.append(FrameJob(pid: pid, id: id, frame: frame, leadEdge: moving[id]!.anchor?.edge))
         }
         for id in arrived { written[id] = nil }
         applier.step(jobs)

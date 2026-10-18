@@ -114,6 +114,16 @@ public struct FrameAnimation: Equatable, Sendable {
         CGRect(x: value[0].rounded(), y: value[1].rounded(), width: value[2].rounded(), height: value[3].rounded())
     }
 
+    /// Carries on from `frame` instead, as where the window was last written somewhere other than the curve has it: on
+    /// a spring moving at the speed it had but no longer changing size, an easing over again from there.
+    public mutating func carryOn(from frame: CGRect) {
+        value = Self.components(frame)
+        origin = value
+        velocity[2] = 0
+        velocity[3] = 0
+        age = 0
+    }
+
     /// Head somewhere else from where it is. On a spring the speed carries over, so the motion stays continuous; an
     /// easing starts over from here.
     public mutating func retarget(_ new: CGRect) {

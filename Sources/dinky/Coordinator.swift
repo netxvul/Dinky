@@ -488,6 +488,9 @@ final class Coordinator {
         //   others that moves as well as resizing, which its app would show half done on every step, changes size once,
         //   where that cannot be seen, and only moves as it glides (see ResizeOnce): growing, it is first staged at its
         //   size where it is; shrinking, it takes its size once there, with the pass's write.
+        //   One growing mostly to the left, as the right column does, grows as if dragged by its left edge instead, its
+        //   right edge just past the screen's (see `ResizeOnce.anchored`): unless another display or the Dock is past
+        //   that edge.
         // - Where its frames on the way would show where they must not (`ResizeOnce.applies`), or, in a strip, out of
         //   view or sharing its column, which the others in it would leave uncovered, one that pushes takes its whole
         //   frame first, growing, or holds its frame until the others are back, shrinking, and the strip glides around it.
@@ -514,20 +517,27 @@ final class Coordinator {
             guard let frame = frameOf(id), let target = layout.frames[id] else { return false }
             return ResizeOnce.grows(frame, target)
         }
+        let growsLeft = { (id: WindowID) -> Bool in
+            guard let frame = frameOf(id), let target = layout.frames[id] else { return false }
+            return ResizeOnce.growsLeft(frame, target) && !workspace.walls.contains(.right) && !dock
+        }
         let fullscreenNow = Set(workspace.fullscreenWindows)
         let changing = Dictionary(uniqueKeysWithValues: fullscreenNow.map { ($0, change($0, pushed.contains($0))) })
         let leavingChange = Dictionary(uniqueKeysWithValues: (lastFullscreen[key] ?? []).subtracting(fullscreenNow).map {
             ($0, change($0, workspace.pushesFullscreen && strip[$0] != nil))
         })
-        let growOnce = Set(changing.filter { $0.value == .once && grows($0.key) }.keys)
+        let growing = Set(changing.filter { $0.value == .once && grows($0.key) }.keys)
+        let growLeft = growing.filter(growsLeft)
+        let growOnce = growing.subtracting(growLeft)
         let growWhole = Set(changing.filter { $0.value == .whole && grows($0.key) }.keys)
         let staged = growOnce.union(growWhole)
         // Shrinking, or growing on one side while shrinking on the other, the window glides at its size and takes its
         // own with the write; held, it stays where it is till then.
+        let entering = staged.union(growLeft)
         let shrinkOnce = Set(changing.filter { $0.value == .once && !grows($0.key) }.keys)
-            .union(staged.isEmpty ? Set(leavingChange.filter { $0.value == .once }.keys) : [])
+            .union(entering.isEmpty ? Set(leavingChange.filter { $0.value == .once }.keys) : [])
         let held = Set(changing.filter { $0.value == .whole && !grows($0.key) }.keys)
-            .union(staged.isEmpty ? Set(leavingChange.filter { $0.value == .whole }.keys) : [])
+            .union(entering.isEmpty ? Set(leavingChange.filter { $0.value == .whole }.keys) : [])
         let leavingAll = Set(leavingChange.filter { $0.value != .none }.keys)
         let writeThen = { [weak self] (landed: @escaping () -> Void) in
             guard let self else { return }
@@ -567,12 +577,22 @@ final class Coordinator {
         guard animates, snap.remove(key) == nil else { return write() }
         // Stacking first, so the window coming to the front of an accordion slides in on top.
         applier.raiseIntoOrder(layout, pids: pids, front: workspace.focused)
-        let sized = staged.union(shrinkOnce), special = sized.union(held)
+        let sized = staged.union(shrinkOnce), special = sized.union(held).union(growLeft)
         let frameNow = { [self] (id: WindowID) -> CGRect? in special.contains(id) ? frameOf(id) : model.windows[id]?.frame }
+        // Those growing to the left are taken past the screen edge first, then held there as their left edges glide to
+        // their targets, taking longer.
+        func anchors(to targets: [WindowID: CGRect]) -> [WindowID: ResizeOnce.Anchor] {
+            Dictionary(uniqueKeysWithValues: growLeft.compactMap { id in
+                targets[id].map { (id, ResizeOnce.Anchor(target: $0, edge: edge)) }
+            })
+        }
+        let drawn = Dictionary(uniqueKeysWithValues: growLeft.map { ($0, ResizeOnce.drawn) })
         // Those changing size once glide to their places at the size they have, their steps moves; those held stay put.
+        // One still gliding has the size its steps write now, which the window server shows a step or so later.
         func hold(_ targets: inout [WindowID: CGRect], from starts: [WindowID: CGRect]) {
             for id in sized {
-                if let start = starts[id], let target = targets[id] { targets[id] = ResizeOnce.glideTarget(target, size: start.size) }
+                guard let start = starts[id], let target = targets[id] else { continue }
+                targets[id] = ResizeOnce.glideTarget(target, size: animator.frame(of: id)?.size ?? start.size)
             }
             for id in held { if let start = starts[id] { targets[id] = start } }
         }
@@ -585,7 +605,8 @@ final class Coordinator {
             var targets = layout.frames
             hold(&targets, from: starts)
             applier.assume(starts.filter { special.contains($0.key) }.mapValues(\.size), pids: pids)
-            animator.animate(key, from: starts, to: targets, pids: pids, then: write)
+            animator.animate(key, from: starts, to: targets, pids: pids, slower: drawn, anchors: anchors(to: targets),
+                             then: write)
         }
 
         /// Glides the strip to `layout`.
@@ -645,7 +666,8 @@ final class Coordinator {
                 var input = strip
                 for (id, frame) in frames where !fullscreen.contains(id) { input[id] = frame }
                 for (lead, beside) in leads {
-                    input = ResizeOnce.guarded(input, lead: lead, left: beside.left, right: beside.right, gap: guardGap) { id in
+                    input = ResizeOnce.guarded(input, lead: lead, left: beside.left, right: beside.right, gap: guardGap,
+                                               anchored: growLeft.contains(lead)) { id in
                         let info = dinky_window_info(id)
                         return info.exists ? info.frame : nil
                     }
@@ -688,13 +710,17 @@ final class Coordinator {
                 && fullscreen.isEmpty && !saResizing && Thumbnails.shared.permitted
             // A window moving away from the columns beside it, as one coming back from fullscreen does, takes a little
             // longer than they do, so it follows them rather than being held at their edges: an app coming back into view
-            // can be slow over its first moves, and the window held at its edge would lurch along in its steps.
-            let slower = Dictionary(uniqueKeysWithValues: leads.compactMap { lead, _ in
+            // can be slow over its first moves, and the window held at its edge would lurch along in its steps. A window
+            // growing to the left, and the columns it pushes, take longer too (see `ResizeOnce.drawn`).
+            var slower = Dictionary(uniqueKeysWithValues: leads.compactMap { lead, _ in
                 shrinkOnce.union(held).contains(lead) ? (lead, ResizeOnce.trailing) : nil
-            })
+            }).merging(drawn) { $1 }
+            for (lead, beside) in leads where growLeft.contains(lead) {
+                for id in (beside.left + beside.right).joined() { slower[id] = ResizeOnce.drawn }
+            }
             guard glidesSnapshots, let display = displays.display(containingSpace: key) else {
                 return animator.animate(key, from: starts, to: targets, pids: pids, place: place, resting: resting,
-                                        stretch: stretch, slower: slower, then: write)
+                                        stretch: stretch, slower: slower, anchors: anchors(to: targets), then: write)
             }
             // Snapshots of the strip glide over a snapshot of what is behind it, while the windows go to their places
             // underneath at once. Without the snapshots in time, the windows glide. The snapshots are parked as the
@@ -743,6 +769,12 @@ final class Coordinator {
         }
 
         let glide = strip.isEmpty ? glideTree : glideStrip
+        // Raised over what they grow over, the others where they are now.
+        if !entering.isEmpty {
+            var over = layout
+            for id in layout.order where !entering.contains(id) { if let frame = model.windows[id]?.frame { over.frames[id] = frame } }
+            applier.raiseIntoOrder(over, pids: pids, front: workspace.focused)
+        }
         guard !staged.isEmpty else { return glide() }
         // A glide still under way, as after a focus change just before, would go on moving them, and write its layout
         // over their sizes once it ends.
@@ -750,10 +782,6 @@ final class Coordinator {
         pushTokens += 1
         let token = pushTokens
         pushes[key] = (token, layout)
-        // Raised over what they grow over, the others where they are now.
-        var over = layout
-        for id in layout.order where !staged.contains(id) { if let frame = model.windows[id]?.frame { over.frames[id] = frame } }
-        applier.raiseIntoOrder(over, pids: pids, front: workspace.focused)
         var staging: [WindowID: CGRect] = [:]
         for id in staged {
             guard let current = frameOf(id), let target = layout.frames[id] else { continue }
@@ -869,9 +897,16 @@ final class Coordinator {
             return animator.animate(key, from: [id: start], to: [id: frame], pids: pids, then: write)
         }
         guard ResizeOnce.grows(start, frame) else {
-            applier.assume([id: start.size], pids: pids)
-            return animator.animate(key, from: [id: start], to: [id: ResizeOnce.glideTarget(frame, size: start.size)],
+            // Still gliding, at the size its steps write, which the window server shows a step or so later.
+            let size = animator.frame(of: id)?.size ?? start.size
+            applier.assume([id: size], pids: pids)
+            return animator.animate(key, from: [id: start], to: [id: ResizeOnce.glideTarget(frame, size: size)],
                                     pids: pids, then: write)
+        }
+        // Growing mostly to the left, it grows as if dragged by its left edge, as a tile does (see `apply`).
+        if ResizeOnce.growsLeft(start, frame), !walls(of: display).contains(.right), !dock {
+            return animator.animate(key, from: [id: start], to: [id: frame], pids: pids, slower: [id: ResizeOnce.drawn],
+                                    anchors: [id: ResizeOnce.Anchor(target: frame, edge: edge)], then: write)
         }
         animator.stop(key)
         pushTokens += 1
