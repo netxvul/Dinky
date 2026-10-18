@@ -101,7 +101,8 @@ struct SchemaTests {
             #expect(matches(name), "\(name)")
             #expect(matches("alt-shift-\(name)"), "\(name)")
         }
-        for bad in ["", "alt-", "hyper-a", "alt-hh", "pageUp", "f21", "keypad-", "alt--", "A"] {
+        #expect(matches("hyper-1") && matches("meh-cmd-h"))
+        for bad in ["", "alt-", "super-a", "alt-hh", "pageUp", "f21", "keypad-", "alt--", "A"] {
             #expect(!matches(bad), "\(bad)")
         }
     }

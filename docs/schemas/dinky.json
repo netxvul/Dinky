@@ -523,8 +523,8 @@
     },
     "keyCombo": {
       "type": "string",
-      "pattern": "^((alt|ctrl|cmd|shift)-)*([a-z0-9]|f[1-9]|f1[0-9]|f20|keypad-([0-9]|clear|decimal|divide|enter|equal|minus|multiply|plus)|section|minus|equal|left-bracket|right-bracket|backslash|semicolon|quote|comma|period|slash|backtick|page-up|page-down|home|end|forward-delete|space|enter|esc|backspace|tab|left|down|up|right)$",
-      "description": "Zero or more modifiers (alt, ctrl, cmd, shift) and one key name, joined by '-': alt-shift-h, ctrl-left, alt-page-up, f5."
+      "pattern": "^((alt|ctrl|cmd|shift|hyper|meh)-)*([a-z0-9]|f[1-9]|f1[0-9]|f20|keypad-([0-9]|clear|decimal|divide|enter|equal|minus|multiply|plus)|section|minus|equal|left-bracket|right-bracket|backslash|semicolon|quote|comma|period|slash|backtick|page-up|page-down|home|end|forward-delete|space|enter|esc|backspace|tab|left|down|up|right)$",
+      "description": "Zero or more modifiers (alt, ctrl, cmd, shift, or the shorthands hyper and meh) and one key name, joined by '-': alt-shift-h, ctrl-left, alt-page-up, hyper-1, f5."
     }
   }
 }

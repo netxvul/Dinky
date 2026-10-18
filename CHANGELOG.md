@@ -55,6 +55,10 @@
 
 - New `app-id-regex` key matches the bundle ID by regex, like `app-name` does for the app's name: `app-id-regex = '^com\.jetbrains\.'` covers every JetBrains app with one rule. `app-id` still matches exactly.
 
+### Key bindings
+
+- `hyper` and `meh` name the usual modifier combinations: `hyper-1` is `alt-ctrl-cmd-shift-1`, and `meh-1` is `alt-ctrl-shift-1`.
+
 ### Fixes
 
 - On a scrolling workspace, only the column nearest each display edge peeks out; the ones beyond it tuck under it with 2 points on screen, so the edge shows one window's shadow. Before, every parked column hung at the same spot and their shadows piled up into a dark band. With `glide = 'snapshots'`, the peeks stay put through a scroll instead of vanishing and fading back.

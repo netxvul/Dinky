@@ -329,8 +329,9 @@ struct ConfigTests {
         assertError("[mode.main]\nalt-a = []\n", path: "mode.main.alt-a", line: 2, contains: "can't be empty")
         assertError("[mode.main]\nalt-a = 3\n", path: "mode.main.alt-a", line: 2, contains: "command string")
         assertError("[mode.main]\nalt-a = ['x', 3]\n", path: "mode.main.alt-a", line: 2, contains: "command string")
-        assertError("[mode.main]\nalt-hyper-a = 'x'\n", path: "mode.main.alt-hyper-a", line: 2, contains: "'alt-hyper-a'")
+        assertError("[mode.main]\nalt-super-a = 'x'\n", path: "mode.main.alt-super-a", line: 2, contains: "'alt-super-a'")
         assertError("[mode.main]\nalt-shift-a = 'x'\nshift-alt-a = 'y'\n", path: "mode.main.shift-alt-a", line: 3, contains: "bound twice")
+        assertError("[mode.main]\nhyper-a = 'x'\nctrl-alt-cmd-shift-a = 'y'\n", path: "mode.main.ctrl-alt-cmd-shift-a", line: 3, contains: "bound twice")
         assertError("[mode.main.binding]\nalt-a = 'x'\n", path: "mode.main.binding", line: 1, contains: "unknown key 'binding'")
     }
 

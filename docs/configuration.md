@@ -612,7 +612,8 @@ a command or a list of commands. Bound keys are swallowed.
 ### Keys
 
 Modifiers (`alt`, `ctrl`, `cmd`, `shift`) and one key, joined by `-`:
-`alt-shift-h`, `ctrl-left`, `f5`. Names follow a US layout.
+`alt-shift-h`, `ctrl-left`, `f5`. Names follow a US layout. `hyper` is all four
+modifiers and `meh` all but `cmd`, so `hyper-1` is `alt-ctrl-cmd-shift-1`.
 
 - `a`–`z`, `0`–`9`, `f1`–`f20`
 - `minus` `equal` `left-bracket` `right-bracket` `backslash` `semicolon`
