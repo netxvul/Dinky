@@ -242,6 +242,7 @@ struct SchemaTests {
 
         [[rules]]
         app-id = 'com.apple.Safari'
+        app-id-regex = '^com\\.apple\\.'
         app-name = 'safari'
         title = 'settings'
         kind = 'dialog'

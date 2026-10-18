@@ -397,9 +397,35 @@ struct ConfigTests {
         #expect(second.matches(layout: .floating, workspace: nil))
     }
 
+    @Test func `Window rule matches the bundle ID by regex`() throws {
+        let config = try Config.parse("""
+        [[rules]]
+        app-id-regex = '^co\\.ensili\\.'
+        run = 'layout floating'
+
+        [[rules]]
+        app-id = 'co.ensili.Scrivener'
+        app-id-regex = 'scrivener$'
+        run = 'layout floating'
+        """)
+        var expected = WindowRule()
+        expected.appIdRegex = "^co\\.ensili\\."
+        expected.run = ["layout floating"]
+        #expect(config.rules.first == expected)
+
+        let prefix = config.rules[0], both = config.rules[1]
+        #expect(prefix.matches(appId: "co.ensili.Scrivener", appName: "Scrivener", title: "", kind: .normal))
+        #expect(prefix.matches(appId: "CO.Ensili.Other", appName: nil, title: "", kind: .normal), "case-insensitive")
+        #expect(!prefix.matches(appId: "uk.co.ensili.x", appName: nil, title: "", kind: .normal), "anchored by the pattern")
+        #expect(!prefix.matches(appId: nil, appName: "Scrivener", title: "", kind: .normal), "no bundle ID never matches")
+        #expect(both.matches(appId: "co.ensili.Scrivener", appName: nil, title: "", kind: .normal))
+        #expect(!both.matches(appId: "co.ensili.scrivener", appName: nil, title: "", kind: .normal), "app-id stays exact")
+    }
+
     @Test func `Bad window rules fail`() {
         assertError("[[rules]]\napp-id = 'x'\n", path: "rules[0].run", line: 1, contains: "every rule needs 'run'")
         assertError("[[rules]]\ntitle = '('\nrun = 'x'\n", path: "rules[0].title", line: 2, contains: "not a valid regex")
+        assertError("[[rules]]\napp-id-regex = '['\nrun = 'x'\n", path: "rules[0].app-id-regex", line: 2, contains: "not a valid regex")
         assertError("[[rules]]\nkind = 'popup'\nrun = 'x'\n", path: "rules[0].kind", line: 2, contains: "'normal', 'dialog', 'sheet', 'panel'")
         assertError("[[rules]]\nif.app-id = 'x'\nrun = 'y'\n", path: "rules[0].if", line: 2, contains: "unknown key")
     }

@@ -566,6 +566,7 @@ it goes instead.
 | Key | |
 |---|---|
 | `app-id` | Bundle ID. |
+| `app-id-regex` | Case-insensitive regex, matched against the bundle ID. |
 | `app-name` | Case-insensitive regex. |
 | `title` | Case-insensitive regex. |
 | `kind` | `'normal'`, `'dialog'`, `'sheet'` or `'panel'`. |

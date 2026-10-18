@@ -50,6 +50,10 @@
 - Dropping a dragged tile works like yabai's insert feedback. In the middle of the tile under the pointer the two swap, as before; towards an edge that tile splits in two, side by side or one above the other, and the dragged window takes the half on that side. While you drag, an accent border with a translucent fill over that tile shows the part the window will take; a swap is filled more strongly and lights up the dragged window's own tile too, where the other window will go. In the scrolling layout, left and right make the window a column of its own; a fixed layout's grid only swaps.
 - `[drag] preview-border-color`, `preview-fill-color` and `preview-border-width` set how the drop's feedback looks, `preview-border-width` for every border including a swap's, as yabai's `insert_feedback_color`. Unset, the border follows the system accent colour and the fill is it at 30%. `home-outline = false` drops the grey outline of the tile the window came from.
 
+### Rules
+
+- New `app-id-regex` key matches the bundle ID by regex, like `app-name` does for the app's name: `app-id-regex = '^com\.jetbrains\.'` covers every JetBrains app with one rule. `app-id` still matches exactly.
+
 ### Fixes
 
 - On a scrolling workspace, only the column nearest each display edge peeks out; the ones beyond it tuck under it with 2 points on screen, so the edge shows one window's shadow. Before, every parked column hung at the same spot and their shadows piled up into a dark band. With `glide = 'snapshots'`, the peeks stay put through a scroll instead of vanishing and fading back.
