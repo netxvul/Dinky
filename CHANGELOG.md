@@ -63,6 +63,7 @@
 - Restarting dinky leaves windows on their workspaces. Before, quitting moved every window back to the Space it was first seen on, and on the next start rules such as `move-window-to-workspace 2 --follow` and `cycle-size` ran again for windows already open, moving them back, switching workspaces and reshuffling a scrolling strip. Quitting now puts back frames only, `enable off` still puts back Spaces too, and rule commands other than `layout floating`, `layout tiling` and `grid` run only for new windows.
 - In the scrolling layout, the focused column stays in view when a column left of it closes or moves to another workspace, grows to a window's minimum width, or when the display or gaps change. Before, the strip kept its scroll position, and the focused column could end up parked off screen.
 - Moving the Dock to another edge, resizing it or turning its hiding on or off fits every layout to the space left at once. Before, the tiles kept the area the Dock left them until the next workspace switch, so with the Dock moved to a side the scrolling strip ran under it, and after a resize the gap above or beside the Dock was wrong.
+- A `layout` command keeps a `fixed` workspace's template when it leaves its shape alone, such as one that changes nothing or turns the overflow accordion vertical, so later windows still fill the grid.
 
 ## 0.18
 

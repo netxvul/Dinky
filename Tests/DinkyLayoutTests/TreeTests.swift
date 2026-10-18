@@ -176,6 +176,28 @@ struct FixedLayoutTests {
         #expect(ws.layout().frames[2] == rect(0, 0, 600, 300))
     }
 
+    @Test func `A layout command that changes nothing keeps the template and its empty cells`() {
+        var ws = workspace(3, bounds: rect(0, 0, 1200, 900), algorithm: .fixed(rows: 2, columns: 2, expand: .columns))
+        ws.focus(1)
+        let before = ws.layout().frames
+        ws.setLayout(.tiles, .vertical) // the column 1 sits in already is vertical tiles
+        #expect(ws.isFixedTree)
+        #expect(ws.layout().frames == before)
+        ws.insert(4)
+        #expect(ws.layout().frames[4] == rect(600, 450, 600, 450), "the reserved cell is still there")
+    }
+
+    @Test func `Reorienting the overflow accordion keeps the template`() {
+        var ws = workspace(4, bounds: rect(0, 0, 1200, 900), algorithm: .fixed(rows: 1, columns: 2, expand: .accordion))
+        ws.focus(3)
+        ws.setLayout(.accordion, .vertical)
+        #expect(shape(ws.root) == "h[v[1] v[av[2 3 4]]]")
+        #expect(ws.isFixedTree)
+        ws.insert(5)
+        #expect(ws.container(of: 5)?.mode == .accordion)
+        #expect(ws.layout().frames[1] == rect(0, 0, 600, 900))
+    }
+
     @Test func `Moving out of overflow reclaims empty row`() {
         var ws = workspace(3, bounds: rect(0, 0, 1200, 900), algorithm: .fixed(rows: 1, columns: 2, expand: .rows))
         ws.remove(2)
