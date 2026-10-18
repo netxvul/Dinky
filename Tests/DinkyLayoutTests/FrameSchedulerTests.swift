@@ -20,7 +20,7 @@ private final class FakeWindows: @unchecked Sendable {
 
     func writes(to id: WindowID) -> [CGRect] { lock.withLock { writes.filter { $0.0 == id }.map(\.1) } }
 
-    func scheduler() -> FrameScheduler {
+    func scheduler(learns: @escaping (CGRect) -> Bool = { _ in true }) -> FrameScheduler {
         FrameScheduler(
             settle: 0,
             prepare: { pid in self.lock.withLock { self.prepared.append(pid) } },
@@ -33,7 +33,7 @@ private final class FakeWindows: @unchecked Sendable {
                     frame.size.width = max(frame.width, self.minWidths[job.id] ?? 0)
                     self.frames[job.id] = frame
                 }
-            })
+            }, learns: learns)
     }
 }
 
@@ -198,6 +198,16 @@ struct FrameSchedulerTests {
         #expect(scheduler.minimumSizes == [:], "one refusal could be an app still catching up")
         _ = submitAndWait(scheduler, [job(1, 10, 0)])
         #expect(scheduler.minimumSizes == [10: CGSize(width: 574, height: 0)])
+    }
+
+    @Test func `A window asked partly off the screen teaches no minimum`() {
+        let fake = FakeWindows(minWidths: [10: 574])
+        let scheduler = fake.scheduler(learns: { $0.minX >= 0 })
+        let parked = FrameJob(pid: 1, id: 10, frame: CGRect(x: -400, y: 0, width: 100, height: 100))
+        _ = submitAndWait(scheduler, [parked])
+        _ = submitAndWait(scheduler, [parked])
+        #expect(scheduler.minimumSizes == [:])
+        #expect(scheduler.unconfirmedMinimums.isEmpty)
     }
 
     @Test func `An app that catches up shows no minimum`() {

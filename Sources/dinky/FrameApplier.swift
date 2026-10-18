@@ -35,8 +35,19 @@ final class FrameApplier {
             },
             read: { [unowned self] job in element(pid: job.pid, id: job.id).flatMap(frame) },
             write: { [unowned self] job in element(pid: job.pid, id: job.id).map { write(job.frame, to: $0) } },
-            move: { [unowned self] job in element(pid: job.pid, id: job.id).map { move(job.frame.origin, to: $0) } }
+            move: { [unowned self] job in element(pid: job.pid, id: job.id).map { move(job.frame.origin, to: $0) } },
+            learns: { Self.isOnScreen($0) }
         )
+    }
+
+    /// Whether a frame lies wholly on one display, top-left origin as Accessibility has it. A parked column partly off
+    /// the screen comes back sized as AppKit keeps it on screen, which says nothing of how small its app lets it be.
+    static func isOnScreen(_ frame: CGRect) -> Bool {
+        var count: UInt32 = 0
+        guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else { return true }
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetActiveDisplayList(count, &ids, &count) == .success else { return true }
+        return ids.prefix(Int(count)).contains { CGDisplayBounds($0).insetBy(dx: -1, dy: -1).contains(frame) }
     }
 
     /// Sizes windows refused to shrink below, from readback.

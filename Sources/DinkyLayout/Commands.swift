@@ -151,7 +151,11 @@ extension Workspace {
             let smallestOther = parent.ratios.enumerated().filter { $0.offset != index }.map(\.element).min()!
             let lower = max(Self.minimumRatio, min(Double(smallest / extent), old))
             let upper = 1 - Self.minimumRatio * (1 - old) / smallestOther
-            let new = min(max(old + Double(delta / extent), lower), upper)
+            // From the share it shows: a neighbour's minimum size can hold it narrower than its ratio, which a step from
+            // the ratio would then not move at all.
+            let shown = parent.children[index].windows.compactMap { layout.frames[$0] }.reduce(CGRect.null) { $0.union($1) }
+            let showing = shown.isNull ? old : min(old, Double((along == .horizontal ? shown.width : shown.height) / extent))
+            let new = min(max(showing + Double(delta / extent), lower), upper)
             guard abs(new - old) > 1e-9 else { return false }
             let (oldRoot, oldFrame) = (root, tiledLayout().frames[focused])
             let scale = (1 - new) / (1 - old)

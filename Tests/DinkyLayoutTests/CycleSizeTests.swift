@@ -17,6 +17,31 @@ struct CycleSizeTests {
         #expect(SizeCycle.next(after: 1, in: sizes) == 0.5)
     }
 
+    @Test func `The sizes to try go on from the next one, without the current`() {
+        #expect(SizeCycle.upcoming(after: 0.6, in: sizes) == [0.5, 0.3])
+        #expect(SizeCycle.upcoming(after: 0.4, in: sizes) == sizes)
+    }
+
+    @Test func `A width a minimum size rules out is passed over for the next`() {
+        // Window 2 can be no narrower than half the 1000, so window 1 cannot take 60%: it goes on to 30%.
+        var ws = workspace(2)
+        ws.focus(1)
+        ws.minimumSizes = [2: CGSize(width: 500, height: 0)]
+        #expect(ws.cycleWidth(through: [0.6, 0.3]) == true)
+        #expect(ws.layout().frames[1]!.width == 300)
+    }
+
+    @Test func `A tile held narrower than its share by a neighbour's minimum still steps on`() {
+        var ws = workspace(2)
+        ws.focus(1)
+        ws.minimumSizes = [2: CGSize(width: 300, height: 0)]
+        // 100% asks for more than window 2 leaves: window 1 shows 700 while its share says nearly all.
+        #expect(ws.cycleWidth(through: [1.0, 0.3]) == true)
+        #expect(ws.layout().frames[1]!.width == 700)
+        #expect(ws.cycleWidth(through: [1.0, 0.3]) == true)
+        #expect(ws.layout().frames[1]!.width == 300)
+    }
+
     @Test func `A floating frame is centred at the share`() {
         let area = rect(10, 30, 1000, 600)
         #expect(FloatingFrame.centered(0.5, in: area) == rect(260, 180, 500, 300))

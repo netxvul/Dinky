@@ -8,8 +8,14 @@ public enum SizeCycle {
 
     /// The share after the one `current` is at, wrapping; the first when it is at none of them.
     public static func next(after current: Double, in shares: [Double]) -> Double {
-        guard let index = shares.firstIndex(where: { abs($0 - current) <= tolerance }) else { return shares[0] }
-        return shares[(index + 1) % shares.count]
+        upcoming(after: current, in: shares)[0]
+    }
+
+    /// The shares to try from `current`, in turn: the next one, then the ones after it, wrapping, but not the one it is
+    /// at. All of them when it is at none.
+    public static func upcoming(after current: Double, in shares: [Double]) -> [Double] {
+        guard let index = shares.firstIndex(where: { abs($0 - current) <= tolerance }) else { return shares }
+        return (1..<max(shares.count, 2)).map { shares[(index + $0) % shares.count] }
     }
 }
 
@@ -25,7 +31,8 @@ extension FloatingFrame {
 extension Workspace {
     /// Give the focused window the width after the one it has now among `shares` of the area inside the outer gaps.
     /// A scrolling column takes it as its width; a tile along its nearest horizontal tiles container, its siblings
-    /// giving or taking the difference as `resize` has them. False when nothing visibly changed.
+    /// giving or taking the difference as `resize` has them. A width that changes nothing visibly, as one a minimum
+    /// size rules out, is passed over for the one after it. False when none changes anything.
     @discardableResult
     public mutating func cycleWidth(through shares: [Double]) -> Bool {
         guard !shares.isEmpty, let focused else { return false }
@@ -34,17 +41,21 @@ extension Workspace {
             guard let column = root.path(of: focused)?.first else { return false }
             let old = width(ofColumn: column)
             let (before, offset) = (tiledLayout(), scrollOffset)
-            setWidth(ofColumn: column, SizeCycle.next(after: old, in: shares))
-            reveal(focused)
-            // A lone column fills the screen whatever its width, so the step is undone, as `resizeColumn` does.
-            guard tiledLayout() == before else { return true }
-            setWidth(ofColumn: column, old)
-            scrollOffset = offset
+            for share in SizeCycle.upcoming(after: old, in: shares) {
+                setWidth(ofColumn: column, share)
+                reveal(focused)
+                // A lone column fills the screen whatever its width, so the step is undone, as `resizeColumn` does.
+                if tiledLayout() != before { return true }
+                setWidth(ofColumn: column, old)
+                scrollOffset = offset
+            }
             return false
         }
         let area = gaps.inset(bounds).width
         guard area > 0, let frame = tiledLayout().frames[focused] else { return false }
-        let target = CGFloat(SizeCycle.next(after: Double(frame.width / area), in: shares)) * area
-        return resize(by: target - frame.width, along: .horizontal)
+        for share in SizeCycle.upcoming(after: Double(frame.width / area), in: shares) {
+            if resize(by: CGFloat(share) * area - frame.width, along: .horizontal) { return true }
+        }
+        return false
     }
 }

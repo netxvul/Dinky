@@ -48,6 +48,7 @@ public final class FrameScheduler: @unchecked Sendable {
     private let read: (FrameJob) -> CGRect?
     private let write: (FrameJob) -> Void
     private let move: (FrameJob) -> Void
+    private let learns: (CGRect) -> Bool
 
     /// Seconds an app may take to move its windows for one animation step before it counts as slow.
     public static let slowStep: TimeInterval = 0.05
@@ -63,15 +64,17 @@ public final class FrameScheduler: @unchecked Sendable {
     private var generation = 0
 
     /// `prepare` runs once per process before its first write; `read`, `write` and `move` (position only)
-    /// run on that process's queue.
+    /// run on that process's queue. Only a window asked for a frame `learns` accepts teaches a minimum size (see
+    /// `recordMinimum`).
     public init(settle: TimeInterval = 0.1, prepare: @escaping (Int32) -> Void = { _ in },
                 read: @escaping (FrameJob) -> CGRect?, write: @escaping (FrameJob) -> Void,
-                move: ((FrameJob) -> Void)? = nil) {
+                move: ((FrameJob) -> Void)? = nil, learns: @escaping (CGRect) -> Bool = { _ in true }) {
         self.settle = settle
         self.prepare = prepare
         self.read = read
         self.write = write
         self.move = move ?? write
+        self.learns = learns
     }
 
     /// Sizes windows refused to go below, seen the same on two passes. Only dimensions that were refused are set.
@@ -298,12 +301,13 @@ public final class FrameScheduler: @unchecked Sendable {
     /// A window that came back larger than asked, where it was put, may have a minimum size in that dimension. It
     /// counts once a later pass sees the same refusal: an app still resizing to an earlier size (Ghostty reflowing,
     /// an Electron app, or a size an animation step asked for) has caught up by then. A window somewhere else has
-    /// left (native full screen, another Space) and says nothing about how small it can be.
+    /// left (native full screen, another Space) and says nothing about how small it can be; nor does one asked for a
+    /// frame partly off the screen, which AppKit sizes as it keeps a window on screen and clear of an edge.
     private func recordMinimum(_ result: FrameResult, stepSizes: Set<CGSize>) {
         let id = result.job.id
         guard let got = result.got else { return }
         guard abs(got.minX - result.job.frame.minX) <= 2, abs(got.minY - result.job.frame.minY) <= 2,
-              !stepSizes.contains(got.size) else { return lock.withLock { candidates[id] = nil } }
+              !stepSizes.contains(got.size), learns(result.job.frame) else { return lock.withLock { candidates[id] = nil } }
         let wanted = result.job.frame.size
         let refused = CGSize(width: got.width > wanted.width + 2 ? got.width : 0,
                              height: got.height > wanted.height + 2 ? got.height : 0)
