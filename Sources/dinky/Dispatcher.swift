@@ -57,12 +57,12 @@ enum Dispatcher {
                 return coordinator.floating(id) { frame, area in FloatingFrame.moved(frame, direction, by: step, within: area) }
             }) { return reply }
             if floatingOnly { return .ok("\(name): the focused window does not float") }
-            return tree(name) { $0.move(direction) }
+            return tree(name, alreadyThere: true) { $0.move(direction) }
         case .joinWith(let direction):
             if let reply = floating("join-with \(direction)", window: window, { _, _ in
                 "the focused window floats; tile it first"
             }) { return reply }
-            return tree("join-with \(direction)") { $0.join(direction) }
+            return tree("join-with \(direction)", alreadyThere: true) { $0.join(direction) }
         case .resize(let dimension, let delta, let floatingOnly):
             let axis: Orientation? = switch dimension {
             case .smart: nil
@@ -77,7 +77,7 @@ enum Dispatcher {
                 }
             }) { return reply }
             if floatingOnly { return .ok("\(name): the focused window does not float") }
-            return tree(name) { $0.resize(by: CGFloat(delta), along: axis) }
+            return tree(name, alreadyThere: true) { $0.resize(by: CGFloat(delta), along: axis) }
         case .fullscreen:
             if let reply = floating("fullscreen", window: window, { $0.toggleFloatingFullscreen($1) }) { return reply }
             return tree("fullscreen") { $0.toggleFullscreen(); return true }
@@ -269,7 +269,10 @@ enum Dispatcher {
 
     /// Runs a change on the focused window's tree; `change` returns false when there was nothing to do.
     /// `wholeSpace` commands act on the tree of the focused window's Space even when that window floats.
-    private static func tree(_ name: String, wholeSpace: Bool = false, _ change: (inout Workspace) -> Bool) -> Reply {
+    /// `alreadyThere` commands succeed with nothing to do, like `workspace N` on the workspace showing: `move left`
+    /// on a window at the left edge is already where it was asked to go, so a launcher shows no error.
+    private static func tree(_ name: String, wholeSpace: Bool = false, alreadyThere: Bool = false,
+                             _ change: (inout Workspace) -> Bool) -> Reply {
         guard let coordinator = AppState.shared.coordinator else { return .error("tiling is not running") }
         let id = coordinator.focusedWindow
         let result = wholeSpace && coordinator.isFloating(id) == true
@@ -277,7 +280,7 @@ enum Dispatcher {
             : coordinator.command(change)
         switch result {
         case nil: return .error("\(name): the focused window is not tiled")
-        case false?: return .error("\(name): nothing to do")
+        case false?: return alreadyThere ? .ok("\(name): nothing to do") : .error("\(name): nothing to do")
         case true?: return .ok(name)
         }
     }

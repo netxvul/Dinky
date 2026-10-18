@@ -75,6 +75,7 @@
 - Moving the Dock to another edge, resizing it or turning its hiding on or off fits every layout to the space left at once. Before, the tiles kept the area the Dock left them until the next workspace switch, so with the Dock moved to a side the scrolling strip ran under it, and after a resize the gap above or beside the Dock was wrong.
 - A `layout` command keeps a `fixed` workspace's template when it leaves its shape alone, such as one that changes nothing or turns the overflow accordion vertical, so later windows still fill the grid.
 - dinky keeps tiling a window after its app closes and reopens it, as Slack does when you close its window with Cmd-W and open it again from the Dock.
+- `move`, `join-with` and `resize` succeed when there is nothing to do, such as `move left` on a window already at the left edge: the CLI prints `move left: nothing to do` and exits 0, so launchers like LeaderKey show no error.
 
 ## 0.18
 

@@ -158,7 +158,10 @@ Heights of tiles and columns stay. A window stays floating or tiled.
 ## Command line
 
 The app binary is the CLI. `dinky <command>` sends a command to the running app
-and exits 1 on errors or when it isn't running. CLI-only commands:
+and exits 1 on errors or when it isn't running. `move`, `join-with` and `resize`
+with nothing to do succeed: `move left` on a window already at the left edge
+prints `move left: nothing to do` and exits 0, as `workspace 1` does on
+workspace 1. CLI-only commands:
 
 | Command | |
 |---|---|
