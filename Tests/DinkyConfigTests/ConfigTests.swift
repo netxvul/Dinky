@@ -171,9 +171,15 @@ struct ConfigTests {
         #expect(try Config.parse("[scrolling]\ncolumn-width = 0.5\n").scrolling.columnWidth == 0.5)
         #expect(try Config.parse("default-layout = 'scrolling'\n").defaultLayout == .scrolling)
         assertError("[scrolling]\ncolumn-width = 1.5\n", path: "scrolling.column-width", line: 2, contains: "0.1 to 1")
-        #expect(Config().scrolling.glide == .windows)
-        #expect(try Config.parse("[scrolling]\nglide = 'snapshots'\n").scrolling.glide == .snapshots)
-        assertError("[scrolling]\nglide = 'fast'\n", path: "scrolling.glide", line: 2, contains: "'windows', 'snapshots'")
+        // `glide` is gone: an old config that sets it, to anything, still loads.
+        #expect(!Config().scrolling.retiredGlide)
+        #expect(try Config.parse("[scrolling]\nglide = 'snapshots'\n").scrolling.retiredGlide)
+        #expect(try Config.parse("[scrolling]\nglide = 'fast'\n").scrolling.retiredGlide)
+    }
+
+    @Test func `Scripting addition`() throws {
+        #expect(Config().scriptingAddition)
+        #expect(try !Config.parse("scripting-addition = false\n").scriptingAddition)
     }
 
     @Test func `Window switcher`() throws {

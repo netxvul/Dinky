@@ -1,8 +1,8 @@
 # 启用 Dock 脚本扩展（scripting-addition）滚动
 
-这是一份把 `[scrolling] glide = 'scripting-addition'` 从零开到能用的完整步骤文档。
+这是一份把 scrolling 布局的 Dock 脚本扩展滚动从零开到能用的完整步骤文档。
 
-> 一句话：它通过往 Dock 注入一段载荷，借 Dock 的特权连接**直接移动真实窗口**来做滚动动画，比截图方案更顺，而且**列能平滑滑出屏幕左右边缘**。代价是必须**关闭 SIP**，并且偏实验性。默认关闭。
+> 一句话：它通过往 Dock 注入一段载荷，借 Dock 的特权连接**直接移动真实窗口**来做滚动动画，比逐帧移动窗口更顺，而且**列能平滑滑出屏幕左右边缘**。代价是必须**关闭 SIP**，并且偏实验性。没注入时不起作用。
 
 ---
 
@@ -36,7 +36,7 @@ nvram boot-args
 
 ## 三、关闭 SIP（如果上一步不满足才需要做）
 
-> 已经满足就跳过。SIP 开着时无法注入，dinky 会**干净回退**到截图/逐帧方案，不影响正常使用。
+> 已经满足就跳过。SIP 开着时无法注入，dinky 会**干净回退**到逐帧移动窗口，不影响正常使用。
 
 Apple Silicon：
 
@@ -89,22 +89,16 @@ printf '%s ALL=(root) NOPASSWD: /Library/ScriptingAdditions/dinky.osax/Contents/
 
 ## 六、改配置
 
-编辑 `~/.config/dinky/dinky.toml`，保存后 dinky 会自动热重载。两处都要对：
+编辑 `~/.config/dinky/dinky.toml`，保存后 dinky 会自动热重载。只需顶层（第一个 `[表]` 之前）：
 
-1. 顶层（第一个 `[表]` 之前）：
-   ```toml
-   scripting-addition = true
-   ```
-   （这是默认值，一般本来就是 true。设成 `false` 则无论如何都不碰 SA。）
+```toml
+scripting-addition = true
+```
 
-2. `[scrolling]` 段里：
-   ```toml
-   [scrolling]
-   glide = 'scripting-addition'
-   ```
+这是默认值，一般本来就是 true，什么都不用改。设成 `false` 则无论如何都不碰 SA。
 
-代码里的启用条件是**两者同时为真**：
-`ScriptingAddition.enabled = (顶层 scripting-addition) && (glide == 'scripting-addition')`。
+滚动走哪条路只看这一项：为 true 且 Dock 里的扩展在应答时走扩展滑动；否则（false、未注入、SIP 开着）一律逐帧移动真实窗口。
+旧版的 `[scrolling] glide` 已经取消，配置里还写着也不会报错，`dinky doctor` 会提示可以删掉。
 
 ---
 
@@ -124,8 +118,7 @@ printf '%s ALL=(root) NOPASSWD: /Library/ScriptingAdditions/dinky.osax/Contents/
 
 ## 八、关闭 / 卸载
 
-- **临时停用**（最常用）：把 `[scrolling] glide` 改回 `'snapshots'` 或 `'windows'`。SA 立即停用，dinky 不再探测/注入。
-- **彻底禁用开关**：顶层 `scripting-addition = false`。
+- **停用**：顶层 `scripting-addition = false`。SA 立即停用，dinky 不再探测/注入，滚动改为逐帧移动窗口。
 - **从系统里清除安装物**：
   ```bash
   sudo rm -rf /etc/sudoers.d/dinky /Library/ScriptingAdditions/dinky.osax
@@ -142,11 +135,11 @@ dinky 自己的 WindowServer 连接无权移动别的 App 的窗口；Dock 的�
 
 ## 十、故障排查
 
-- **跑了 build-sa.sh 但滚动没变化**：确认配置两处都对（第六步），并确认 socket 真的在（第七步）。只有 socket 文件没进程在听也不行——重跑第四步。
+- **跑了 build-sa.sh 但滚动没变化**：确认顶层 `scripting-addition` 没设成 false（第六步），并确认 socket 真的在（第七步）。只有 socket 文件没进程在听也不行——重跑第四步。
 - **用着用着又失效了**：多半是 Dock 重启过，载荷随之没了。装了第五步的 sudoers 就会自动补回来；没装就手动重跑第四步。
 - **Dock 反复重启 / 桌面闪**：历史上遇到过载荷让 Dock 崩的问题（SIGPIPE，已修）。如果再现，先 `sudo rm /etc/sudoers.d/dinky` 停掉自动重注入让桌面稳定，再排查。
-- **开了 SIP 之后**：注入会失败，dinky 自动回退到截图/逐帧方案，不会报错也不会卡住。
+- **开了 SIP 之后**：注入会失败，dinky 自动回退到逐帧移动窗口，不会报错也不会卡住。
 
 ---
 
-**建议**：如果你只是想让滚动更顺、又不想折腾 SIP 和注入，直接把 `glide` 设成 `'snapshots'`（只需屏幕录制权限，不用关 SIP）就已经很顺了。SA 这套主要是为了「列滑出边缘」那个效果，按需启用。
+**建议**：不想折腾 SIP 和注入就什么都不用做，滚动会逐帧移动真实窗口。SA 这套主要是为了更顺和「列滑出边缘」的效果，按需启用。

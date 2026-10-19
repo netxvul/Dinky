@@ -121,6 +121,10 @@ final class Table {
         return commands
     }
 
+    /// Marks `key`, which dinky no longer reads, as read whatever its value, so an old config still loads; returns
+    /// whether it is present.
+    func retired(_ key: String) -> Bool { use(key) }
+
     /// Whether the value at `key` is a table.
     func isTable(_ key: String) -> Bool { (try? table.table(forKey: key)) != nil }
 

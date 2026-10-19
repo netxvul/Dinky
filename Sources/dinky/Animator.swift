@@ -15,8 +15,8 @@ import DinkyLayout
 // jumping to its tile at the end; frames coalesce per window in the scheduler, so a throttled app never has a backlog
 // to leap through.
 //
-// A tree can glide something other than its windows instead, such as snapshots of them (see GlideStage): its frames go
-// to its `sink` and nowhere else, at the display's full rate, since no app has to keep up. Main thread only.
+// A tree can glide something other than its windows instead, such as their Dock transforms (see ScriptingAddition): its
+// frames go to its `sink` and nowhere else, at the display's full rate, since no app has to keep up. Main thread only.
 final class Animator: NSObject {
     private struct Entry {
         var animation: FrameAnimation

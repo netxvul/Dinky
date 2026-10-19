@@ -18,6 +18,12 @@ struct ConfigCheckTests {
         #expect(findings[0].message.contains("[mode.main]"))
     }
 
+    @Test func `Retired glide is a warning`() throws {
+        let findings = try check("[mode.main]\n[scrolling]\nglide = 'scripting-addition'")
+        #expect(findings.map(\.level) == [.warning])
+        #expect(findings[0].message.hasPrefix("scrolling.glide no longer does anything"))
+    }
+
     @Test func `Unknown command in binding`() throws {
         let findings = try check("[mode.main]\nalt-h = 'fly left'")
         #expect(findings.count == 1)

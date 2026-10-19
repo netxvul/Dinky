@@ -15,6 +15,8 @@ extension Config {
     follow-app-activation = true    # Cmd-Tab and Dock clicks switch Spaces the fast way
     float-windows-without-fullscreen = true   # progress windows, About, Calculator and the like float
     menu-bar-icon = 'blocks'        # blocks (one per display, focused filled) | text (the focused display's number) | none (hidden)
+    scripting-addition = true       # scroll strips through the Dock scripting addition where it is injected (SIP off);
+                                    # without it, or false, their windows move frame by frame
 
     # Example: only tile workspace 2 in a fixed 2x3 template.
     # Empty cells stay empty; a seventh window adds a column by default.
@@ -32,8 +34,6 @@ extension Config {
 
     [scrolling]
     column-width = 0.49             # a new column's share of the display; a lone column fills it
-    glide = 'windows'               # windows (moved frame by frame) | snapshots (smooth, needs Screen Recording)
-                                    # | scripting-addition (smooth via Dock, needs SIP off + the addition injected)
 
     [floating]
     move-step = 50                  # points `move` shifts a floating window by, unless the binding gives a number

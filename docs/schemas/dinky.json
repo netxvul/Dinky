@@ -70,6 +70,11 @@
       "default": "blocks",
       "description": "blocks shows a block per display with the workspace it shows, the focused display's filled. text shows the focused display's workspace number. none hides it."
     },
+    "scripting-addition": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether dinky may use its Dock scripting addition (SIP off). Where it is injected, a scrolling strip scrolls through it; without it, or false, the strip moves its windows frame by frame. false never checks for or injects it, even with SIP off."
+    },
     "scrolling": {
       "type": "object",
       "additionalProperties": false,
@@ -81,12 +86,6 @@
           "maximum": 1,
           "default": 0.49,
           "description": "A new column's width as a share of the display. A lone column fills the display."
-        },
-        "glide": {
-          "type": "string",
-          "enum": ["windows", "snapshots"],
-          "default": "windows",
-          "description": "How the strip scrolls with animations on: windows moved frame by frame, or snapshots of them gliding while the windows go to their places underneath at once. snapshots needs Screen Recording."
         }
       }
     },

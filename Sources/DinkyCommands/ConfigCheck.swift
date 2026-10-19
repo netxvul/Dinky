@@ -24,6 +24,11 @@ public func checkConfig(_ config: Config) -> [ConfigFinding] {
             }
         }
     }
+    if config.scrolling.retiredGlide {
+        findings.append(.init(level: .warning, message: "scrolling.glide no longer does anything and can be removed: "
+            + "strips scroll through the Dock scripting addition when scripting-addition = true and it is injected, "
+            + "and move their windows frame by frame otherwise"))
+    }
     if config.modes["main"] == nil {
         findings.append(.init(level: .warning, message: "no [mode.main]: no key bindings are active"))
     }

@@ -73,10 +73,6 @@ final class Coordinator {
     /// The width each window was last written at and the width it came out at, which an app that snaps its size
     /// leaves a little narrower. See `observedWidths(in:)`.
     private var landedWidths: [WindowID: (asked: CGFloat, got: CGFloat)] = [:]
-    /// By scrolling tree, a glide of snapshots under way or being made ready, and the layout it is gliding to. See
-    /// GlideStage.
-    private var glides: [UInt64: (token: Int, stage: GlideStage?, layout: Layout)] = [:]
-    private var glideTokens = 0
     /// By scrolling tree, a glide driven by the Dock scripting addition: the windows it holds transformed and the
     /// layout it is gliding to, so a superseding pass clears those transforms. See ScriptingAddition.
     private var saGlides: [UInt64: (token: Int, ids: [WindowID], layout: Layout)] = [:]
@@ -135,7 +131,7 @@ final class Coordinator {
 
     func update(config: Config) {
         self.config = config
-        ScriptingAddition.enabled = config.scrolling.glide == .scriptingAddition
+        ScriptingAddition.enabled = config.scriptingAddition
         animator.configure(durationMs: config.animations.durationMs,
                            easing: Easing(rawValue: config.animations.curve.rawValue))
         if config.borders.enabled {
@@ -475,14 +471,6 @@ final class Coordinator {
             workspace = workspace.showing(id, fullscreen: tiling.filling)
         }
         let layout = workspace.layout()
-        // A glide of snapshots already heading for this layout carries on; one heading elsewhere gives way to this pass,
-        // its windows on the places it wrote them to.
-        if let glide = glides[key] {
-            if glide.layout == layout { return }
-            glides[key] = nil
-            glide.stage?.remove(fading: false)
-            animator.stop(key)
-        }
         // A scripting-addition glide heading for this layout carries on; one heading elsewhere clears its transforms,
         // so the windows show at the real frames this pass is about to write.
         if let sa = saGlides[key] {
@@ -713,9 +701,8 @@ final class Coordinator {
             }
             for id in leftAlone { targets[id] = nil }
             hold(&targets, from: starts)
-            // Nothing of the strip to glide, as on arriving at a Space: written at once, with no stage put up over windows
-            // that are already where they go, which would only flash their snapshots' shadows over the real ones. Not
-            // while a glide is under way, which this pass takes over and finishes before its write.
+            // Nothing of the strip to glide, as on arriving at a Space: written at once. Not while a glide is under way,
+            // which this pass takes over and finishes before its write.
             let anyMoves = targets.contains { id, target in
                 guard let start = starts[id] else { return false }
                 return !start.isClose(to: target, within: 1) && !animator.rests(id, at: start, askedFor: target)
@@ -779,8 +766,8 @@ final class Coordinator {
             // frames have landed. Every strip window is placed every frame, the moving ones over the resting ones.
             // The transforms only translate, so a window whose size also changes this pass (restoring from a filled or
             // enlarged state, a column width change) must resize through Accessibility, where its app re-renders, rather
-            // than be stretched by a transform; such a pass is left to the snapshot or window glide below. So is one with a
-            // window staged at its size just now, whose snapshot, taken before, would come out stretched, or held.
+            // than be stretched by a transform; such a pass is left to the window glide below. So is one with a window
+            // staged at its size just now, or held.
             let saResizing = !special.isEmpty || leftAlone.contains(where: { strip[$0] != nil }) || strip.contains { id, frame in
                 guard let size = frameNow(id)?.size else { return false }
                 return abs(size.width - frame.width) > 1 || abs(size.height - frame.height) > 1
@@ -798,10 +785,6 @@ final class Coordinator {
                 return animator.animate(key, from: starts, to: targets, pids: pids, stretch: stretch,
                                         sink: { ScriptingAddition.transform(strip.merging($0) { $1 }) }) { saGlide.glideEnded() }
             }
-            // Snapshots are fixed bitmaps, so a window resizing this pass (restoring from a filled or enlarged state, a
-            // width change) would be stretched by them just as a transform would; such a pass glides the windows directly.
-            let glidesSnapshots = (config.scrolling.glide == .snapshots || config.scrolling.glide == .scriptingAddition)
-                && fullscreen.isEmpty && !saResizing && Thumbnails.shared.permitted
             // A window moving away from the columns beside it, as one coming back from fullscreen does, takes a little
             // longer than they do, so it follows them rather than being held at their edges: an app coming back into view
             // can be slow over its first moves, and the window held at its edge would lurch along in its steps. A window
@@ -817,54 +800,8 @@ final class Coordinator {
             for (lead, beside) in systemLeads where fullscreenNow.contains(lead) {
                 for id in (beside.left + beside.right).joined() { slower[id] = SystemTiling.followers }
             }
-            guard glidesSnapshots, let display = displays.display(containingSpace: key) else {
-                return animator.animate(key, from: starts, to: targets, pids: pids, place: place, resting: resting,
-                                        stretch: stretch, slower: slower, anchors: anchors(to: targets), then: write)
-            }
-            // Snapshots of the strip glide over a snapshot of what is behind it, while the windows go to their places
-            // underneath at once. Without the snapshots in time, the windows glide. The snapshots are parked as the
-            // windows are at an edge with nothing beyond it, so the peeks there stay through the glide; past a wall,
-            // where a window hides behind the columns, a snapshot glides on in strip coordinates, where the stage does
-            // not reach, rather than over the column in view.
-            animator.stop(key)
-            glideTokens += 1
-            let token = glideTokens
-            glides[key] = (token, nil, layout)
-            let corners = Dictionary(uniqueKeysWithValues: strip.keys.compactMap { id in
-                model.windows[id].map { (id, CGFloat($0.cornerRadius)) }
-            })
-            GlideStage.capture(Array(strip.keys), on: display) { [weak self] stage in
-                guard let self, glides[key]?.token == token else { stage?.remove(fading: false); return }
-                guard let stage else {
-                    glides[key] = nil
-                    animator.animate(key, from: starts, to: targets, pids: pids, place: place, resting: resting,
-                                     stretch: stretch, then: write)
-                    return
-                }
-                glides[key]!.stage = stage
-                stage.onRemoved = { [weak self] in
-                    if self?.glides[key]?.token == token { self?.glides[key] = nil }
-                }
-                var current = starts.filter { strip[$0.key] != nil }
-                let (bounds, walls) = (workspace.bounds, workspace.walls)
-                let parked = { (frames: [WindowID: CGRect]) -> [WindowID: CGRect] in
-                    let placed = place(frames)
-                    return Dictionary(uniqueKeysWithValues: frames.map { id, frame in
-                        let pastWall = frame.minX < bounds.minX - 1 && walls.contains(.left)
-                            || frame.maxX > bounds.maxX + 1 && walls.contains(.right)
-                        return (id, pastWall ? frame : placed[id] ?? frame)
-                    })
-                }
-                stage.show(at: parked(current), order: layout.order, corners: corners)
-                // A frame later, so the stage is up before the windows move under it.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 60) { writeThen { stage.windowsLanded() } }
-                animator.animate(key, from: starts, to: targets, pids: pids, stretch: stretch, sink: { frames in
-                    current.merge(frames) { $1 }
-                    stage.move(parked(current))
-                }) {
-                    stage.glideEnded()
-                }
-            }
+            return animator.animate(key, from: starts, to: targets, pids: pids, place: place, resting: resting,
+                                    stretch: stretch, slower: slower, anchors: anchors(to: targets), then: write)
         }
 
         let glide = strip.isEmpty ? glideTree : glideStrip

@@ -24,6 +24,9 @@ public struct Config: Equatable {
     public var floatWindowsWithoutFullscreen = true
     /// What the menu bar item shows.
     public var menuBarIcon = MenuBarIcon.blocks
+    /// Whether dinky may use its Dock scripting addition, which needs SIP off. Off, it never probes or injects it,
+    /// even with SIP off and the addition installed, and a scrolling strip moves its windows frame by frame instead.
+    public var scriptingAddition = true
     public var accordion = Accordion()
     public var scrolling = Scrolling()
     public var floating = Floating()
@@ -116,6 +119,7 @@ public struct Config: Equatable {
         followAppActivation = try t.bool("follow-app-activation") ?? followAppActivation
         floatWindowsWithoutFullscreen = try t.bool("float-windows-without-fullscreen") ?? floatWindowsWithoutFullscreen
         menuBarIcon = try t.choice("menu-bar-icon") ?? menuBarIcon
+        scriptingAddition = try t.bool("scripting-addition") ?? scriptingAddition
         accordion = try t.table("accordion").map(Accordion.init) ?? accordion
         scrolling = try t.table("scrolling").map(Scrolling.init) ?? scrolling
         floating = try t.table("floating").map(Floating.init) ?? floating
@@ -230,27 +234,19 @@ public struct Scrolling: Equatable {
     /// A new column's width, as a share of the display's width inside the outer gaps. Omarchy's 0.49 fits two
     /// columns side by side with a sliver of margin; a lone column always fills the display.
     public var columnWidth = 0.49
-    /// How the strip scrolls with animations on.
-    public var glide = ScrollingGlide.windows
+    /// Whether the file still sets `glide`, which no longer does anything: the strip scrolls through the Dock
+    /// scripting addition when top-level `scripting-addition` allows it and the addition answers, and moves its windows
+    /// frame by frame otherwise. `dinky doctor` says the key can go.
+    public var retiredGlide = false
 
     public init() {}
 
     init(_ t: Table) throws {
         columnWidth = try t.double("column-width") ?? columnWidth
         guard (0.1...1).contains(columnWidth) else { throw ConfigError(path: t.path("column-width"), "must be 0.1 to 1") }
-        glide = try t.choice("glide") ?? glide
+        retiredGlide = t.retired("glide")
         try t.done()
     }
-}
-
-/// How a scrolling workspace's strip scrolls: its windows moved frame by frame, as fast as each app moves them, or
-/// snapshots of them gliding over a snapshot of what is behind, the windows put in place underneath at once. Snapshots
-/// need Screen Recording; without it the windows move. `scripting-addition` moves the real windows through Dock's
-/// privileged connection (smooth, and windows can slide off-screen) and needs the Dock scripting addition injected
-/// (SIP disabled; see scripts/build-sa.sh); it falls back to the snapshot/window paths when the addition is absent.
-public enum ScrollingGlide: String, CaseIterable {
-    case windows, snapshots
-    case scriptingAddition = "scripting-addition"
 }
 
 /// The modifier that shows the switcher, its side as `[modifiers]` says; `none` turns the switcher off.

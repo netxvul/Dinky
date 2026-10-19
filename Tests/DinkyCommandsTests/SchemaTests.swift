@@ -115,6 +115,7 @@ struct SchemaTests {
         follow-app-activation = false
         float-windows-without-fullscreen = false
         menu-bar-icon = 'text'
+        scripting-addition = false
 
         [workspace-to-display]
         1 = 'main'
@@ -134,7 +135,6 @@ struct SchemaTests {
 
         [scrolling]
         column-width = 0.5
-        glide = 'snapshots'
 
         [window-switcher]
         modifier = 'alt'

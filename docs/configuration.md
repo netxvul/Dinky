@@ -30,6 +30,7 @@ permalink: /configuration/
 | `follow-app-activation` | `true` | Cmd-Tab and Dock clicks switch Spaces the fast way. Needs the macOS "switch to a Space with open windows" setting off. |
 | `float-windows-without-fullscreen` | `true` | Float windows that can't go full screen, such as Finder's copy progress, About This Mac and Calculator. Terminals and editors that can hide their title bar still tile. A `layout tiling` rule tiles a window anyway. |
 | `menu-bar-icon` | `'blocks'` | `'blocks'` shows a block per display in the menu bar, left to right, with the workspace it shows: filled for the focused display, outlined for the others, corner marks for a full-screen Space. `'text'` shows the focused display's workspace number. `'none'` hides the menu bar item; the `dinky` CLI and key bindings still work. |
+| `scripting-addition` | `true` | Whether dinky may use its Dock scripting addition, which needs SIP off. Where it is injected (see [Scripting addition](scripting-addition.md)), a scrolling strip scrolls through it, its windows sliding past the screen edges; without it the strip moves its windows frame by frame. `false` never touches it, even with SIP off and the addition installed: dinky neither checks for it nor injects it, and the strip moves its windows frame by frame. Takes effect on reload. |
 
 </div>
 
@@ -130,7 +131,6 @@ ctrl-alt-cmd-s = 'layout tiles accordion scrolling'
 | Key | Default | |
 |---|---|---|
 | `column-width` | `0.49` | A new column's width, as a share of the display inside the outer gaps, from `0.1` to `1`. Omarchy's `0.49` fits two columns side by side. |
-| `glide` | `'windows'` | How the strip scrolls with animations on. `'windows'` moves the windows frame by frame, as fast as each app moves them: an app slow to move its windows stutters, and is left to land at the end. `'snapshots'` glides snapshots of the windows over a snapshot of what is behind them, at the display's full rate, while the windows go to their places underneath at once; the windows' contents stand still for the glide. It needs Screen Recording, and falls back to `'windows'` without it. |
 
 </div>
 
@@ -639,6 +639,8 @@ default-tiling = true           # false leaves workspaces untiled unless overrid
 follow-app-activation = true    # Cmd-Tab and Dock clicks switch Spaces the fast way
 float-windows-without-fullscreen = true   # progress windows, About, Calculator and the like float
 menu-bar-icon = 'blocks'        # blocks (one per display, focused filled) | text (the focused display's number) | none (hidden)
+scripting-addition = true       # scroll strips through the Dock scripting addition where it is injected (SIP off);
+                                # without it, or false, their windows move frame by frame
 
 # Example: only tile workspace 2 in a fixed 2x3 template.
 # Empty cells stay empty; a seventh window adds a column by default.
@@ -656,7 +658,6 @@ orientation = 'auto'            # auto: run along the container's longer side | 
 
 [scrolling]
 column-width = 0.49             # a new column's share of the display; a lone column fills it
-glide = 'windows'               # windows (moved frame by frame) | snapshots (smooth, needs Screen Recording)
 
 [floating]
 move-step = 50                  # points `move` shifts a floating window by, unless the binding gives a number

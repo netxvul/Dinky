@@ -7,7 +7,7 @@ import QuartzCore
 // which dinky's own connection cannot do. It is available only when the payload has been injected into Dock (see
 // scripts/build-sa.sh); every call is a no-op otherwise, so callers fall back to the Accessibility path. Main thread.
 enum ScriptingAddition {
-    /// Off unless `[scrolling] glide = 'scripting-addition'`. While off, nothing probes the socket or re-injects, so
+    /// Off while top-level `scripting-addition = false`. While off, nothing probes the socket or re-injects, so
     /// the whole path costs nothing and logs nothing — important when SIP is on and injection cannot work anyway.
     /// Set from config by the coordinator.
     static var enabled = false
@@ -92,8 +92,8 @@ enum ScriptingAddition {
     }
 }
 
-// Holds a strip's Dock transforms until both the glide has ended and the real frames have landed, then clears them,
-// mirroring GlideStage's fade-out timing. Main thread.
+// Holds a strip's Dock transforms until both the glide has ended and the real frames have landed, then clears them.
+// Main thread.
 final class SAGlide {
     private static let landingLimit: TimeInterval = 0.4
     private let onFinish: () -> Void
