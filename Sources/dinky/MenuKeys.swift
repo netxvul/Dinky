@@ -41,8 +41,9 @@ struct MenuBindings {
     private var bindings: [(combo: KeyCombo, commands: [String], parsed: Command?)]
     private var shown: Set<KeyCombo> = []
 
-    init(_ mode: Mode?) {
-        bindings = (mode?.bindings ?? [:])
+    /// The mode's bindings in force on a workspace laid out by `layout`.
+    init(_ mode: Mode?, on layout: RuleLayout? = nil) {
+        bindings = (mode?.bindings(on: layout) ?? [:])
             .map { combo, commands in
                 (combo, commands, commands.count == 1 ? try? Command.parse(commands[0]) : nil)
             }

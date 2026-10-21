@@ -57,15 +57,21 @@ extension Coordinator {
     }
 
     /// The layout of a Space's workspace, as the HUD names it: its focused tile's as `layoutName(of:)` gives it,
-    /// `scrolling` for the strip, `floating` where dinky does not tile or floats every window, and the configured
-    /// layout for a workspace with nothing tiled yet.
+    /// `scrolling` for the strip, `free` where dinky does not tile (`layout = 'free'` or `tiling = false`), and the
+    /// configured layout for a workspace with nothing tiled yet.
     func layoutName(ofSpace key: UInt64) -> String {
         let settings = settings(for: key)
-        guard settings.tiling, !settings.float else { return "floating" }
+        guard !isFree(key) else { return "free" }
         guard let workspace = workspaces[key] else { return settings.layout.rawValue }
         if workspace.isScrolling { return "scrolling" }
         if let id = workspace.focused, workspace.contains(id) { return layoutName(of: id) }
         return settings.layout.rawValue
+    }
+
+    /// Whether dinky lays out nothing on the Space: its workspace is `free` or does not tile.
+    func isFree(_ space: UInt64) -> Bool {
+        let settings = settings(for: space)
+        return !settings.tiling || settings.isFree
     }
 
     /// Runs a command on the tree of a window (the focused one by default), focused in that tree, and applies
@@ -80,11 +86,13 @@ extension Coordinator {
     }
 
     /// Floats a tiled window where it stands, or tiles a floating one beside the focused tile of its Space.
-    /// A window held as a possible tab is released, so it cannot take over a tile once floated.
+    /// A window held as a possible tab is released, so it cannot take over a tile once floated. A window that
+    /// already floats is left as it is, still knowing where `fullscreen` and `grid --toggle` took it from.
     /// False for a window dinky has not classified.
     @discardableResult
     func setFloating(_ id: WindowID, _ floating: Bool) -> Bool {
         guard let placement = placements[id], let window = model.windows[id] else { return false }
+        if floating, placement.floating { return true }
         if let space = placement.space { edit(space) { $0.remove(id) } }
         heldTabs[id] = nil
         filledFrom[id] = nil
@@ -139,12 +147,12 @@ extension Coordinator {
         }
     }
 
-    /// Whether the window is on a `float = true` workspace, where nothing it does can tile it.
-    func workspaceFloats(_ id: WindowID) -> Bool {
-        model.windows[id].map { settings(for: $0.spaceID).float } ?? false
+    /// Whether the window is on a `free` workspace, where nothing it does can tile it.
+    func isOnFreeWorkspace(_ id: WindowID) -> Bool {
+        model.windows[id].map { settings(for: $0.spaceID).isFree } ?? false
     }
 
-    /// `grid --toggle` for a window of a `float = true` workspace, which cannot go back to a tile: place it on the
+    /// `grid --toggle` for a window of a `free` workspace, which cannot go back to a tile: place it on the
     /// grid, or put it back where it was when it is still where the grid sent it.
     func toggleGrid(_ id: WindowID, on grid: GridPlacement) -> String? {
         guard let display = displays.display(ofWindow: id) else { return "window \(id) is on no display" }

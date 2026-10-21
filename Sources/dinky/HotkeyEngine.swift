@@ -2,12 +2,22 @@ import CoreGraphics
 import DinkyConfig
 import Foundation
 
-/// One key-down event tap with per-mode bindings. A bound key is swallowed and its command list
-/// handed to `onCommands`; anything else passes through untouched. Mode commands are the caller's
-/// job: it sees `mode service` among the commands and calls `setMode`.
+/// One key-down event tap with per-mode bindings, and per-layout ones over them on a workspace laid out that way.
+/// A bound key is swallowed and its command list handed to `onCommands`; anything else passes through untouched.
+/// Mode commands are the caller's job: it sees `mode service` among the commands and calls `setMode`.
 final class HotkeyEngine {
+    private struct Bindings {
+        var keys: [KeyPress: [String]]
+        var layouts: [RuleLayout: [KeyPress: [String]]]
+        /// The presses any layout's table binds, the only ones that need the layout looked up.
+        var byLayout: Set<KeyPress>
+    }
+
     private let onCommands: ([String]) -> Void
-    private var modes: [String: [KeyPress: [String]]] = [:]
+    private var modes: [String: Bindings] = [:]
+    /// The layout of the focused workspace, as rules name it, `dwindle` as `tiles`; asked only in a mode with
+    /// per-layout bindings.
+    var layout: () -> RuleLayout? = { nil }
     private var sides = ModifierSides()
     private(set) var currentMode = "main"
     var enabled = true
@@ -25,8 +35,12 @@ final class HotkeyEngine {
     /// Replaces all bindings and goes back to `main`.
     func load(modes: [String: Mode], sides: ModifierSides) {
         self.sides = sides
+        func presses(_ bindings: [KeyCombo: [String]]) -> [KeyPress: [String]] {
+            Dictionary(uniqueKeysWithValues: bindings.map { (KeyPress($0.key), $0.value) })
+        }
         self.modes = modes.mapValues { mode in
-            Dictionary(uniqueKeysWithValues: mode.bindings.map { (KeyPress($0.key), $0.value) })
+            let layouts = mode.layouts.mapValues(presses)
+            return Bindings(keys: presses(mode.bindings), layouts: layouts, byLayout: Set(layouts.values.flatMap(\.keys)))
         }
         enter("main")
     }
@@ -65,8 +79,11 @@ final class HotkeyEngine {
 
     /// The commands bound to this event in the current mode, if dinky should take it.
     func commands(for event: CGEvent) -> [String]? {
-        guard enabled, !yields(event), let press = KeyPress(event, sides: sides) else { return nil }
-        return modes[currentMode]?[press]
+        guard enabled, !yields(event), let press = KeyPress(event, sides: sides),
+              let mode = modes[currentMode] else { return nil }
+        // In the tap: the layout is looked up only for a press some layout's table binds.
+        if mode.byLayout.contains(press), let layout = layout(), let commands = mode.layouts[layout]?[press] { return commands }
+        return mode.keys[press]
     }
 
     fileprivate func handle(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {

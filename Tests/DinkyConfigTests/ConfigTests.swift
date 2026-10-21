@@ -19,7 +19,7 @@ struct ConfigTests {
         #expect(config.displays == [])
         #expect(config.borders.enabled)
         #expect(config.borders.width == 4)
-        #expect(config.borders.activeColor == Color(red: 0xE1 / 255, green: 0xE3 / 255, blue: 0xE4 / 255))
+        #expect(config.borders.activeColor == .color(Color(red: 0xE1 / 255, green: 0xE3 / 255, blue: 0xE4 / 255)))
         #expect(config.hooks == Hooks())
         #expect(config.rules.count == 1)
         #expect(config.rules[0].appId == "com.apple.systempreferences")
@@ -56,6 +56,8 @@ struct ConfigTests {
         follow-app-activation = false
         float-windows-without-fullscreen = false
         menu-bar-icon = 'text'
+        hide-menu-bar-icon = 'single-display'
+        scripting-addition = false
         """)
         #expect(!config.startAtLogin)
         #expect(config.workspaces == 3)
@@ -63,10 +65,14 @@ struct ConfigTests {
         #expect(!config.followAppActivation)
         #expect(!config.floatWindowsWithoutFullscreen)
         #expect(config.menuBarIcon == .text)
+        #expect(config.hideMenuBarIcon == .singleDisplay)
+        #expect(!config.scriptingAddition)
+        #expect(Config.default.hideMenuBarIcon == .never && Config.default.scriptingAddition)
+        assertError("hide-menu-bar-icon = 'auto'\n", path: "hide-menu-bar-icon", line: 1, contains: "'never', 'always', 'single-display'")
         #expect(try Config.parse("menu-bar-icon = 'none'\n").menuBarIcon == MenuBarIcon.none)
         assertError("menu-bar-icon = 'icon'\n", path: "menu-bar-icon", line: 1, contains: "'blocks', 'text', 'none'")
         assertError("workspaces = 0\n", path: "workspaces", line: 1, contains: "at least 1")
-        assertError("default-layout = 'stack'\n", path: "default-layout", line: 1, contains: "'tiles', 'dwindle', 'accordion', 'fixed', 'scrolling'")
+        assertError("default-layout = 'stack'\n", path: "default-layout", line: 1, contains: "'tiles', 'dwindle', 'accordion', 'fixed', 'scrolling', 'free'")
     }
 
     @Test func `Workspace layouts`() throws {
@@ -81,12 +87,14 @@ struct ConfigTests {
         [workspace.3]
         layout = 'accordion'
         [workspace.4]
-        float = true
+        layout = 'free'
         """)
         #expect(!config.settings(forWorkspace: 1).tiling)
-        #expect(!config.settings(forWorkspace: 1).float)
-        #expect(config.settings(forWorkspace: 4).float)
-        assertError("[workspace.2]\nfloat = 'yes'\n", path: "workspace.2.float", line: 2, contains: "expected true or false")
+        #expect(!config.settings(forWorkspace: 1).isFree)
+        #expect(config.settings(forWorkspace: 4).isFree)
+        #expect(try Config.parse("default-layout = 'free'\n").settings(forWorkspace: 2).isFree)
+        assertError("[workspace.2]\nfloat = true\n", path: "workspace.2.float", line: 2, contains: "layout = 'free'")
+        assertError("[workspace.2]\nlayout = 'free'\ncolumns = 2\n", path: "workspace.2.columns", line: 3, contains: "only valid")
         let fixed = config.settings(forWorkspace: 2)
         #expect(fixed.tiling)
         #expect(fixed.layout == .fixed)
@@ -177,36 +185,37 @@ struct ConfigTests {
         #expect(try Config.parse("[scrolling]\nglide = 'fast'\n").scrolling.retiredGlide)
     }
 
-    @Test func `Scripting addition`() throws {
-        #expect(Config().scriptingAddition)
-        #expect(try !Config.parse("scripting-addition = false\n").scriptingAddition)
-    }
-
     @Test func `Window switcher`() throws {
         let defaults = Config().windowSwitcher
+        #expect(defaults.enabled)
         #expect(defaults.modifier == .none)
         #expect(defaults.delayMs == 200)
         #expect(defaults.layouts == [.scrolling, .tiles])
         #expect(defaults.cornerRadius == 52)
         #expect(defaults.tilesStyle == .map)
         #expect(defaults.showSingle)
+        #expect(defaults.showTitles)
         #expect(defaults.position == .auto)
         let switcher = try Config.parse("""
             [window-switcher]
+            enabled = false
             modifier = 'alt'
             delay-ms = 0
             layouts = ['tiles', 'fixed']
             corner-radius = 12
             tiles-style = 'row'
             show-single = false
+            show-titles = false
             position = 'bottom'
             """).windowSwitcher
+        #expect(!switcher.enabled)
         #expect(switcher.modifier == .alt)
         #expect(switcher.delayMs == 0)
         #expect(switcher.layouts == [.tiles, .fixed])
         #expect(switcher.cornerRadius == 12)
         #expect(switcher.tilesStyle == .row)
         #expect(!switcher.showSingle)
+        #expect(!switcher.showTitles)
         #expect(switcher.position == .bottom)
         assertError("[window-switcher]\nposition = 'left'\n", path: "window-switcher.position", line: 2, contains: "'auto', 'center', 'top', 'bottom', 'mouse'")
         assertError("[window-switcher]\ntiles-style = 'grid'\n", path: "window-switcher.tiles-style", line: 2, contains: "'map', 'row'")
@@ -224,8 +233,10 @@ struct ConfigTests {
         #expect(defaults.exclude.isEmpty)
         #expect(defaults.cardHeight == 85)
         #expect(defaults.thumbnails == .windows)
-        #expect(defaults.cornerRadius == nil)
-        #expect(defaults.position == nil)
+        #expect(defaults.enabled)
+        #expect(defaults.delayMs == 200)
+        #expect(defaults.cornerRadius == 52)
+        #expect(defaults.position == .auto)
         let switcher = try Config.parse("""
             [workspace-switcher]
             modifier = 'ctrl'
@@ -249,6 +260,12 @@ struct ConfigTests {
         #expect(switcher.position == .center)
         assertError("[window-switcher]\nmodifier = 'alt'\n[workspace-switcher]\nmodifier = 'alt'\n",
                     path: "workspace-switcher.modifier", line: 4, contains: "[window-switcher]")
+        assertError("[switcher]\ntrigger = 'double-tap'\n[window-switcher]\nmodifier = 'hyper'\n[workspace-switcher]\nmodifier = 'hyper'\n",
+                    path: "workspace-switcher.modifier", line: 6, contains: "another modifier or trigger")
+        // One modifier, held for one and double-tapped for the other.
+        let shared = try Config.parse("[window-switcher]\nmodifier = 'hyper'\n[workspace-switcher]\nmodifier = 'hyper'\ntrigger = 'double-tap'\n")
+        #expect(shared.windowSwitcher.trigger == .hold)
+        #expect(shared.workspaceSwitcher.modifier == .hyper)
         #expect(try Config.parse("[workspace-switcher]\nthumbnails = 'schematic'\n").workspaceSwitcher.thumbnails == .schematic)
         assertError("[workspace-switcher]\ndisplays = 'main'\n", path: "workspace-switcher.displays", line: 2, contains: "'all', 'pointer'")
         assertError("[workspace-switcher]\nexclude = ['3']\n", path: "workspace-switcher.exclude", line: 2, contains: "integers")
@@ -257,27 +274,185 @@ struct ConfigTests {
         assertError("[workspace-switcher]\ncorner-radius = 81\n", path: "workspace-switcher.corner-radius", line: 2, contains: "0 to 80")
     }
 
+    @Test func `Highlight colour, each table's own first`() throws {
+        let purple = try Color(hex: "#59168b")
+        let defaults = Config()
+        #expect(defaults.highlightColor == nil)
+        #expect(defaults.switcher.highlightColor == nil)
+        #expect(defaults.windowSwitcher.highlightColor == .accent)
+        #expect(defaults.workspaceSwitcher.highlightColor == .accent)
+        #expect(defaults.borders.activeColor == .color(try Color(hex: "#e1e3e4")))
+        // Set at the top, everything left unset takes it.
+        let global = try Config.parse("highlight-color = '#59168b'\n")
+        #expect(global.highlightColor == .color(purple))
+        #expect(global.windowSwitcher.highlightColor == .color(purple))
+        #expect(global.workspaceSwitcher.highlightColor == .color(purple))
+        #expect(global.borders.activeColor == .color(purple))
+        #expect(global.drag.previewBorderColor == .color(purple))
+        #expect(defaults.drag.previewBorderColor == nil)
+        // A switcher's own over [switcher]'s over the top-level one; 'accent' stops the chain.
+        let layered = try Config.parse("""
+            highlight-color = '#59168b'
+
+            [switcher]
+            highlight-color = '#ff000080'
+
+            [workspace-switcher]
+            highlight-color = 'accent'
+
+            [borders]
+            active-color = '#00ff00'
+            """)
+        #expect(layered.windowSwitcher.highlightColor == .color(try Color(hex: "#ff000080")))
+        #expect(layered.workspaceSwitcher.highlightColor == .accent)
+        #expect(layered.borders.activeColor == .color(try Color(hex: "#00ff00")))
+        #expect(try Config.parse("highlight-color = '#59168b'\n[drag]\npreview-border-color = 'accent'\n").drag.previewBorderColor == .accent)
+        #expect(try Config.parse("[borders]\nactive-color = 'accent'\n").borders.activeColor == .accent)
+        #expect(try Config.parse("highlight-color = 'accent'\n").borders.activeColor == .accent)
+        assertError("highlight-color = 'purple'\n", path: "highlight-color", line: 1, contains: "'#rrggbb', '#rrggbbaa' or 'accent'")
+        assertError("[switcher]\nhighlight-color = '#123'\n", path: "switcher.highlight-color", line: 2, contains: "'accent'")
+        assertError("[window-switcher]\nhighlight-color = 3\n", path: "window-switcher.highlight-color", line: 2, contains: "a string")
+    }
+
+    @Test func `Switcher keys both switchers share`() throws {
+        #expect(Config().switcher == SwitcherDefaults())
+        let shared = try Config.parse("""
+            [switcher]
+            enabled = false
+            delay-ms = 50
+            corner-radius = 18
+            position = 'center'
+            """)
+        #expect(!shared.windowSwitcher.enabled && !shared.workspaceSwitcher.enabled)
+        #expect(shared.windowSwitcher.delayMs == 50 && shared.workspaceSwitcher.delayMs == 50)
+        #expect(shared.windowSwitcher.cornerRadius == 18 && shared.workspaceSwitcher.cornerRadius == 18)
+        #expect(shared.windowSwitcher.position == .center && shared.workspaceSwitcher.position == .center)
+        #expect(Config().workspaceSwitcher.showTitles)
+        #expect(Config().windowSwitcher.letterKeys && Config().workspaceSwitcher.letterKeys)
+        #expect(Config().windowSwitcher.letters == Array("asdfgqwertyuiopzxcvbnm"))
+        let letters = try Config.parse("""
+            [switcher]
+            letter-keys = false
+            letters = 'qwe'
+            [window-switcher]
+            letter-keys = true
+            """)
+        #expect(letters.windowSwitcher.letterKeys && !letters.workspaceSwitcher.letterKeys)
+        #expect(letters.windowSwitcher.letters == ["q", "w", "e"] && letters.workspaceSwitcher.letters == ["q", "w", "e"])
+        assertError("[switcher]\nletters = 'asdh'\n", path: "switcher.letters", line: 2, contains: "leave out h, j, k and l")
+        assertError("[window-switcher]\nletters = 'asa'\n", path: "window-switcher.letters", line: 2, contains: "twice")
+        assertError("[workspace-switcher]\nletters = 'aB'\n", path: "workspace-switcher.letters", line: 2, contains: "lowercase")
+        assertError("[switcher]\nletters = ''\n", path: "switcher.letters", line: 2, contains: "at least")
+        let titles = try Config.parse("[switcher]\nshow-titles = false\n[workspace-switcher]\nshow-titles = true\n")
+        #expect(!titles.windowSwitcher.showTitles && titles.workspaceSwitcher.showTitles)
+        // A switcher's own key wins over [switcher]'s, whichever comes first in the file.
+        let own = try Config.parse("""
+            [workspace-switcher]
+            enabled = true
+            position = 'mouse'
+
+            [switcher]
+            enabled = false
+            delay-ms = 50
+            position = 'top'
+
+            [window-switcher]
+            delay-ms = 300
+            """)
+        #expect(!own.windowSwitcher.enabled)
+        #expect(own.windowSwitcher.delayMs == 300)
+        #expect(own.windowSwitcher.position == .top)
+        #expect(own.workspaceSwitcher.enabled)
+        #expect(own.workspaceSwitcher.delayMs == 50)
+        #expect(own.workspaceSwitcher.position == .mouse)
+        assertError("[switcher]\ndelay-ms = 5000\n", path: "switcher.delay-ms", line: 2, contains: "0 to 2000")
+        assertError("[switcher]\ncorner-radius = 90\n", path: "switcher.corner-radius", line: 2, contains: "0 to 80")
+        assertError("[switcher]\nposition = 'left'\n", path: "switcher.position", line: 2, contains: "'auto'")
+        // Each switcher needs a modifier of its own.
+        assertError("[switcher]\nmodifier = 'alt'\n", path: "switcher.modifier", line: 2, contains: "unknown key")
+    }
+
+    @Test func `Switcher double tap`() throws {
+        #expect(Config().windowSwitcher.trigger == .hold && Config().workspaceSwitcher.trigger == .hold)
+        #expect(Config().switcher.doubleTapMs == 300)
+        let config = try Config.parse("""
+            [switcher]
+            trigger = 'double-tap'
+            double-tap-ms = 250
+
+            [workspace-switcher]
+            trigger = 'hold'
+            """)
+        #expect(config.windowSwitcher.trigger == .doubleTap && config.windowSwitcher.doubleTapMs == 250)
+        #expect(config.workspaceSwitcher.trigger == .hold && config.workspaceSwitcher.doubleTapMs == 250)
+        assertError("[switcher]\ntrigger = 'triple'\n", path: "switcher.trigger", line: 2, contains: "'double-tap'")
+        assertError("[window-switcher]\ndouble-tap-ms = 50\n", path: "window-switcher.double-tap-ms", line: 2,
+                    contains: "100 to 1000")
+    }
+
     @Test func `Gestures`() throws {
-        let defaults = Config().gestures
+        let defaults = Config().gestures.trackpad
+        #expect(defaults.enabled)
         #expect(defaults.fingers == 3)
+        #expect(defaults.distance == 15)
         #expect(defaults.step == 12)
         #expect(defaults.swipes.isEmpty)
         let config = try Config.parse("""
-            [gestures]
+            [gestures.trackpad]
             fingers = 4
+            distance = 20
             step = 20
             swipe-right = 'window-switcher'
             swipe-left = ['workspace-switcher', 'focus left']
             """)
-        #expect(config.gestures.fingers == 4)
-        #expect(config.gestures.step == 20)
-        #expect(config.gestures.swipes == [.swipeRight: ["window-switcher"], .swipeLeft: ["workspace-switcher", "focus left"]])
+        #expect(config.gestures.trackpad.fingers == 4)
+        #expect(config.gestures.trackpad.distance == 20)
+        #expect(config.gestures.trackpad.step == 20)
+        #expect(config.gestures.trackpad.swipes == [.swipeRight: ["window-switcher"], .swipeLeft: ["workspace-switcher", "focus left"]])
         #expect(config.binds("workspace-switcher"))
         #expect(!config.binds("layout"))
-        assertError("[gestures]\nfingers = 1\n", path: "gestures.fingers", line: 2, contains: "2 to 5")
-        assertError("[gestures]\nstep = 2\n", path: "gestures.step", line: 2, contains: "4 to 50")
-        assertError("[gestures]\no = 'workspace 1'\n", path: "gestures.o", line: 2, contains: "'swipe-left'")
-        assertError("[gestures]\nswipe-up = []\n", path: "gestures.swipe-up", line: 2, contains: "can't be empty")
+        let off = try Config.parse("[gestures.trackpad]\nenabled = false\nswipe-right = 'window-switcher'\n")
+        #expect(off.gestures.trackpadSwipes.isEmpty)
+        #expect(!off.binds("window-switcher"))
+        assertError("[gestures.trackpad]\nfingers = 1\n", path: "gestures.trackpad.fingers", line: 2, contains: "2 to 5")
+        assertError("[gestures.trackpad]\ndistance = 2\n", path: "gestures.trackpad.distance", line: 2, contains: "6 to 40")
+        assertError("[gestures.trackpad]\nstep = 2\n", path: "gestures.trackpad.step", line: 2, contains: "4 to 50")
+        assertError("[gestures.trackpad]\no = 'workspace 1'\n", path: "gestures.trackpad.o", line: 2, contains: "'swipe-left'")
+        assertError("[gestures.trackpad]\nswipe-up = []\n", path: "gestures.trackpad.swipe-up", line: 2, contains: "can't be empty")
+        assertError("[gestures]\nfingers = 3\n", path: "gestures.fingers", line: 2, contains: "[gestures.trackpad]")
+        assertError("[gestures]\nswipe-left = 'focus left'\n", path: "gestures.swipe-left", line: 2, contains: "[gestures.trackpad]")
+        assertError("[gestures]\no = 1\n", path: "gestures.o", line: 2, contains: "'trackpad'")
+    }
+
+    @Test func `Mouse gestures`() throws {
+        let defaults = Config().gestures.mouse
+        #expect(!defaults.enabled)
+        #expect(defaults.fingers == 2)
+        #expect(defaults.distance == 8)
+        #expect(defaults.step == 4)
+        #expect(defaults.swipes == nil)
+        let config = try Config.parse("""
+            [gestures.trackpad]
+            swipe-right = 'window-switcher'
+            [gestures.mouse]
+            enabled = true
+            fingers = 4
+            distance = 10
+            step = 5
+            swipe-up = 'layout tiles'
+            """)
+        #expect(config.gestures.trackpad.swipes == [.swipeRight: ["window-switcher"]])
+        #expect(config.gestures.mouseSwipes == [.swipeUp: ["layout tiles"]])
+        #expect(config.gestures.mouse.enabled)
+        #expect(config.gestures.mouse.fingers == 4)
+        #expect(config.gestures.mouse.distance == 10)
+        #expect(config.gestures.mouse.step == 5)
+        #expect(config.gestures.mouse.swipes == [.swipeUp: ["layout tiles"]])
+        #expect(config.binds("layout"))
+        assertError("[gestures.mouse]\nfingers = 5\n", path: "gestures.mouse.fingers", line: 2, contains: "2 to 4")
+        assertError("[gestures.mouse]\ndistance = 1\n", path: "gestures.mouse.distance", line: 2, contains: "3 to 30")
+        assertError("[gestures.mouse]\nstep = 40\n", path: "gestures.mouse.step", line: 2, contains: "2 to 30")
+        assertError("[gestures.mouse]\no = 'workspace 1'\n", path: "gestures.mouse.o", line: 2, contains: "'swipe-left'")
     }
 
     @Test func `Syntax error has line`() {
@@ -337,7 +512,38 @@ struct ConfigTests {
         assertError("[mode.main]\nalt-a = ['x', 3]\n", path: "mode.main.alt-a", line: 2, contains: "command string")
         assertError("[mode.main]\nalt-hyper-a = 'x'\n", path: "mode.main.alt-hyper-a", line: 2, contains: "'alt-hyper-a'")
         assertError("[mode.main]\nalt-shift-a = 'x'\nshift-alt-a = 'y'\n", path: "mode.main.shift-alt-a", line: 3, contains: "bound twice")
-        assertError("[mode.main.binding]\nalt-a = 'x'\n", path: "mode.main.binding", line: 1, contains: "unknown key 'binding'")
+        assertError("[mode.main.binding]\nalt-a = 'x'\n", path: "mode.main.binding", line: 1, contains: "'binding' is not a layout")
+        assertError("[mode.main.floating]\nalt-a = 'x'\n", path: "mode.main.floating", line: 1, contains: "'free'")
+        assertError("[mode.main.free.tiles]\nalt-a = 'x'\n", path: "mode.main.free.tiles", line: 1, contains: "can't hold tables")
+        // Either table can come first.
+        let twice = #expect(throws: ConfigError.self) { try Config.parse("[mode.main.tiles]\nalt-a = 'x'\n[mode.main.dwindle]\nalt-b = 'y'\n") }
+        #expect(twice?.description.contains("same layout") == true)
+    }
+
+    @Test func `Bindings by layout`() throws {
+        let main = try Config.parse("""
+        [mode.main]
+        alt-a = 'workspace 1'
+        alt-b = 'workspace 2'
+        [mode.main.free]
+        alt-a = 'grid 1:2:0:0:1:1'
+        alt-c = 'fullscreen'
+        [mode.main.dwindle]
+        alt-b = 'balance-sizes'
+        """).modes["main"]!
+        let a = KeyCombo(modifiers: .alt, key: "a"), b = KeyCombo(modifiers: .alt, key: "b"), c = KeyCombo(modifiers: .alt, key: "c")
+        #expect(main.bindings[a] == ["workspace 1"] && main.bindings[c] == nil, "a layout's table leaves the mode's own alone")
+        #expect(main.commands(for: a, on: .free) == ["grid 1:2:0:0:1:1"])
+        #expect(main.commands(for: b, on: .free) == ["workspace 2"], "keys a layout leaves out fall through to the mode")
+        #expect(main.commands(for: c, on: .free) == ["fullscreen"])
+        #expect(main.commands(for: c, on: .scrolling) == nil)
+        #expect(main.commands(for: a, on: nil) == ["workspace 1"])
+        #expect(main.commands(for: b, on: .tiles) == ["balance-sizes"], "dwindle and tiles are one layout")
+        #expect(main.commands(for: b, on: .dwindle) == ["balance-sizes"])
+        #expect(main.commands(for: a, on: .floating) == ["grid 1:2:0:0:1:1"], "floating is the old name for free")
+        #expect(main.allCommands.count == 5)
+        #expect(main.bindings(on: .free) == [a: ["grid 1:2:0:0:1:1"], b: ["workspace 2"], c: ["fullscreen"]])
+        #expect(main.bindings(on: .scrolling) == main.bindings)
     }
 
     @Test func `Rules on the window's workspace`() throws {
@@ -365,7 +571,11 @@ struct ConfigTests {
         #expect(!rules[1].matches(layout: .scrolling, workspace: 1))
         #expect(!rules[1].matches(layout: .tiles, workspace: nil), "an unnumbered workspace is none of the numbers")
         #expect(rules[2].workspaces == [3] && rules[2].workspaceLayouts == nil)
-        #expect(rules[2].matches(layout: .floating, workspace: 3))
+        #expect(rules[2].matches(layout: .free, workspace: 3))
+        #expect(!rules[0].matches(layout: .free, workspace: 2))
+        var old = WindowRule()
+        old.workspaceLayouts = [.floating]
+        #expect(old.matches(layout: .free, workspace: nil), "floating is the old name for free")
         assertError("[[rules]]\nworkspace-layout = 'grid'\nrun = 'x'\n", path: "rules[0].workspace-layout", line: 2, contains: "'scrolling', 'tiles'")
         assertError("[[rules]]\nworkspace-layout = []\nrun = 'x'\n", path: "rules[0].workspace-layout", line: 2, contains: "empty")
         assertError("[[rules]]\nworkspace = 0\nrun = 'x'\n", path: "rules[0].workspace", line: 2, contains: "from 1")
@@ -383,6 +593,10 @@ struct ConfigTests {
 
         [[rules]]
         run = 'layout tiling'
+
+        [[rules]]
+        disk-image = true
+        run = 'layout floating'
         """)
         var expected = WindowRule()
         expected.appId = "com.apple.finder"
@@ -392,7 +606,10 @@ struct ConfigTests {
         expected.run = ["layout floating", "move-window-to-workspace 2"]
         var second = WindowRule()
         second.run = ["layout tiling"]
-        #expect(config.rules == [expected, second])
+        var third = WindowRule()
+        third.diskImage = true
+        third.run = ["layout floating"]
+        #expect(config.rules == [expected, second, third])
 
         #expect(expected.matches(appId: "com.apple.finder", appName: "Finder", title: "Copy 3 items", kind: .dialog))
         #expect(!expected.matches(appId: "com.apple.finder", appName: "Finder", title: "Copy 3 items", kind: .normal))
@@ -401,6 +618,14 @@ struct ConfigTests {
         #expect(second.matches(appId: nil, appName: nil, title: "", kind: .normal), "a rule with no conditions matches everything")
         #expect(!second.asksWorkspace)
         #expect(second.matches(layout: .floating, workspace: nil))
+
+        #expect(third.matches(appId: "com.apple.finder", appName: "Finder", title: "Docker", kind: .normal) { true })
+        #expect(!third.matches(appId: "com.apple.finder", appName: "Finder", title: "Docker", kind: .normal) { false })
+        var notImage = third
+        notImage.diskImage = false
+        #expect(notImage.matches(appId: nil, appName: nil, title: "", kind: .normal) { false })
+        #expect(second.matches(appId: nil, appName: nil, title: "", kind: .normal) { Issue.record("asked without the condition"); return true })
+        assertError("[[rules]]\ndisk-image = 'yes'\nrun = 'x'\n", path: "rules[0].disk-image", line: 2, contains: "true or false")
     }
 
     @Test func `Bad window rules fail`() {
@@ -501,12 +726,38 @@ struct ConfigTests {
         #expect(try !Config.parse("[drag]\nhome-outline = false\n").drag.homeOutline)
         assertError("[drag]\nhome-outline = 'no'\n", path: "drag.home-outline", line: 2, contains: "true or false")
         let drag = try Config.parse("[drag]\npreview-border-color = '#ff0000'\npreview-fill-color = '#00ff0080'\npreview-border-width = 1.5\n").drag
-        #expect(drag.previewBorderColor == Color(red: 1, green: 0, blue: 0))
+        #expect(drag.previewBorderColor == .color(Color(red: 1, green: 0, blue: 0)))
         #expect(drag.previewFillColor == Color(red: 0, green: 1, blue: 0, alpha: 128 / 255))
         #expect(drag.previewBorderWidth == 1.5)
         assertError("[drag]\npreview-border-color = 'blue'\n", path: "drag.preview-border-color", line: 2, contains: "'blue' is not a colour")
         assertError("[drag]\npreview-border-width = 21\n", path: "drag.preview-border-width", line: 2, contains: "0 to 20")
         assertError("[drag]\npreview-border-width = -1\n", path: "drag.preview-border-width", line: 2, contains: "0 to 20")
+    }
+
+    @Test func `Drag mouse modifier`() throws {
+        #expect(Config.default.drag.mouseModifier == [])
+        #expect(try Config.parse("[drag]\nmouse-modifier = 'none'\n").drag.mouseModifier == [])
+        #expect(try Config.parse("[drag]\nmouse-modifier = 'alt'\n").drag.mouseModifier == .alt)
+        let both = try Config.parse("[drag]\nmouse-modifier = 'cmd-ctrl'\n").drag.mouseModifier
+        #expect(both == [.ctrl, .cmd])
+        #expect(both.name == "ctrl-cmd")
+        #expect(KeyCombo.Modifiers().name == "none")
+        for bad in ["super", "alt-", "none-alt", "alt-h", ""] {
+            assertError("[drag]\nmouse-modifier = '\(bad)'\n", path: "drag.mouse-modifier", line: 2, contains: "'\(bad)' is not 'none' or modifiers")
+        }
+        assertError("[drag]\nmouse-modifier = true\n", path: "drag.mouse-modifier", line: 2, contains: "a string")
+        // A switcher's modifier held alone shows its capsule before the press.
+        assertError("[window-switcher]\nmodifier = 'alt'\n[drag]\nmouse-modifier = 'alt'\n",
+                    path: "drag.mouse-modifier", line: 4, contains: "[window-switcher] already uses 'alt'")
+        assertError("[drag]\nmouse-modifier = 'cmd'\n[workspace-switcher]\nmodifier = 'cmd'\n",
+                    path: "drag.mouse-modifier", line: 2, contains: "[workspace-switcher] already uses 'cmd'")
+        let config = try Config.parse("[window-switcher]\nmodifier = 'alt'\n[drag]\nmouse-modifier = 'ctrl-alt'\n")
+        #expect(config.drag.mouseModifier == [.ctrl, .alt])
+        // Hyper conflicts by the modifiers it holds.
+        assertError("[window-switcher]\nmodifier = 'hyper'\n[modifiers]\nhyper = 'ctrl-alt'\n[drag]\nmouse-modifier = 'alt-ctrl'\n",
+                    path: "drag.mouse-modifier", line: 6, contains: "[window-switcher] already uses 'hyper'")
+        let hyper = try Config.parse("[workspace-switcher]\nmodifier = 'hyper'\n[drag]\nmouse-modifier = 'ctrl-alt'\n")
+        #expect(hyper.workspaceSwitcher.modifier == .hyper)
     }
 
     @Test func `Modifier sides`() throws {
@@ -517,6 +768,11 @@ struct ConfigTests {
         #expect(config.modifiers.shift == .right)
         assertError("[modifiers]\nalt = 'up'\n", path: "modifiers.alt", line: 2, contains: "'both', 'left', 'right'")
         assertError("[modifiers]\nfn = 'left'\n", path: "modifiers.fn", line: 2, contains: "unknown key")
+        #expect(Config.default.modifiers.hyper == [.alt, .ctrl, .cmd, .shift])
+        #expect(try Config.parse("[modifiers]\nhyper = 'cmd-ctrl'\n").modifiers.hyper == [.ctrl, .cmd])
+        for bad in ["alt", "alt-alt", "hyper", "alt-fn", "none"] {
+            assertError("[modifiers]\nhyper = '\(bad)'\n", path: "modifiers.hyper", line: 2, contains: "two or more")
+        }
     }
 
     @Test func `Load from missing file fails`() {

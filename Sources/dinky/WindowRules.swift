@@ -39,7 +39,7 @@ extension Coordinator {
         // Only a new window runs the other commands. One open before dinky started, as on a restart, is where
         // they left it, and running them again would move it, resize it and follow it about.
         let isNew = window.identity.firstSeen > model.seededAt
-        for rule in config.rules(for: window, kind: kind, title: title) {
+        for rule in config.rules(for: window, kind: kind, title: title, element: element) {
             let holdsNow = !rule.asksWorkspace || matchesWorkspace(rule, space: window.spaceID)
             for command in rule.run.compactMap({ try? Command.parse($0) }) {
                 switch command {
@@ -73,11 +73,21 @@ extension Coordinator {
         rule.matches(layout: ruleLayout(ofSpace: space), workspace: AppState.shared.numbers.number(of: space))
     }
 
+    /// The layout of the focused display's workspace as rules name it, for bindings by layout; nil on a native
+    /// full-screen Space, which is no workspace. The focused display goes by the focused window as dinky last
+    /// followed focus, rather than asking which it is, as this runs in the key event tap, where every key of every app
+    /// waits on it. Its Space is read afresh: right after a switch the display model can still name the one left.
+    func focusedRuleLayout() -> RuleLayout? {
+        guard let display = displays.focusedDisplay(window: lastFocused) else { return nil }
+        let space = dinky_current_space_id(display.uuid as CFString)
+        guard display.userSpaces.contains(space) else { return nil }
+        return ruleLayout(ofSpace: space)
+    }
+
     /// The Space's layout as rules name it: its tree's, which a `layout` command may have switched, else its settings'.
     func ruleLayout(ofSpace space: UInt64) -> RuleLayout {
-        let settings = settings(for: space)
-        guard settings.tiling, !settings.float else { return .floating }
-        return switch workspaces[space]?.algorithm ?? algorithm(settings) {
+        guard !isFree(space) else { return .free }
+        return switch workspaces[space]?.algorithm ?? algorithm(settings(for: space)) {
         case .scrolling: .scrolling
         case .dwindle(.tiles): .tiles
         case .dwindle(.accordion): .accordion
@@ -114,8 +124,13 @@ private func buttonEnabled(_ element: AXUIElement, _ attribute: String) -> Bool 
 
 extension Config {
     /// Every rule whose conditions on the window itself hold, in order; those on its workspace are the caller's.
-    func rules(for window: Window, kind: WindowKind, title: String) -> [WindowRule] {
-        rules.filter { $0.matches(appId: window.bundleID, appName: window.appName, title: title, kind: kind) }
+    func rules(for window: Window, kind: WindowKind, title: String, element: AXUIElement) -> [WindowRule] {
+        var fromDiskImage: Bool?
+        let diskImage = {
+            if fromDiskImage == nil { fromDiskImage = DiskImages.holds(window: window, element: element, title: title) }
+            return fromDiskImage!
+        }
+        return rules.filter { $0.matches(appId: window.bundleID, appName: window.appName, title: title, kind: kind, diskImage: diskImage) }
     }
 }
 

@@ -48,7 +48,7 @@ static SurfaceDimensions surfaceDimensions;
 // Read on MultitouchSupport's thread while the main thread may replace it, so every handler is kept for good.
 static DinkyTouchFrame handler;
 static NSMutableArray *handlers;
-// The trackpads started, retained.
+// The trackpads and mice started, retained.
 static NSArray *devices;
 static IONotificationPortRef port;
 static id wakeObserver;
@@ -83,6 +83,8 @@ static int contactFrame(MTDeviceRef device, MTTouch *touches, int count, double 
         width = 13000;
         height = 8100;
     }
+    // A Magic Mouse's surface is about 52 mm across, the narrowest trackpad's over 100.
+    bool mouse = width < 7000;
     int down = 0;
     double x = 0, y = 0;
     for (int i = 0; i < count; i++) {
@@ -95,7 +97,7 @@ static int contactFrame(MTDeviceRef device, MTTouch *touches, int count, double 
         x = x / down * width / 100.0;
         y = y / down * height / 100.0;
     }
-    frameHandler(down, x, y, time, (uintptr_t)device);
+    frameHandler(down, x, y, time, (uintptr_t)device, mouse);
     return 0;
 }
 

@@ -72,6 +72,10 @@ struct SchemaTests {
         #expect(layouts["enum"] as! [String] == SwitcherLayoutKind.allCases.map(\.rawValue))
         #expect(switcher["tiles-style"]!["enum"] as! [String] == SwitcherTilesStyle.allCases.map(\.rawValue))
         #expect(switcher["position"]!["enum"] as! [String] == SwitcherPosition.allCases.map(\.rawValue))
+        let shared = properties["switcher"]!["properties"] as! [String: [String: Any]]
+        #expect(shared["position"]!["enum"] as! [String] == SwitcherPosition.allCases.map(\.rawValue))
+        #expect(shared["trigger"]!["enum"] as! [String] == SwitcherTrigger.allCases.map(\.rawValue))
+        #expect(switcher["trigger"]!["enum"] as! [String] == SwitcherTrigger.allCases.map(\.rawValue))
     }
 
     @Test func `Workspace switcher choices agree`() {
@@ -83,6 +87,15 @@ struct SchemaTests {
         #expect(switcher["position"]!["enum"] as! [String] == SwitcherPosition.allCases.map(\.rawValue))
     }
 
+    @Test func `Workspace layouts agree`() {
+        let properties = Self.schema["properties"] as! [String: [String: Any]]
+        let layouts = LayoutKind.allCases.map(\.rawValue)
+        #expect(properties["default-layout"]!["enum"] as! [String] == layouts)
+        let workspace = properties["workspace"]!["additionalProperties"] as! [String: Any]
+        let keys = workspace["properties"] as! [String: [String: Any]]
+        #expect(keys["layout"]!["enum"] as! [String] == layouts)
+    }
+
     @Test func `Rule layouts agree`() {
         let definitions = Self.schema["definitions"] as! [String: [String: Any]]
         #expect(definitions["ruleLayout"]!["enum"] as! [String] == RuleLayout.allCases.map(\.rawValue))
@@ -91,6 +104,7 @@ struct SchemaTests {
     @Test func `Menu bar icons agree`() {
         let properties = Self.schema["properties"] as! [String: [String: Any]]
         #expect(properties["menu-bar-icon"]!["enum"] as! [String] == MenuBarIcon.allCases.map(\.rawValue))
+        #expect(properties["hide-menu-bar-icon"]!["enum"] as! [String] == MenuBarIconHiding.allCases.map(\.rawValue))
     }
 
     @Test func `Key combo pattern matches every key name`() throws {
@@ -115,7 +129,9 @@ struct SchemaTests {
         follow-app-activation = false
         float-windows-without-fullscreen = false
         menu-bar-icon = 'text'
+        hide-menu-bar-icon = 'always'
         scripting-addition = false
+        highlight-color = '#59168b'
 
         [workspace-to-display]
         1 = 'main'
@@ -123,7 +139,6 @@ struct SchemaTests {
 
         [workspace.2]
         tiling = true
-        float = false
         layout = 'fixed'
         columns = 2
         rows = 2
@@ -136,18 +151,41 @@ struct SchemaTests {
         [scrolling]
         column-width = 0.5
 
+        [switcher]
+        enabled = true
+        delay-ms = 150
+        trigger = 'double-tap'
+        double-tap-ms = 250
+        corner-radius = 24
+        position = 'center'
+        show-titles = true
+        letter-keys = true
+        letters = 'asdfg'
+        highlight-color = 'accent'
+
         [window-switcher]
+        enabled = true
+        highlight-color = '#ff000080'
         modifier = 'alt'
         delay-ms = 200
+        trigger = 'hold'
+        double-tap-ms = 300
         layouts = ['tiles']
         corner-radius = 20
         tiles-style = 'row'
         show-single = false
+        show-titles = false
+        letter-keys = false
+        letters = 'qwerty'
         position = 'top'
 
         [workspace-switcher]
+        enabled = false
+        highlight-color = '#00ff00'
         modifier = 'ctrl'
         delay-ms = 250
+        trigger = 'double-tap'
+        double-tap-ms = 400
         displays = 'pointer'
         show-empty = false
         exclude = [3]
@@ -155,14 +193,29 @@ struct SchemaTests {
         thumbnails = 'icons'
         corner-radius = 18
         position = 'mouse'
+        show-titles = false
+        letter-keys = true
+        letters = 'zxcv'
 
-        [gestures]
+        [gestures.trackpad]
+        enabled = true
         fingers = 4
+        distance = 18
         step = 15
         swipe-left = 'workspace-switcher'
         swipe-right = ['window-switcher']
         swipe-up = 'focus up'
         swipe-down = 'focus down'
+
+        [gestures.mouse]
+        enabled = true
+        fingers = 2
+        distance = 8
+        step = 6
+        swipe-up = 'window-switcher'
+        swipe-down = 'workspace-switcher'
+        swipe-left = 'focus left'
+        swipe-right = 'focus right'
 
         [floating]
         move-step = 20
@@ -217,6 +270,7 @@ struct SchemaTests {
         preview-fill-color = '#7aa2f74d'
         preview-border-width = 2.5
         home-outline = false
+        mouse-modifier = 'ctrl-cmd'
 
         [hud]
         enabled = true
@@ -232,6 +286,7 @@ struct SchemaTests {
         ctrl = 'right'
         cmd = 'both'
         shift = 'both'
+        hyper = 'ctrl-alt-cmd'
 
         [hooks]
         startup = 'exec-and-forget true'
@@ -245,6 +300,7 @@ struct SchemaTests {
         app-name = 'safari'
         title = 'settings'
         kind = 'dialog'
+        disk-image = false
         workspace-layout = ['scrolling', 'tiles']
         workspace = 2
         run = ['layout floating', 'move-window-to-workspace 2']
@@ -252,6 +308,9 @@ struct SchemaTests {
         [mode.main]
         alt-1 = 'workspace 1'
         alt-r = 'mode resize'
+
+        [mode.main.free]
+        alt-shift-h = 'grid 1:2:0:0:1:1'
 
         [mode.resize]
         esc = ['mode main']
@@ -281,7 +340,8 @@ struct SchemaTests {
         let known = schema["properties"] as? [String: Any] ?? [:]
         for key in table.keys {
             let here = path.isEmpty ? key : "\(path).\(key)"
-            guard let child = known[key] as? [String: Any] ?? schema["additionalProperties"] as? [String: Any] else {
+            guard let child = known[key] as? [String: Any] ?? pattern(schema, key)
+                    ?? schema["additionalProperties"] as? [String: Any] else {
                 Issue.record("\(here) is not in the schema")
                 continue
             }
@@ -300,10 +360,19 @@ struct SchemaTests {
             }
             each(table, key, child, at: here, covers)
         }
+        for key in table.keys {
+            if let child = pattern(schema, key) { each(table, key, child, at: "\(path).\(key)", covers) }
+        }
         if let child = schema["additionalProperties"] as? [String: Any] {
             #expect(!table.keys.isEmpty, "\(path) has no entries in the fixture")
-            for key in table.keys { each(table, key, child, at: "\(path).\(key)", covers) }
+            for key in table.keys where pattern(schema, key) == nil { each(table, key, child, at: "\(path).\(key)", covers) }
         }
+    }
+
+    /// The schema of `key` under a `patternProperties` pattern it matches, if any.
+    private func pattern(_ schema: [String: Any], _ key: String) -> [String: Any]? {
+        let patterns = schema["patternProperties"] as? [String: [String: Any]] ?? [:]
+        return patterns.first { key.range(of: $0.key, options: .regularExpression) != nil }?.value
     }
 
     /// Calls `walk` on `table[key]` when it is a table, or on each table in it when it is an array of tables.

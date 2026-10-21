@@ -36,9 +36,17 @@ public func checkConfig(_ config: Config) -> [ConfigFinding] {
         for (combo, commands) in mode.bindings.sorted(by: { $0.key.description < $1.key.description }) {
             check(commands, at: "mode.\(name).\(combo)")
         }
+        for (layout, bindings) in mode.layouts.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
+            for (combo, commands) in bindings.sorted(by: { $0.key.description < $1.key.description }) {
+                check(commands, at: "mode.\(name).\(layout.rawValue).\(combo)")
+            }
+        }
     }
-    for (swipe, commands) in config.gestures.swipes.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
-        check(commands, at: "gestures.\(swipe.rawValue)")
+    for (swipe, commands) in config.gestures.trackpad.swipes.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
+        check(commands, at: "gestures.trackpad.\(swipe.rawValue)")
+    }
+    for (swipe, commands) in (config.gestures.mouse.swipes ?? [:]).sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
+        check(commands, at: "gestures.mouse.\(swipe.rawValue)")
     }
     for (i, rule) in config.rules.enumerated() {
         check(rule.run, at: "rules[\(i)].run")

@@ -40,14 +40,42 @@ struct SwitcherLayoutTests {
         #expect(narrow.size.width == 298)
     }
 
-    @Test func `The thumbnail under x reaches halfway into the gaps, and past the ends`() {
-        #expect(layout.index(atX: -50) == 0)
-        #expect(layout.index(atX: 169) == 0)
-        #expect(layout.index(atX: 171) == 1)
-        #expect(layout.index(atX: 243) == 2)
-        #expect(layout.index(atX: 400) == 3)
-        #expect(layout.index(atX: 5000) == 3)
-        #expect(SwitcherLayout(columns: [], maxWidth: 500).index(atX: 10) == nil)
+    @Test func `The thumbnail under the pointer reaches halfway into the gaps, and past the ends`() {
+        #expect(layout.index(at: CGPoint(x: -50, y: 64)) == 0)
+        #expect(layout.index(at: CGPoint(x: 169, y: 64)) == 0)
+        #expect(layout.index(at: CGPoint(x: 171, y: 64)) == 1)
+        #expect(layout.index(at: CGPoint(x: 243, y: 64)) == 2)
+        #expect(layout.index(at: CGPoint(x: 400, y: 500)) == 3)
+        #expect(layout.index(at: CGPoint(x: 5000, y: 64)) == 3)
+        #expect(SwitcherLayout(columns: [], maxWidth: 500).index(at: CGPoint(x: 10, y: 10)) == nil)
+    }
+
+    @Test func `A column stacked on screen shows one over the other, picked by height too`() {
+        let top = CGRect(x: 0, y: 0, width: 1000, height: 446), bottom = CGRect(x: 0, y: 454, width: 1000, height: 446)
+        let stacked = SwitcherLayout(groups: [.sideBySide([1.5]), .tiles([top, bottom]), .sideBySide([1.6])], maxWidth: 2000)
+        // The column takes the room its 1000 by 900 box would, its two thumbnails a stack gap apart.
+        #expect(stacked.frames == [
+            CGRect(x: 14, y: 14, width: 150, height: 100),
+            CGRect(x: 176, y: 14, width: 111, height: 48),
+            CGRect(x: 176, y: 66, width: 111, height: 48),
+            CGRect(x: 299, y: 14, width: 160, height: 100),
+        ])
+        #expect(stacked.size == CGSize(width: 473, height: 128))
+        #expect(stacked.index(at: CGPoint(x: 230, y: 30)) == 1)
+        #expect(stacked.index(at: CGPoint(x: 230, y: 100)) == 2)
+        #expect(stacked.index(at: CGPoint(x: 230, y: -40)) == 1)
+        #expect(stacked.index(at: CGPoint(x: 230, y: 200)) == 2)
+    }
+
+    @Test func `Tiles apart show as they sit, overlapping ones side by side`() {
+        let top = CGRect(x: 0, y: 0, width: 1000, height: 446), bottom = CGRect(x: 0, y: 454, width: 1000, height: 446)
+        #expect(SwitcherLayout.Group(aspects: [2.2, 2.2], tiles: [top, bottom]) == .tiles([top, bottom]))
+        // An accordion's windows overlap.
+        let behind = CGRect(x: 30, y: 0, width: 1000, height: 900)
+        #expect(SwitcherLayout.Group(aspects: [1, 1], tiles: [top, behind]) == .sideBySide([1, 1]))
+        // A lone window keeps its own shape, and windows without tiles, as on a free workspace, sit side by side.
+        #expect(SwitcherLayout.Group(aspects: [1.5], tiles: [top]) == .sideBySide([1.5]))
+        #expect(SwitcherLayout.Group(aspects: [1, 1], tiles: []) == .sideBySide([1, 1]))
     }
 
     @Test func `The anchor's thumbnail sits under the pointer`() {
@@ -63,5 +91,12 @@ struct SwitcherLayoutTests {
     @Test func `Kept inside the screen's sides`() {
         #expect(layout.origin(anchor: 3, pointer: CGPoint(x: 50, y: 500), visible: visible).x == 8)
         #expect(layout.origin(anchor: 0, pointer: CGPoint(x: 1500, y: 500), visible: visible).x == 1010)
+    }
+
+    @Test func `Letters go left to right, a column's top to bottom`() {
+        let frames = [CGRect(x: 100, y: 0, width: 50, height: 50), CGRect(x: 0, y: 60, width: 50, height: 40),
+                      CGRect(x: 0.5, y: 0, width: 50, height: 50), CGRect(x: 200, y: 0, width: 50, height: 100)]
+        #expect(SwitcherLayout.readingOrder(frames) == [2, 1, 0, 3])
+        #expect(SwitcherLayout.readingOrder([]) == [])
     }
 }

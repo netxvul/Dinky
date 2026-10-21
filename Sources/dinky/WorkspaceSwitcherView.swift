@@ -1,4 +1,5 @@
 import AppKit
+import DinkyConfig
 import DinkyLayout
 
 /// A workspace as the workspace switcher shows it.
@@ -16,13 +17,19 @@ struct WorkspaceCard {
     let icons: [WindowID: NSImage]
     /// The card is a fixed picture of its layout, `Schematic`'s, its windows plain blocks with a title bar.
     let schematic: Bool
+    /// Each window's title, the windows not known yet empty; nil when titles are off.
+    let titles: [WindowID: String]?
+    /// Whether its windows may carry letter keys.
+    let letters: Bool
 }
 
 // The workspace switcher's capsule content: per workspace, its display drawn small with each window where it is,
 // filled with its thumbnail or, without one, its app's icon on a tint; on a schematic card, a fixed picture of the
 // layout whatever its windows, plain blocks with a title bar, a gap apart, in the accent colour on the picked card; an accordion's covered windows faded, a fixed
 // workspace's empty cells dashed, a strip's parked columns a sliver at each side with their count. Its label under
-// it, a dot before the label of each display's current workspace, and with several displays each one's name over
+// it, a dot before the label of each display's current workspace, with titles each window's title on a dark band along
+// its foot (not a covered window's, nor one too small to read), with letters a key for each window in front big enough
+// for one, at the band's right end or alone in the window's corner, and with several displays each one's name over
 // its group and a line between. The picked card grows a little and the others dim; the window switcher's ring and
 // glow spring to it. Schematic cards are drawn as Windows draws its snap layouts: solid grey windows with a hairline
 // edge on no backdrop, the picked card's all in the accent colour. Layers, in the frames the caller gives. Main thread only.
@@ -37,6 +44,16 @@ final class WorkspaceSwitcherView: NSView {
     private static let schematicRadius: CGFloat = 5
     private static let labelFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .medium)
     private static let headerFont = NSFont.systemFont(ofSize: 11, weight: .medium)
+    private static let titleFont = NSFont.systemFont(ofSize: 9, weight: .medium)
+    private static let bandHeight: CGFloat = 12
+    /// The smallest window, in points, that shows its title.
+    private static let titledSize = CGSize(width: 34, height: 30)
+    /// The smallest window, in points, that carries a key.
+    private static let keyedSize = CGSize(width: 16, height: 14)
+    private static let keyHeight: CGFloat = 11
+
+    /// The windows the letters jump to, each with its card.
+    private(set) var letterTargets: [Character: (card: Int, id: WindowID)] = [:]
 
     private var cards: [WorkspaceCard] = []
     private var layout = WorkspaceSwitcherLayout(groups: [], cardHeight: 0, maxWidth: 0)
@@ -45,7 +62,12 @@ final class WorkspaceSwitcherView: NSView {
     private let glow = CALayer()
     private let ring = CALayer()
     private(set) var picked = 0
+    /// The cards whose pick changed since they were last placed, and whether placing them is due.
+    private var repicked: Set<Int> = []
+    private var placing = false
     var animates = true
+    /// The ring's colour, a faint wash of it under the ring, and a schematic card's windows once picked.
+    var highlight = Highlight.accent
 
     override var isFlipped: Bool { true }
 
@@ -68,11 +90,14 @@ final class WorkspaceSwitcherView: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     /// Lays out `cards` as `layout` says for a new showing, with `picked` picked and no animation. `headers` names
-    /// each group.
-    func show(_ cards: [WorkspaceCard], layout: WorkspaceSwitcherLayout, headers: [String], picked: Int, scale: CGFloat) {
+    /// each group. `letters` go, in order, to the windows that can carry a key, card by card, as each card's read.
+    func show(_ cards: [WorkspaceCard], layout: WorkspaceSwitcherLayout, headers: [String], picked: Int, scale: CGFloat,
+              letters: [Character]) {
         self.cards = cards
         self.layout = layout
         self.picked = picked
+        repicked = []
+        placing = false
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         views.forEach {
@@ -86,6 +111,15 @@ final class WorkspaceSwitcherView: NSView {
             layer?.addSublayer(view.root)
             layer?.addSublayer(view.label)
             return view
+        }
+        letterTargets = [:]
+        var left = letters[...]
+        for (i, view) in views.enumerated() where cards[i].letters {
+            for id in view.keyable() {
+                guard let letter = left.popFirst() else { break }
+                view.setKey(letter, for: id, scale: scale)
+                letterTargets[letter] = (i, id)
+            }
         }
         for (name, frame) in zip(headers, layout.headers) {
             let text = Self.text(name, font: Self.headerFont, scale: scale)
@@ -108,9 +142,26 @@ final class WorkspaceSwitcherView: NSView {
 
     /// Picks another card, springing the ring over to it.
     func pick(_ index: Int) {
-        guard index != picked, views.indices.contains(index) else { return }
+        guard index != picked, cards.indices.contains(index) else { return }
+        repicked.formUnion([picked, index])
         picked = index
+        guard !placing else { return }
+        placing = true
+        // Placed once per pass of the run loop, however many moves picked meanwhile: a commit can wait a frame for
+        // the window server, and two for every move fell behind the pointer.
+        DispatchQueue.main.async { [weak self] in self?.placePicked() }
+    }
+
+    /// Springs the ring to the card picked last and recolours the cards whose pick changed, in one commit.
+    private func placePicked() {
+        guard placing else { return }
+        placing = false
+        CATransaction.begin()
         place(animated: animates)
+        // Only those cards: recolouring text redraws it.
+        applyColors(only: Array(repicked))
+        CATransaction.commit()
+        repicked = []
     }
 
     /// A fresh thumbnail for a window shown, faded in.
@@ -119,6 +170,14 @@ final class WorkspaceSwitcherView: NSView {
         CATransaction.setDisableActions(!animates)
         CATransaction.setAnimationDuration(0.2)
         views.forEach { $0.set(image, for: id) }
+        CATransaction.commit()
+    }
+
+    /// A window's title, learnt after the capsule showed.
+    func update(_ id: WindowID, title: String) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        views.forEach { $0.set(title, for: id) }
         CATransaction.commit()
     }
 
@@ -164,18 +223,20 @@ final class WorkspaceSwitcherView: NSView {
             view.label.opacity = i == picked ? 1 : 0.75
         }
         CATransaction.commit()
-        applyColors()
     }
 
-    /// Resolves the dynamic colours for the current appearance.
-    private func applyColors() {
+    /// Resolves the dynamic colours for the current appearance: every card's, or `only` those.
+    private func applyColors(only: [Int]? = nil) {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            glow.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.22).cgColor
-            ring.borderColor = NSColor.controlAccentColor.cgColor
-            for (i, view) in views.enumerated() { view.applyColors(picked: i == picked) }
-            for layer in chrome {
+            let highlight = highlight.nsColor
+            glow.backgroundColor = highlight.fading(to: 0.22).cgColor
+            ring.borderColor = highlight.cgColor
+            for (i, view) in views.enumerated() where only?.contains(i) ?? true {
+                view.applyColors(picked: i == picked, highlight: highlight)
+            }
+            for layer in chrome where only == nil {
                 if let text = layer as? CATextLayer {
                     text.foregroundColor = NSColor.secondaryLabelColor.cgColor
                 } else {
@@ -203,6 +264,9 @@ final class WorkspaceSwitcherView: NSView {
         private(set) var label = CATextLayer()
         private let screen = CALayer()
         private var tiles: [(id: WindowID, layer: CALayer, icon: CALayer, behind: Bool)] = []
+        /// The titled windows' labels.
+        private var titles: [(id: WindowID, label: CATextLayer)] = []
+        private var keycaps: [Keycap] = []
         private let schematic: Bool
         private var slivers: [CALayer] = []
         private var counts: [(pill: CALayer, text: CATextLayer)] = []
@@ -285,6 +349,25 @@ final class WorkspaceSwitcherView: NSView {
                     icon.contentsScale = scale
                     icon.contentsGravity = .resizeAspect
                     layer.addSublayer(icon)
+                    let size = layer.bounds.size
+                    if let names = card.titles, !tile.behind, size.width >= WorkspaceSwitcherView.titledSize.width,
+                       size.height >= WorkspaceSwitcherView.titledSize.height {
+                        // Along its foot, over the thumbnail and clipped to its corners.
+                        let height = WorkspaceSwitcherView.bandHeight
+                        let band = CALayer()
+                        band.frame = CGRect(x: 0, y: size.height - height, width: size.width, height: height)
+                        band.backgroundColor = NSColor.black.withAlphaComponent(0.5).cgColor
+                        band.zPosition = 1
+                        let font = WorkspaceSwitcherView.titleFont
+                        let text = WorkspaceSwitcherView.text(names[tile.id] ?? "", font: font, scale: scale)
+                        let line = ceil(font.ascender - font.descender)
+                        text.frame = CGRect(x: 3, y: (height - line) / 2, width: size.width - 6, height: line)
+                        text.alignmentMode = .left
+                        text.foregroundColor = NSColor.white.cgColor
+                        band.addSublayer(text)
+                        layer.addSublayer(band)
+                        titles.append((tile.id, text))
+                    }
                     set(Thumbnails.shared.image(of: tile.id), for: tile.id)
                 }
             }
@@ -296,7 +379,9 @@ final class WorkspaceSwitcherView: NSView {
                 let width = (string as NSString).size(withAttributes: [.font: font]).width + 10, height: CGFloat = 13
                 let inset = (frame.width * Miniature.parkedInset).rounded()
                 let pill = CALayer()
-                pill.frame = CGRect(x: left ? inset + 3 : frame.width - inset - 3 - width, y: frame.height - height - 4,
+                // At the top when the windows' title bands and keys run along the foot.
+                let top = !titles.isEmpty || card.letters
+                pill.frame = CGRect(x: left ? inset + 3 : frame.width - inset - 3 - width, y: top ? 4 : frame.height - height - 4,
                                     width: width, height: height)
                 pill.cornerRadius = height / 2
                 text.frame = CGRect(x: 0, y: 0.5, width: width, height: height)
@@ -332,7 +417,9 @@ final class WorkspaceSwitcherView: NSView {
         func set(_ image: CGImage?, for id: WindowID) {
             for tile in tiles where tile.id == id && tile.icon.superlayer != nil {
                 if let image { tile.layer.contents = image }
-                let size = tile.layer.bounds.size
+                // Above a title's band, which would cover it.
+                let band = titles.contains { $0.id == id } ? WorkspaceSwitcherView.bandHeight : 0
+                let size = CGSize(width: tile.layer.bounds.width, height: tile.layer.bounds.height - band)
                 if tile.layer.contents == nil {
                     let side = min(28, size.width - 6, size.height - 6)
                     tile.icon.frame = CGRect(x: (size.width - side) / 2, y: (size.height - side) / 2, width: max(side, 0), height: max(side, 0))
@@ -343,12 +430,42 @@ final class WorkspaceSwitcherView: NSView {
             }
         }
 
-        func applyColors(picked: Bool) {
+        func set(_ title: String, for id: WindowID) {
+            for entry in titles where entry.id == id { entry.label.string = title }
+        }
+
+        /// The windows in front big enough for a key, as they read; none on a schematic card.
+        func keyable() -> [WindowID] {
+            guard !schematic else { return [] }
+            let size = WorkspaceSwitcherView.keyedSize
+            let shown = tiles.filter { !$0.behind && $0.layer.bounds.width >= size.width && $0.layer.bounds.height >= size.height }
+            return SwitcherLayout.readingOrder(shown.map(\.layer.frame)).map { shown[$0].id }
+        }
+
+        /// Puts `letter`'s key on the window: at its title band's right end, the title cut short for it, or alone in
+        /// its lower right corner.
+        func setKey(_ letter: Character, for id: WindowID, scale: CGFloat) {
+            guard let tile = tiles.first(where: { $0.id == id }) else { return }
+            let size = tile.layer.bounds.size
+            let band = WorkspaceSwitcherView.bandHeight
+            let label = titles.first { $0.id == id }?.label
+            let height = label == nil ? WorkspaceSwitcherView.keyHeight : band - 2
+            let keycap = Keycap(letter, height: height, scale: scale, onDark: true)
+            let key = keycap.size
+            let y = label == nil ? size.height - key.height - 2 : size.height - band + ((band - key.height) / 2).rounded()
+            keycap.root.frame = CGRect(x: size.width - key.width - 2, y: y, width: key.width, height: key.height)
+            keycap.root.zPosition = 2
+            tile.layer.addSublayer(keycap.root)
+            keycaps.append(keycap)
+            if let label { label.frame.size.width = max(label.frame.width - key.width - 3, 0) }
+        }
+
+        func applyColors(picked: Bool, highlight: NSColor) {
             screen.backgroundColor = schematic ? nil : NSColor.labelColor.withAlphaComponent(0.07).cgColor
             if schematic {
-                // Solid, as Windows' snap layouts: grey, the picked card's in the accent colour.
+                // Solid, as Windows' snap layouts: grey, the picked card's in the highlight colour.
                 let dark = NSAppearance.currentDrawing().bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-                let accent = NSColor.controlAccentColor.usingColorSpace(.sRGB) ?? .systemBlue
+                let accent = highlight.usingColorSpace(.sRGB) ?? .systemBlue
                 let fill = picked ? accent : dark ? NSColor(srgbRed: 0.29, green: 0.30, blue: 0.33, alpha: 1)
                                                   : NSColor(srgbRed: 0.89, green: 0.89, blue: 0.90, alpha: 1)
                 let edge = picked ? (dark ? accent.blended(withFraction: 0.25, of: .white) : accent.blended(withFraction: 0.2, of: .black)) ?? accent
@@ -359,7 +476,7 @@ final class WorkspaceSwitcherView: NSView {
                     tile.layer.borderColor = edge.cgColor
                 }
                 for sliver in slivers {
-                    sliver.backgroundColor = (picked ? accent.withAlphaComponent(0.55) : fill.withAlphaComponent(0.85)).cgColor
+                    sliver.backgroundColor = (picked ? accent.fading(to: 0.55) : fill.withAlphaComponent(0.85)).cgColor
                     sliver.borderColor = edge.cgColor
                 }
             } else {
@@ -375,6 +492,8 @@ final class WorkspaceSwitcherView: NSView {
             }
             for empty in empties { empty.strokeColor = NSColor.tertiaryLabelColor.cgColor }
             label.foregroundColor = (picked ? NSColor.labelColor : NSColor.secondaryLabelColor).cgColor
+            // White keys: what they jump to is a window, not the card picked.
+            for keycap in keycaps { keycap.applyColors(picked: false, highlight: highlight) }
             dot.backgroundColor = (picked ? NSColor.labelColor : NSColor.secondaryLabelColor).cgColor
         }
     }

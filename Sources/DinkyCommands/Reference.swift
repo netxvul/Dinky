@@ -38,7 +38,8 @@ extension Command {
                 + "A floating window moves that many points instead, [floating] move-step without a number, staying on its display; "
                 + "a tile ignores the number. With --floating-only, a window that does not float is left alone."),
         Doc(syntax: "join-with <left|down|up|right>",
-            description: "Put the focused window and its neighbour in a new container. Not for a floating window."),
+            description: "Put the focused window and its neighbour in a new container. Not for a floating window; "
+                + "on a free workspace it answers that the workspace is free."),
         Doc(syntax: "resize <smart|width|height> <+N|-N> [--floating-only]",
             description: "Grow or shrink the focused window by N points: smart along its container, width or height along that axis. "
                 + "A floating window grows about its centre, or its top-left corner with [floating] resize-anchor = 'top-left', "
@@ -50,7 +51,8 @@ extension Command {
                 + "the orientation, h_accordion and the like both; any of these takes a scrolling workspace back to its tree. "
                 + "With several, apply the one after the last that describes the window now, so 'layout floating tiling' "
                 + "toggles and 'layout tiles accordion scrolling' cycles. "
-                + "An auto container counts as the orientation it follows now."),
+                + "An auto container counts as the orientation it follows now. "
+                + "On a free workspace, where every window floats, anything but floating is an error."),
         Doc(syntax: "fullscreen",
             description: "Toggle the focused window filling the workspace. The tree is kept. "
                 + "[fullscreen] focus-change says whether focusing another window ends it, hands it over or adds that window; "
@@ -61,7 +63,8 @@ extension Command {
                 + "the display's visible area, inside the outer gaps, is split into rows by columns cells with the inner gaps "
                 + "between them, and the window takes width by height cells from column x, row y, counted from 0 at the top left. "
                 + "'grid 1:2:0:0:1:1' is the left half, 'grid 3:3:1:1:1:1' the centre ninth. "
-                + "With --toggle, a window that already floats is tiled instead, so one key goes back and forth."),
+                + "With --toggle, a window that already floats is tiled instead, so one key goes back and forth; "
+                + "on a free workspace it goes back where it was before."),
         Doc(syntax: "cycle-size <percent>...",
             description: "Step the focused window to the next of these sizes, as percentages of its display, such as "
                 + "'cycle-size 50% 30% 60%': the size after the one it has now, or the first. A floating window is centred "
@@ -84,12 +87,14 @@ extension Command {
         Doc(syntax: "window-switcher",
             description: "Show the window switcher's capsule of the windows of the workspace under the pointer, in the middle "
                 + "of its display. The arrows or h, j, k, l move the pick, Tab and Shift-Tab step through, Return or Space focuses "
-                + "the window picked and Esc closes it. Run again while it shows, it steps to the next window. "
+                + "the window picked, a window's letter focuses it at once, and Esc closes it. Run again while it shows, it "
+                + "steps to the next window. "
                 + "From a binding with modifiers, letting go of them focuses the window picked, as Cmd-Tab does."),
         Doc(syntax: "workspace-switcher",
             description: "Show the workspace switcher's capsule in the middle of the display under the pointer. The arrows or "
                 + "h, j, k, l move the pick, Tab and Shift-Tab step through, Return or Space switches to the workspace picked "
-                + "and Esc closes it. Run again while it shows, it steps to the next workspace. "
+                + "a window's letter switches to its workspace and focuses it, and Esc closes it. Run again while it shows, it "
+                + "steps to the next workspace. "
                 + "From a binding with modifiers, letting go of them switches to the workspace picked."),
         Doc(syntax: "clear-minimum-sizes",
             description: "Forget the minimum window sizes dinky has learned for every app, and re-apply every layout."),

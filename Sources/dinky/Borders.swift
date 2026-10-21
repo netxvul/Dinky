@@ -29,6 +29,10 @@ final class BorderManager {
         refreshSpaces()
         focusedID = dinky_border_focused_window()
         syncAll()
+        // An active colour of 'accent' follows the accent colour as it changes in System Settings.
+        NotificationCenter.default.addObserver(forName: NSColor.systemColorsDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            if self?.config.activeColor == .accent { self?.syncAll() }
+        }
     }
 
     func update(config: Borders) {
@@ -121,7 +125,7 @@ final class BorderManager {
         let focused = window.id == focusedID
         let border = borders[window.id] ?? BorderWindow(target: window.id)
         borders[window.id] = border
-        border.update(window, color: focused ? config.activeColor : config.inactiveColor, config: config,
+        border.update(window, color: focused ? config.activeColor.resolved : config.inactiveColor, config: config,
                       moveOnly: isAnimating(window.id))
     }
 

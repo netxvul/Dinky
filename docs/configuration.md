@@ -25,12 +25,14 @@ permalink: /configuration/
 |---|---|---|
 | `start-at-login` | `true` | Register as a login item. |
 | `workspaces` | `5` | Workspaces across all displays, one native Space each. dinky creates and removes Spaces to match. |
-| `default-layout` | `'tiles'` | `'tiles'` (the existing dwindle layout), `'dwindle'`, `'accordion'`, `'fixed'`, or `'scrolling'`. |
+| `default-layout` | `'tiles'` | `'tiles'` (the existing dwindle layout), `'dwindle'`, `'accordion'`, `'fixed'`, `'scrolling'`, or `'free'`, which tiles nothing (see [`[workspace.<number>]`](#workspacenumber)). |
 | `default-tiling` | `true` | Set `false` to leave workspaces untiled unless overridden. |
 | `follow-app-activation` | `true` | Cmd-Tab and Dock clicks switch Spaces the fast way. Needs the macOS "switch to a Space with open windows" setting off. |
 | `float-windows-without-fullscreen` | `true` | Float windows that can't go full screen, such as Finder's copy progress, About This Mac and Calculator. Terminals and editors that can hide their title bar still tile. A `layout tiling` rule tiles a window anyway. |
 | `menu-bar-icon` | `'blocks'` | `'blocks'` shows a block per display in the menu bar, left to right, with the workspace it shows: filled for the focused display, outlined for the others, corner marks for a full-screen Space. `'text'` shows the focused display's workspace number. `'none'` hides the menu bar item; the `dinky` CLI and key bindings still work. |
+| `hide-menu-bar-icon` | `'never'` | When to hide dinky's menu bar item. `'single-display'` hides it while only one display is connected and shows it again once a second one is. `'always'` hides it, as `menu-bar-icon = 'none'` does. `'never'` leaves it to `menu-bar-icon`. Hidden, the `dinky` CLI and key bindings still work. |
 | `scripting-addition` | `true` | Whether dinky may use its Dock scripting addition, which needs SIP off. Where it is injected (see [Scripting addition](scripting-addition.md)), a scrolling strip scrolls through it, its windows sliding past the screen edges; without it the strip moves its windows frame by frame. `false` never touches it, even with SIP off and the addition installed: dinky neither checks for it nor injects it, and the strip moves its windows frame by frame. Takes effect on reload. |
+| `highlight-color` | unset | One highlight colour for everything that has one: `'#rrggbb'`, `'#rrggbbaa'`, or `'accent'` for the accent colour in System Settings. Each highlight a table leaves unset takes it: the pick in both switchers ([`[switcher]`](#switcher)), the focused window's border ([`[borders]`](#borders) `active-color`) and a drag's preview ([`[drag]`](#drag) `preview-border-color`). A table's own colour always wins, and its `'accent'` keeps the accent colour there. Unset, each keeps its own default. Like every top-level key, it goes above the first `[table]`. |
 
 </div>
 
@@ -44,8 +46,7 @@ numbered workspace.
 | Key | Default | |
 |---|---|---|
 | `tiling` | `default-tiling` | Whether the workspace tiles. |
-| `float` | `false` | Float every window on the workspace, as `layout floating` does, so `move`, `resize`, `fullscreen` and `cycle-size` work on them from the first press. A window floated here keeps floating on other workspaces. `grid --toggle` puts a window back where it was instead of tiling it. |
-| `layout` | `default-layout` | Its layout, with the same values. |
+| `layout` | `default-layout` | Its layout, with the same values. `'free'` lays nothing out: every window on the workspace floats where it stands, those opened there and those moved there, whatever `tiling` says, so `move`, `resize`, `fullscreen` and `cycle-size` work on them from the first press. One it floated tiles again on a workspace with another layout. There `layout` and `join-with` answer that the workspace is free instead of tiling a window, and `grid --toggle` puts a window back where it was before the grid placed it. `tiling = false` instead leaves the windows alone: dinky neither tiles nor floats them. |
 | `columns`, `rows` | `1` | A fixed layout's template. |
 | `expand` | `'columns'` | What a fixed layout does when every cell is taken. |
 
@@ -108,7 +109,10 @@ neighbour, or take a window that shares its column out into a new column.
 `join-with left` and `right` put the window into the neighbouring column.
 `resize width` (and `smart`) changes the column's width, `resize height` the
 window's share of its column; `balance-sizes` resets them all. Hover focus
-leaves columns that are not wholly in view alone; a click scrolls to them.
+leaves columns that are not wholly in view alone; a click scrolls to them. A
+click on a parked column's sliver goes to dinky rather than the app: the column
+scrolls in and is focused once it rests there. A click that moves focus anywhere
+else reaches the app as usual, and the strip scrolls once the button is up.
 
 ```toml
 [workspace.1]
@@ -241,7 +245,7 @@ gaps.outer.top = 44
 |---|---|---|
 | `enabled` | `true` | |
 | `width` | `4` | Points; may be fractional. |
-| `active-color` | `'#e1e3e4'` | `'#rrggbb'` or `'#rrggbbaa'`. |
+| `active-color` | [`highlight-color`](#top-level), else `'#e1e3e4'` | The focused window's border: `'#rrggbb'`, `'#rrggbbaa'` or `'accent'`. |
 | `inactive-color` | `'#494d64'` | |
 | `order` | `'below'` | `'above'` draws a click-through ring over the window. |
 | `exclude-apps` | `[]` | Bundle IDs that get no border. |
@@ -310,10 +314,11 @@ grid only swaps. Dropped anywhere else, the window goes back.
 | Key | Default | |
 |---|---|---|
 | `placeholders` | `true` | While you drag a tiled window, outline the tile it came from, and show over the tile under the pointer the part the window will take. |
-| `preview-border-color` | accent colour | The border of the part of the tile the window will take: `'#rrggbb'` or `'#rrggbbaa'`. Unset, it follows the accent colour in System Settings. The faint outline of the whole tile around a half is this colour at 40%. |
+| `preview-border-color` | [`highlight-color`](#top-level), else the accent colour | The border of the part of the tile the window will take: `'#rrggbb'`, `'#rrggbbaa'`, or `'accent'` for the accent colour in System Settings. The faint outline of the whole tile around a half is this colour at 40%. |
 | `preview-fill-color` | border at 30% | The fill of that part, `'#rrggbbaa'` for a translucent one such as `'#7aa2f74d'`. |
 | `preview-border-width` | `3` | Points, from `0` to `20`, for every border while you drag: the preview, a swap's, and the outlines of the tiles. |
 | `home-outline` | `true` | Outline the tile the window came from in grey while you drag. `false` shows only the feedback over the tile under the pointer. |
+| `mouse-modifier` | `'none'` | Hold it to drag a window from anywhere in it, not only by its title bar: `'alt'`, `'ctrl'`, `'cmd'` or `'shift'`, or several joined by `-` such as `'ctrl-cmd'`, held exactly. A tiled window drops as above; a floating one just moves. Once it is set, only a drag with it held drops onto a tile and shows where it will go: a tiled window dragged by its title bar alone goes back to its tile, and dragging its edges still resizes it. The press goes to dinky, not the app, so pick modifiers your apps don't click with: `cmd` opens links, `ctrl` is a right click. Each key's side follows [`[modifiers]`](#modifiers), and it can't be a switcher's `modifier`. `'none'` turns it off. |
 
 </div>
 
@@ -323,7 +328,7 @@ After the `layout` command, or when the binding mode changes, a glass capsule
 shows the new layout, such as `h_accordion` or `scrolling`, or the new mode's
 name, for a moment on the focused display, then fades out. When a display moves
 to another workspace, it shows there the workspace's number and layout, such as
-`2 · v_accordion`: the layout of its focused tile, `scrolling`, `floating` for a
+`2 · v_accordion`: the layout of its focused tile, `scrolling`, `free` for a
 workspace dinky does not tile, or the configured layout of an empty one. Another change while
 it shows replaces the text and restarts the count. On macOS 26 and later it is
 Liquid Glass; earlier, the HUD material.
@@ -342,32 +347,83 @@ Liquid Glass; earlier, the HUD material.
 
 </div>
 
+## `[switcher]`
+
+What the [window switcher](#window-switcher) and the
+[workspace switcher](#workspace-switcher) share. Each key here can also go in
+`[window-switcher]` or `[workspace-switcher]`, where it is for that switcher
+alone and wins over this one, wherever the tables are in the file.
+
+<div class="wide-table" markdown="1">
+
+| Key | Default | |
+|---|---|---|
+| `enabled` | `true` | `false` turns the switcher off: its modifier, its binding and its swipe show nothing. |
+| `delay-ms` | `200` | How long the modifier is held alone before the capsule shows, `0` to `2000`. |
+| `trigger` | `'hold'` | How the modifier shows the capsule: `'hold'` held on its own for `delay-ms`, releasing it takes the pick; `'double-tap'` tapped on its own twice, and the capsule stays up at the pointer for the arrows, Tab, a digit or the pointer to pick, Return, Space or a click to take the pick and Esc to close it, as from a key binding. |
+| `double-tap-ms` | `300` | With `'double-tap'`, how long each tap and the gap between them may last, `100` to `1000`. |
+| `corner-radius` | `52` | The capsule's corner radius in points, `0` to `80`, at most half its height. The padding around the thumbnails is the same on every side, `14` points, growing with the radius past `47` so no thumbnail is clipped. The window switcher's row and map are both about `128` points tall, so it takes about `70` for round ends. |
+| `position` | `'auto'` | Where the capsule shows on the display under the pointer: `'auto'` over the pointer when the modifier is held or a swipe shows it, in the middle from a key binding; `'center'` in the middle; `'top'` below the menu bar; `'bottom'` above the Dock; `'mouse'` over the pointer, from a key binding too. Wherever it shows, the pointer picks what is under it, or on a row whatever is above or below it. |
+| `show-titles` | `true` | Whether windows show their titles. In the window switcher each title sits under its card; on a map, and over a column's upper window, on a dark band along the card's foot. In the workspace switcher each window in a card has its title on a band along its foot, unless it is covered or too small to read, or `thumbnails = 'schematic'`. A window without a title shows its app's name. Titles come from the window server with Screen Recording granted, else from the app. |
+| `letter-keys` | `true` | Whether each window gets a letter, drawn as a key at its title's right (alone where its title would be with `show-titles = false`). Pressing that letter while the capsule is up jumps to the window at once: the window switcher focuses it; the workspace switcher switches to its workspace and focuses it there. The letter works held, double-tapped or from a binding, whatever modifiers are down, and is not passed on to the app. In the workspace switcher only windows in front and big enough for a key get one, and schematic cards none. |
+| `letters` | `'asdfgqwertyuiopzxcvbnm'` | The letters handed out, in order, to the windows as they read: left to right, a column top to bottom; in the workspace switcher card by card. Lowercase `a` to `z`, each once, without `h`, `j`, `k` and `l`, which move the pick. Windows past the last letter get none. Letters go by their place on a US keyboard, as key bindings do. |
+| `highlight-color` | [`highlight-color`](#top-level), else `'accent'` | The ring around the pick and a faint glow of it under the pick, `'#rrggbb'`, `'#rrggbbaa'` or `'accent'`. On the workspace switcher with `thumbnails = 'schematic'`, the picked card's windows too. |
+
+</div>
+
+```toml
+[switcher]
+delay-ms = 50
+corner-radius = 18
+position = 'center'
+
+[window-switcher]
+modifier = 'alt'
+position = 'auto'   # this one over the pointer when held
+
+[workspace-switcher]
+modifier = 'ctrl'
+enabled = false     # off for now, its settings kept
+```
+
 ## `[window-switcher]`
 
 Hold `modifier` on its own over a workspace laid out by one of `layouts`, with
-a tiled window or more (two or more with `show-single = false`), and after
-`delay-ms` a glass capsule of the workspace's windows appears at the pointer,
-with the focused one under it.
+a tiled window or more (on a free workspace, any window; two or more with
+`show-single = false`), and after `delay-ms` a glass capsule of the
+workspace's windows appears at the pointer, with the focused one under it (on
+a free workspace without it, the frontmost one there).
 
 - On a scrolling or accordion workspace it is a row over the pointer: strip
   order, a column's windows together, or tree order, the windows of each part
-  of the root together. Move the pointer left and right to pick a window.
+  of the root together. Windows stacked in a column, or split in a part, show
+  as their tiles sit on screen, one over the other; an accordion's windows sit
+  side by side. Move the pointer across to pick a window, and up or down
+  between stacked ones.
 - On a tiles or fixed workspace it is a map of the workspace over the pointer,
   each window's tile scaled down where it is, the focused one under the
   pointer. Move the pointer onto a tile to pick it; off the map the nearest
   tile is picked. `tiles-style = 'row'` shows these as a row too.
+- On a free workspace (`layout = 'free'` or `tiling = false`) it is a row of
+  the windows on it, left to right by where they stand, with `'free'` in
+  `layouts`. Floating windows on a tiled workspace are not in its capsule.
 
 Release the modifier to focus the window picked, which on a scrolling
-workspace scrolls the strip to it.
-Esc, or any key pressed with the modifier, closes the capsule without focusing
-anything, so bindings that use the modifier work as before. One capsule serves
-every workspace.
+workspace scrolls the strip to it. While the capsule is up the keys drive it
+too, and none of them reaches the app underneath: h, j, k, l (or the arrows)
+move the pick left, down, up and right, onto the nearest tile that way on a
+map and, along a row, h and k to the one before, j and l to the one after;
+Tab and Shift-Tab step through; Return or Space focuses the window picked at
+once; a window's letter, drawn as a key beside its title (`letter-keys`),
+focuses that window at once. Esc closes the capsule without focusing anything,
+and so does any other key pressed with the modifier, which goes on to the
+binding it is for. One capsule serves every workspace.
 
 A key binding to the `window-switcher` command shows the capsule from the
 keyboard instead, in the middle of the display under the pointer: the arrows
 or h, j, k, l move the pick (onto the nearest tile that way on a map), Tab and
-Shift-Tab step through, Return or Space focuses the window picked and Esc
-closes it. The binding again steps to the next window, and letting go of its
+Shift-Tab step through, Return or Space focuses the window picked, a window's
+letter focuses it at once and Esc closes it. The binding again steps to the next window, and letting go of its
 modifiers focuses the window picked, as Cmd-Tab does. The mouse works too:
 move the pointer over a window in the capsule to pick it and click to focus
 it. It works with `modifier = 'none'` too.
@@ -386,13 +442,11 @@ per window, so the capsule draws at once and fresh ones fade in.
 
 | Key | Default | |
 |---|---|---|
-| `modifier` | `'none'` | `'alt'`, `'ctrl'`, `'cmd'` or `'shift'`. `'none'` turns the switcher off. Which key of the pair counts follows [`[modifiers]`](#modifiers). |
-| `delay-ms` | `200` | How long the modifier is held alone before the capsule shows, `0` to `2000`. |
-| `layouts` | `['scrolling', 'tiles']` | The layouts it shows for: `'scrolling'`, `'tiles'` (dwindle), `'accordion'` and `'fixed'`. |
-| `corner-radius` | `52` | The capsule's corner radius in points, `0` to `80`, at most half its height. The padding around the thumbnails is the same on every side, `14` points, growing with the radius past `47` so no thumbnail is clipped. The row is about `128` points tall, so it takes about `70` for round ends; the map is `220`, and looks best around `20` to `28`. |
+| `modifier` | `'none'` | `'alt'`, `'ctrl'`, `'cmd'`, `'shift'` or `'hyper'`, [`[modifiers]`](#modifiers)' `hyper` held together. `'none'` turns holding it off; a binding still shows the capsule. Which key of the pair counts follows [`[modifiers]`](#modifiers). |
+| `layouts` | `['scrolling', 'tiles']` | The layouts it shows for: `'scrolling'`, `'tiles'` (dwindle), `'accordion'`, `'fixed'` and `'free'`, a workspace dinky does not tile. |
 | `tiles-style` | `'map'` | How a tiles or fixed workspace shows: `'map'`, its tiles as they are, or `'row'`, a row like a scrolling workspace's. |
-| `show-single` | `true` | Whether the capsule shows for a workspace with a lone tiled window, held or from a binding. `false` shows it only with two or more. |
-| `position` | `'auto'` | Where the capsule shows on the display under the pointer: `'auto'` over the pointer when the modifier is held or a swipe shows it, in the middle from a key binding; `'center'` in the middle; `'top'` below the menu bar; `'bottom'` above the Dock; `'mouse'` over the pointer, from a key binding too. Wherever it shows, the pointer picks what is under it, or on a row whatever is above or below it. |
+| `show-single` | `true` | Whether the capsule shows for a workspace with a lone tiled window (on a free workspace, a lone window), held or from a binding. `false` shows it only with two or more. |
+| `enabled`, `delay-ms`, `trigger`, `double-tap-ms`, `corner-radius`, `position`, `show-titles`, `letter-keys`, `letters`, `highlight-color` | [`[switcher]`](#switcher)'s | As in `[switcher]`, for this switcher alone. |
 
 </div>
 
@@ -425,7 +479,10 @@ layout puts them, and under it the workspace's number and layout as the
 
 Move the pointer across to pick a workspace and release the modifier to
 switch to it, as `workspace` does: on another display, that display shows it
-and takes focus. Esc, or any key pressed with the modifier, closes the capsule
+and takes focus. While it is up, h, j, k, l, the arrows and Tab move the pick
+and Return or Space switches at once, as from a key binding below. A window's
+letter, drawn as a key on it (`letter-keys`), switches to its workspace and
+focuses it. Esc, or any other key pressed with the modifier, closes the capsule
 without switching.
 
 A key binding to the `workspace-switcher` command shows the capsule in the
@@ -433,7 +490,8 @@ middle of the display under the pointer instead: the arrows or h, j, k, l and
 Tab and Shift-Tab move the pick, Return or Space switches to it and Esc closes
 it; the binding again steps to the next workspace, and letting go of its
 modifiers switches to the one picked. A digit switches to the workspace with
-that number at once, 0 for 10. The mouse works too: move the pointer over a
+that number at once, 0 for 10, and a window's letter to its workspace,
+focusing it. The mouse works too: move the pointer over a
 card to pick it and click to switch to it.
 
 Every card has its own display's proportions. With more than one display and
@@ -451,15 +509,13 @@ on screen as the capsule shows; a window not captured yet shows its app's icon.
 
 | Key | Default | |
 |---|---|---|
-| `modifier` | `'none'` | `'alt'`, `'ctrl'`, `'cmd'` or `'shift'`; not the same as `[window-switcher]`'s. `'none'` turns it off. Which key of the pair counts follows [`[modifiers]`](#modifiers). |
-| `delay-ms` | `200` | How long the modifier is held alone before the capsule shows, `0` to `2000`. |
+| `modifier` | `'none'` | `'alt'`, `'ctrl'`, `'cmd'`, `'shift'` or `'hyper'`; not the same as `[window-switcher]`'s unless their `trigger`s differ, so one key can be held for one switcher and double-tapped for the other (keep the held one's `delay-ms` at least its `double-tap-ms`, or a slow tap shows it). `'none'` turns holding it off; a binding still shows the capsule. Which key of the pair counts follows [`[modifiers]`](#modifiers). |
 | `displays` | `'all'` | `'all'`: every display's workspaces, a group per display. `'pointer'`: only those of the display under the pointer. |
 | `show-empty` | `true` | Cards for workspaces without windows. |
 | `exclude` | `[]` | Workspace numbers left out, such as `[3]`. |
 | `card-height` | `85` | Each card's height in points, `60` to `200`; its width follows its display. A row too wide for the display is scaled down. |
-| `thumbnails` | `'windows'` | `'windows'` shows a picture of each window; `'icons'` only app icons; `'schematic'` a fixed picture of each workspace's layout, the same whatever windows it has: tiles one window beside two, accordion three stacked, scrolling two columns between parked slivers, fixed its template's cells, floating three overlapping windows. Its windows are solid grey blocks with a hairline edge, as Windows draws its snap layouts, all in the accent colour on the card picked. Neither of the last two needs Screen Recording. |
-| `corner-radius` | `[window-switcher]`'s | The capsule's corner radius in points, `0` to `80`. |
-| `position` | `[window-switcher]`'s | Where the capsule shows, as [`[window-switcher]`'s `position`](#window-switcher): `'auto'`, `'center'`, `'top'`, `'bottom'` or `'mouse'`. |
+| `thumbnails` | `'windows'` | `'windows'` shows a picture of each window; `'icons'` only app icons; `'schematic'` a fixed picture of each workspace's layout, the same whatever windows it has: tiles one window beside two, accordion three stacked, scrolling two columns between parked slivers, fixed its template's cells, free three overlapping windows. Its windows are solid grey blocks with a hairline edge, as Windows draws its snap layouts, all in the accent colour on the card picked. Neither of the last two needs Screen Recording. |
+| `enabled`, `delay-ms`, `trigger`, `double-tap-ms`, `corner-radius`, `position`, `show-titles`, `letter-keys`, `letters`, `highlight-color` | [`[switcher]`](#switcher)'s | As in `[switcher]`, for this switcher alone. |
 
 </div>
 
@@ -471,40 +527,87 @@ exclude = [3]
 
 ## `[gestures]`
 
+Swipes run commands, as key bindings do: on the trackpad in
+`[gestures.trackpad]`, on a Magic Mouse in `[gestures.mouse]`. Gestures read
+both through macOS's private MultitouchSupport framework.
+
+```toml
+[gestures.trackpad]
+swipe-right = 'window-switcher'
+swipe-left = 'workspace-switcher'
+```
+
+### `[gestures.trackpad]`
+
 Swipe on the trackpad with `fingers` fingers and the swipe's commands run, as
-a key binding's do; the trackpad ticks. A swipe is the fingers moving about a
-centimetre, mostly one way, soon after they land.
+a key binding's do; the trackpad ticks. A swipe is fingers that land together
+moving `distance` millimetres, mostly one way, soon after they land. Fingers
+that gather slowly, as when a third joins two that scroll or a thumb comes to
+rest, are no swipe until they all lift.
 
 A swipe that shows the [window-switcher](#window-switcher) or the
 [workspace-switcher](#workspace-switcher) goes on with the same fingers, as
 holding the modifier does: keep them down and move them across, a step of the
-pick every `step` millimetres, each one felt; on a map, up and down too. Lift
-them to take the pick. Lifted before the pick moves, as at the end of a quick
-swipe, the capsule stays up: move the pointer to pick and click to take it, or
-put the fingers down again and slide them. Another finger closes the capsule,
-and so does Esc.
+pick every `step` millimetres, each one felt; on a map, up and down too. One or
+two of them, or one more, drive it as well, so a finger lifting or landing on
+the way changes nothing. Lift them all, or press the trackpad, to take the
+pick. Lifted before the pick moves, as at the end of a quick swipe, the
+capsule stays up: move the pointer to pick and click to take it, or put the
+fingers down again and slide them. Esc closes the capsule.
 
 Two fingers also scroll, so three is the default. macOS swipes three fingers
 across to switch Spaces and up for Mission Control unless that is off or set
 to four fingers in System Settings, Trackpad, More Gestures; `dinky doctor`
-says when a bound swipe clashes. Gestures read the trackpad through macOS's
-private MultitouchSupport framework, the built-in trackpad and Magic Trackpads
-alike.
+says when a bound swipe clashes. The built-in trackpad and Magic Trackpads
+work alike.
 
 <div class="wide-table" markdown="1">
 
 | Key | Default | |
 |---|---|---|
+| `enabled` | `true` | `false` turns swipes on the trackpad off, keeping the settings. |
 | `fingers` | `3` | How many fingers swipe, `2` to `5`. |
+| `distance` | `15` | Millimetres the fingers move before it is a swipe, `6` to `40`. |
 | `step` | `12` | Millimetres the fingers move for each step of a switcher's pick, `4` to `50`. |
 | `swipe-left`, `swipe-right`, `swipe-up`, `swipe-down` | | The command or commands the swipe runs. |
 
 </div>
 
+### `[gestures.mouse]`
+
+Off by default: `enabled = true` turns on the same swipes on a Magic Mouse,
+with lengths for its narrow surface, about 52 mm across and 90 front to back.
+Two fingers swipe there by default: held as a mouse is, it seldom feels a
+third, which lies along its edge. Fingers resting on the mouse as it is held
+count: the swipe starts as the last of them lands. One finger scrolls and
+macOS swipes two across the mouse between full-screen apps unless that is off
+in System Settings, Mouse; `dinky doctor` says when a bound swipe clashes.
+Swiping with more, two fingers move nothing while they drive a switcher.
+
+A stroke across the mouse goes only so far, so fingers lifted off it may land
+again within a moment and go on picking; lift them for longer, or click, to
+take the pick, and right-click to close the capsule, as Esc does. While they
+drive it, moving the mouse moves no pick. The mouse has nothing to tick. Its
+own swipes replace all of `[gestures.trackpad]`'s; without any, those run on
+the mouse too.
+
+<div class="wide-table" markdown="1">
+
+| Key | Default | |
+|---|---|---|
+| `enabled` | `false` | `true` turns swipes on the mouse on. |
+| `fingers` | `2` | How many fingers swipe, `2` to `4`. |
+| `distance` | `8` | Millimetres the fingers move before it is a swipe, `3` to `30`. |
+| `step` | `4` | Millimetres the fingers move for each step of a switcher's pick, `2` to `30`. |
+| `swipe-left`, `swipe-right`, `swipe-up`, `swipe-down` | | The command or commands the swipe runs on the mouse. |
+
+</div>
+
 ```toml
-[gestures]
-swipe-right = 'window-switcher'
-swipe-left = 'workspace-switcher'
+[gestures.mouse]
+enabled = true
+swipe-up = 'window-switcher'
+swipe-down = 'workspace-switcher'
 ```
 
 ## `[modifiers]`
@@ -521,6 +624,7 @@ side and the other Option key types special characters as usual: with
 | `ctrl` | `'both'` | The same for Control. |
 | `cmd` | `'both'` | The same for Command. |
 | `shift` | `'both'` | The same for Shift. |
+| `hyper` | `'alt-ctrl-cmd-shift'` | Two or more modifiers joined by `-`, in any order: what a switcher's `modifier = 'hyper'` holds. They count from either side, whatever the keys above say; held together and nothing else, they show the capsule, and letting go of any one lets go of hyper. Not for key bindings. |
 
 </div>
 
@@ -546,7 +650,8 @@ environment `exec-and-forget` gets.
 Every rule whose conditions all match a new window runs, in order. Dialogs,
 sheets, panels and fixed-size windows always float. Windows that can't go full
 screen float too while `float-windows-without-fullscreen` is on, unless a
-`layout tiling` rule tiles them.
+`layout tiling` rule tiles them. On a `free` workspace every window floats,
+whatever its rules say.
 
 Windows already open when dinky starts are not new: `layout floating`,
 `layout tiling` and `grid` still float or tile them, but no other command runs,
@@ -569,7 +674,8 @@ it goes instead.
 | `app-name` | Case-insensitive regex. |
 | `title` | Case-insensitive regex. |
 | `kind` | `'normal'`, `'dialog'`, `'sheet'` or `'panel'`. |
-| `workspace-layout` | The layout of the window's workspace, or a list of them: `'scrolling'`, `'tiles'` (or `'dwindle'`), `'accordion'`, `'fixed'`, or `'floating'` for a workspace that does not tile (`tiling = false` or `float = true`). Its layout now, as a `layout` command may have switched it. |
+| `disk-image` | `true` for a window that comes from a mounted disk image: the Finder window opening a .dmg shows, or any other Finder window on it, and the windows of an app run from one, such as an installer a .dmg carries. `false` for every other window. External drives are not disk images. |
+| `workspace-layout` | The layout of the window's workspace, or a list of them: `'scrolling'`, `'tiles'` (or `'dwindle'`), `'accordion'`, `'fixed'`, or `'free'` for a workspace that does not tile (`layout = 'free'` or `tiling = false`; `'floating'` is its old name). Its layout now, as a `layout` command may have switched it. |
 | `workspace` | The number of the window's workspace, or a list of them. |
 | `run` | Required. A command or a list. |
 
@@ -585,6 +691,11 @@ not match is skipped; the others still run.
 [[rules]]
 app-id = 'com.apple.Music'
 run = ['layout floating', 'move-window-to-workspace 5']
+
+# Float what a .dmg opens: its Finder window and an installer run from it.
+[[rules]]
+disk-image = true
+run = 'layout floating'
 
 # Open new Finder windows floating in the centre ninth of the display.
 [[rules]]
@@ -607,6 +718,28 @@ run = 'cycle-size 60%'
 
 Key bindings. dinky starts in `main`; `mode <name>` switches. Each key maps to
 a command or a list of commands. Bound keys are swallowed.
+
+### By layout
+
+A table in a mode named for a layout, `scrolling`, `tiles` (or `dwindle`),
+`accordion`, `fixed` or `free`, binds keys for a workspace laid out that way:
+while the focused workspace has that layout, a key in it takes over from the
+same key of the mode, and every other key of the mode stays. Its layout is the
+workspace's: `layout scrolling` switches it, and a container layout (`layout
+tiles`, `layout accordion` and the like) takes it back to the configured one.
+`free` is also a workspace with `tiling = false`; a native full-screen Space
+uses the mode's own keys. Write only the keys that should differ. The menu
+shows the keys in force on the focused workspace.
+
+```toml
+[mode.main]
+alt-shift-h = 'move left'
+alt-shift-l = 'move right'
+
+[mode.main.free]                # on a free workspace, halves instead of steps
+alt-shift-h = 'grid 1:2:0:0:1:1'
+alt-shift-l = 'grid 1:2:1:0:1:1'
+```
 
 ### Keys
 
@@ -634,13 +767,15 @@ The default `alt-` bindings take over Option-letter characters; set
 
 start-at-login = true
 workspaces = 5                  # across all displays, one native Space each
-default-layout = 'tiles'        # tiles (dwindle) | dwindle | accordion | fixed | scrolling
+default-layout = 'tiles'        # tiles (dwindle) | dwindle | accordion | fixed | scrolling | free (every window floats)
 default-tiling = true           # false leaves workspaces untiled unless overridden
 follow-app-activation = true    # Cmd-Tab and Dock clicks switch Spaces the fast way
 float-windows-without-fullscreen = true   # progress windows, About, Calculator and the like float
 menu-bar-icon = 'blocks'        # blocks (one per display, focused filled) | text (the focused display's number) | none (hidden)
+hide-menu-bar-icon = 'never'    # never | always (as menu-bar-icon = 'none') | single-display (hidden while only one display is connected)
 scripting-addition = true       # scroll strips through the Dock scripting addition where it is injected (SIP off);
                                 # without it, or false, their windows move frame by frame
+# highlight-color = '#7aa2f7'  # what every highlight left unset takes: the switchers' pick, the focused border, a drag's preview
 
 # Example: only tile workspace 2 in a fixed 2x3 template.
 # Empty cells stay empty; a seventh window adds a column by default.
@@ -684,7 +819,7 @@ outer = 8                       # or { top = 8, bottom = 8, left = 8, right = 8 
 [borders]
 enabled = true
 width = 4
-active-color = '#e1e3e4'        # '#rrggbb' or '#rrggbbaa'
+# active-color = '#e1e3e4'      # '#rrggbb', '#rrggbbaa' or 'accent'; unset is highlight-color, else '#e1e3e4'
 inactive-color = '#494d64'
 order = 'below'                 # below | above (a click-through ring over the window)
 exclude-apps = []               # bundle IDs whose windows get no border
@@ -705,6 +840,7 @@ placeholders = true             # outline where a dragged tile came from and sho
 # preview-fill-color = '#7aa2f74d'  # unset is the border colour at 30%
 preview-border-width = 3        # points, for the preview and the outlines
 home-outline = true             # outline where a dragged tile came from; false shows only where it will go
+mouse-modifier = 'none'         # held, drag a window from anywhere in it; set, only such drags drop on tiles: none (off) | alt | ctrl | cmd | shift, or joined, 'ctrl-cmd'
 
 # A glass capsule naming the new layout or mode for a moment.
 [hud]
@@ -716,16 +852,27 @@ on-layout-change = true         # after the layout command
 on-mode-change = true           # when the binding mode changes
 on-workspace-change = true      # the new workspace's layout when a display moves to another workspace
 
+# What both switchers below share. Each of these keys can go in [window-switcher] or [workspace-switcher] too,
+# for that one alone.
+[switcher]
+enabled = true                  # false turns both off: the modifier, the bindings and the swipes
+delay-ms = 200                  # how long the modifier is held alone before the capsule shows, 0 to 2000
+trigger = 'hold'                # hold (the modifier held alone) | double-tap (tapped alone twice; keys, pointer or a click pick)
+double-tap-ms = 300             # with double-tap, how long each tap and the gap between them may last, 100 to 1000
+corner-radius = 52              # points, 0 to 80; about 70 or more makes a row's ends round
+position = 'auto'               # auto (at the pointer when held, the middle from a binding) | center | top | bottom | mouse
+show-titles = true              # window titles: under each card in the window switcher, along each window's foot in a workspace card
+letter-keys = true              # a letter key beside each title; press the letter to jump to that window
+letters = 'asdfgqwertyuiopzxcvbnm'  # handed out left to right; a to z, each once, not h, j, k, l
+# highlight-color = 'accent'    # the pick's ring and glow; unset is highlight-color, else the accent colour
+
 # Hold the modifier alone for a glass capsule of the workspace's windows at the pointer; move across to pick
 # one, release to focus it.
 [window-switcher]
-modifier = 'none'               # none (off) | alt | ctrl | cmd | shift
-delay-ms = 200                  # how long it is held alone before the capsule shows, 0 to 2000
-layouts = ['scrolling', 'tiles']  # where it shows: scrolling | tiles | accordion | fixed
-corner-radius = 52              # points, 0 to 80; about 70 or more makes the row's ends round
+modifier = 'none'               # none (off) | alt | ctrl | cmd | shift | hyper
+layouts = ['scrolling', 'tiles']  # where it shows: scrolling | tiles | accordion | fixed | free
 tiles-style = 'map'             # tiles and fixed: map (their tiles, picked in two dimensions) | row
-show-single = true              # also show it for a workspace with a lone tiled window
-position = 'auto'               # auto (at the pointer when held, the middle from a binding) | center | top | bottom | mouse
+show-single = true              # also show it for a workspace with a lone tiled window (free: a lone window)
 
 # Which key of each pair bindings answer to: both | left | right. With alt = 'left',
 # right Option still types special characters.
@@ -734,6 +881,7 @@ alt = 'both'
 ctrl = 'both'
 cmd = 'both'
 shift = 'both'
+hyper = 'alt-ctrl-cmd-shift'     # what a switcher's modifier = 'hyper' holds together, two or more, either side
 
 # dinky commands run on events. exec-and-forget gets $DINKY_WORKSPACE, $DINKY_PREV_WORKSPACE and $DINKY_DISPLAY
 # in the workspace hooks, and $DINKY_MODE, $DINKY_PREV_MODE in mode-changed.

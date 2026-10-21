@@ -13,13 +13,14 @@ struct SwitcherMapTests {
 
     @Test func `Tiles keep their places, scaled to the map with a gap between`() {
         let map = SwitcherMap(tiles: tiles, bounds: bounds, cornerRadius: 0, maxWidth: 1000)
-        // (220 - 28) / 1000 = 0.192 points per point.
-        #expect(map.size == CGSize(width: 335, height: 220))
+        // 100 / 1000 = 0.1 points per point: as tall as a row's thumbnails, so as tall as a row's capsule.
+        #expect(map.size == CGSize(width: 188, height: 128))
+        #expect(map.size.height == SwitcherLayout(columns: [[1.6]], maxWidth: 1000).size.height)
         #expect(map.frames == [
-            CGRect(x: 16, y: 16, width: 150, height: 188),
-            CGRect(x: 170, y: 16, width: 149, height: 92),
-            CGRect(x: 170, y: 112, width: 72, height: 92),
-            CGRect(x: 246, y: 112, width: 73, height: 92),
+            CGRect(x: 16, y: 16, width: 76, height: 96),
+            CGRect(x: 96, y: 16, width: 76, height: 46),
+            CGRect(x: 96, y: 66, width: 36, height: 46),
+            CGRect(x: 136, y: 66, width: 36, height: 46),
         ])
     }
 
@@ -28,31 +29,31 @@ struct SwitcherMapTests {
         #expect(SwitcherMap.padding(cornerRadius: 64) == 19)
         let round = SwitcherMap(tiles: tiles, bounds: bounds, cornerRadius: 64, maxWidth: 1000)
         #expect(round.frames[0].minX == 21)
-        #expect(round.size.height == 220)
+        #expect(round.size.height == 138)
     }
 
     @Test func `A map too wide is scaled down`() {
-        let map = SwitcherMap(tiles: tiles, bounds: bounds, cornerRadius: 0, maxWidth: 188)
-        #expect(map.size == CGSize(width: 188, height: 128))
+        let map = SwitcherMap(tiles: tiles, bounds: bounds, cornerRadius: 0, maxWidth: 108)
+        #expect(map.size == CGSize(width: 108, height: 78))
     }
 
     @Test func `The cell under the point, else the nearest`() {
         let map = SwitcherMap(tiles: tiles, bounds: bounds, cornerRadius: 0, maxWidth: 1000)
         #expect(map.index(at: CGPoint(x: 50, y: 50)) == 0)
-        #expect(map.index(at: CGPoint(x: 200, y: 50)) == 1)
-        #expect(map.index(at: CGPoint(x: 280, y: 150)) == 3)
+        #expect(map.index(at: CGPoint(x: 120, y: 40)) == 1)
+        #expect(map.index(at: CGPoint(x: 150, y: 90)) == 3)
         // In the gap between the bottom quarters, as near the one as the other: the first wins.
-        #expect(map.index(at: CGPoint(x: 244, y: 150)) == 2)
-        #expect(map.index(at: CGPoint(x: 500, y: 300)) == 3)
-        #expect(map.index(at: CGPoint(x: -40, y: 90)) == 0)
+        #expect(map.index(at: CGPoint(x: 134, y: 90)) == 2)
+        #expect(map.index(at: CGPoint(x: 300, y: 200)) == 3)
+        #expect(map.index(at: CGPoint(x: -40, y: 60)) == 0)
     }
 
     @Test func `The anchor's cell sits under the pointer, inside the screen`() {
         let map = SwitcherMap(tiles: tiles, bounds: bounds, cornerRadius: 0, maxWidth: 1000)
-        // Cell 1's centre is (244.5, 62).
-        #expect(map.origin(anchor: 1, pointer: CGPoint(x: 800, y: 500), visible: visible) == CGPoint(x: 556, y: 438))
+        // Cell 1's centre is (134, 39).
+        #expect(map.origin(anchor: 1, pointer: CGPoint(x: 800, y: 500), visible: visible) == CGPoint(x: 666, y: 461))
         #expect(map.origin(anchor: 0, pointer: CGPoint(x: 10, y: 40), visible: visible) == CGPoint(x: 8, y: 33))
-        #expect(map.origin(anchor: 3, pointer: CGPoint(x: 1595, y: 1020), visible: visible) == CGPoint(x: 1257, y: 797))
+        #expect(map.origin(anchor: 3, pointer: CGPoint(x: 1595, y: 1020), visible: visible) == CGPoint(x: 1404, y: 889))
     }
 }
 

@@ -53,7 +53,7 @@ final class DisplayModel {
     private var observers: [(DisplayModel) -> Void] = []
     /// The UUID of a display `focus-monitor` focused without a window to focus there. It stands in for the
     /// focused window's display until focus next changes.
-    var focusOverride: String? { didSet { noteFocus() } }
+    var focusOverride: String? { didSet { if focusOverride != oldValue { noteFocus() } } }
     /// The focused Space and the one before it, on any display. A swipe's Spaces on the way do not count.
     private var focusedSpaces = Recent<UInt64>()
     /// The focused display's UUID and the one before it.
@@ -118,8 +118,11 @@ final class DisplayModel {
     }
 
     /// The display chosen by `focus-monitor`, else that of the focused window (or `window`), else the one under
-    /// the cursor, else the main display.
-    func focusedDisplay(window wid: UInt32 = frontWindowID()) -> Display? {
+    /// the cursor, else the main display. The focused window is the front app's frontmost one as WindowServer has
+    /// it, not as the app answers through Accessibility: this runs on the main thread, on a timer, on every
+    /// activation and command, often while that app is busy, and asking it would hold dinky and every key and
+    /// click its event taps see until it answers.
+    func focusedDisplay(window wid: UInt32 = dinky_border_focused_window()) -> Display? {
         if let chosen = displays.first(where: { $0.uuid == focusOverride }) { return chosen }
         if wid != 0, let display = display(ofWindow: wid) { return display }
         if let cursor = CGEvent(source: nil)?.location, let display = displays.first(where: { $0.frame.contains(cursor) }) {
@@ -145,9 +148,10 @@ final class DisplayModel {
         previousSpaceIDs[display.uuid]
     }
 
-    /// Takes in the focused display and the Space it has settled on. Called when focus or the Spaces change.
-    func noteFocus() {
-        guard let display = focusedDisplay() else { return }
+    /// Takes in the focused display and the Space it has settled on. Called when focus or the Spaces change, with
+    /// the focused window when the caller has just read it.
+    func noteFocus(window: UInt32 = dinky_border_focused_window()) {
+        guard let display = focusedDisplay(window: window) else { return }
         focusedDisplays.note(display.uuid)
         if let space = settledSpaceIDs[display.uuid] { focusedSpaces.note(space) }
     }

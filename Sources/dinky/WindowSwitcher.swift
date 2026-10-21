@@ -7,9 +7,12 @@ import DinkyPrivate
 // glass capsule of the workspace's windows shows over the pointer, with the focused one under it. A row for a
 // scrolling or accordion workspace, in strip or tree order, the windows of a column or a part of the root together,
 // picked by moving across; for a tiles or fixed workspace, with `tiles-style = 'map'`, a map of its tiles, picked by
-// moving onto one. Releasing the modifier focuses the window picked, which scrolls a strip to it. Esc closes the
-// capsule without focusing anything, and so does any other key, which goes on to whatever it was for, so bindings
-// that use the modifier work as before: a key or click while the modifier is held before the capsule shows calls it
+// moving onto one; for a free workspace, a row of the windows on it, left to right as they stand. Releasing the modifier focuses the window picked, which scrolls a strip to it. While it is up,
+// h, j, k, l and the arrows move the pick (`navigate`) and Return or Space focuses it at once, swallowed. Esc closes the
+// capsule without focusing anything. With `letter-keys`, each window carries a letter of `letters`, handed out as the
+// cards read left to right, drawn as a key beside its title, and its key focuses that window at once, swallowed, held
+// or from a binding, whatever modifiers are down. Any other key closes the capsule and goes on to whatever it was
+// for, so bindings that use the modifier work as before: a key or click while the modifier is held before the capsule shows calls it
 // off until the modifier is released. One capsule for every workspace, filled afresh each time from the workspace
 // under the pointer. The holding is `ModifierHold`'s. Main thread only.
 final class WindowSwitcher {
@@ -24,6 +27,10 @@ final class WindowSwitcher {
     private let hold = ModifierHold(name: "window-switcher")
     /// The Space whose windows the capsule shows.
     private var shownSpace: UInt64 = 0
+    /// Whether that Space is free, its windows untiled, and the window picked as it showed: letting go on it changes
+    /// nothing, as on a tree's focused tile.
+    private var shownFree = false
+    private var shownPick: WindowID = 0
     /// The display the capsule shows a workspace of.
     private var shownDisplay = ""
     private var observingSpaces = false
@@ -61,7 +68,7 @@ final class WindowSwitcher {
         /// The window at `point` in the capsule's coordinates.
         func index(at point: CGPoint) -> Int? {
             switch self {
-            case .row(let row): row.index(atX: point.x)
+            case .row(let row): row.index(at: point)
             case .map(let map): map.index(at: point)
             }
         }
@@ -89,6 +96,12 @@ final class WindowSwitcher {
             if case .map = arrangement { return true }
             return false
         }
+        hold.hasLetter = { [unowned self] letter in items.contains { $0.letter == letter } }
+        hold.pickLetter = { [unowned self] letter in
+            guard let index = items.firstIndex(where: { $0.letter == letter }) else { return false }
+            view.pick(index)
+            return true
+        }
         hold.cycle = { [unowned self] forward in
             view.pick(SwitcherLayout.step(view.picked, count: items.count, toward: forward ? .right : .left))
         }
@@ -103,7 +116,7 @@ final class WindowSwitcher {
     /// The `window-switcher` command: the capsule in the middle of the display under the pointer, picked with the
     /// keys. False if the workspace there has nothing to pick from.
     func showFromKeyboard() -> Bool {
-        hold.showFromKeyboard()
+        config.enabled && hold.showFromKeyboard()
     }
 
     func update(config: Config) {
@@ -112,8 +125,10 @@ final class WindowSwitcher {
             AppState.shared.displays.observe { [weak self] _ in self?.spacesChanged() }
         }
         self.config = config.windowSwitcher
-        enabled = self.config.modifier != .none || config.binds("window-switcher")
-        hold.update(modifier: self.config.modifier, sides: config.modifiers, delayMs: self.config.delayMs)
+        let modifier = self.config.enabled ? self.config.modifier : .none
+        enabled = self.config.enabled && (modifier != .none || config.binds("window-switcher"))
+        hold.update(modifier: modifier, sides: config.modifiers, delayMs: self.config.delayMs,
+                    trigger: self.config.trigger, doubleTapMs: self.config.doubleTapMs)
     }
 
     /// Closes the capsule without focusing anything, as a binding that runs while it is up does.
@@ -125,10 +140,14 @@ final class WindowSwitcher {
     /// time the capsule shows its workspace.
     func focusLeft(_ id: WindowID) {
         guard enabled, id != 0, Thumbnails.shared.permitted,
-              let coordinator = AppState.shared.coordinator,
-              let workspace = coordinator.placements[id]?.space.flatMap({ coordinator.workspaces[$0] }),
-              shows(for: workspace) else { return }
-        Thumbnails.shared.refresh(id, scale: NSScreen.main?.backingScaleFactor ?? 2)
+              let coordinator = AppState.shared.coordinator, let placement = coordinator.placements[id] else { return }
+        if let workspace = placement.space.flatMap({ coordinator.workspaces[$0] }) {
+            guard shows(for: workspace) else { return }
+        } else {
+            guard config.layouts.contains(.free), let window = coordinator.model.windows[id],
+                  isFreeUserSpace(window.spaceID, coordinator) else { return }
+        }
+        Thumbnails.shared.refreshSoon(id, scale: NSScreen.main?.backingScaleFactor ?? 2)
     }
 
     // MARK: The capsule
@@ -136,6 +155,19 @@ final class WindowSwitcher {
     /// Whether the workspace is laid out by one of `layouts`.
     private func shows(for workspace: Workspace) -> Bool {
         config.layouts.contains(kind(of: workspace))
+    }
+
+    /// Whether the Space is a free workspace: a display's user Space, a native full-screen one being no workspace.
+    private func isFreeUserSpace(_ space: UInt64, _ coordinator: Coordinator) -> Bool {
+        coordinator.displays.display(containingSpace: space)?.userSpaces.contains(space) == true && coordinator.isFree(space)
+    }
+
+    /// The windows a free Space shows, left to right by their middles, then top to bottom.
+    private func freeWindows(on space: UInt64, _ coordinator: Coordinator) -> [WindowID] {
+        coordinator.model.windows.values
+            .filter { $0.spaceID == space && $0.isNormal && !$0.isMinimized && coordinator.placements[$0.id] != nil }
+            .sorted { ($0.frame.midX, $0.frame.minY, $0.id) < ($1.frame.midX, $1.frame.minY, $1.id) }
+            .map(\.id)
     }
 
     private func kind(of workspace: Workspace) -> SwitcherLayoutKind {
@@ -183,8 +215,8 @@ final class WindowSwitcher {
         spacesChanged()
     }
 
-    /// Shows the capsule for the workspace under the pointer, if `layouts` has its layout and it has a tiled window, or
-    /// two with `show-single` off. While the display under the pointer is still moving between Spaces, as in a trackpad swipe, it waits and
+    /// Shows the capsule for the workspace under the pointer, if `layouts` has its layout and it has a tiled window (on
+    /// a free workspace, any window), or two with `show-single` off. While the display under the pointer is still moving between Spaces, as in a trackpad swipe, it waits and
     /// shows the workspace it lands on.
     private func show() -> Bool {
         if let pointer = CGEvent(source: nil)?.location,
@@ -203,43 +235,70 @@ final class WindowSwitcher {
         guard app.enabled, !MissionControl.shared.active, !SpaceSwitcher.shared.switching,
               let coordinator = app.coordinator, let pointer = CGEvent(source: nil)?.location,
               let display = app.displays.displays.first(where: { $0.frame.contains(pointer) }),
-              let workspace = coordinator.workspace(on: display), shows(for: workspace),
               let screen = screen(of: display.id) else { return false }
-        let tiles = workspace.tileFrames
-        let columns = workspace.root.children.map { $0.windows.filter { coordinator.model.windows[$0] != nil && tiles[$0] != nil } }
-            .filter { !$0.isEmpty }
+        // A free workspace has no tree, or one kept from before it was free.
+        let free = isFreeUserSpace(display.currentSpaceID, coordinator)
+        let workspace = free ? nil : coordinator.workspace(on: display)
+        let tiles = workspace?.tileFrames ?? [:]
+        let columns: [[WindowID]]
+        if let workspace {
+            guard shows(for: workspace) else { return false }
+            columns = workspace.root.children.map { $0.windows.filter { coordinator.model.windows[$0] != nil && tiles[$0] != nil } }
+                .filter { !$0.isEmpty }
+        } else {
+            guard free, config.layouts.contains(.free) else { return false }
+            columns = freeWindows(on: display.currentSpaceID, coordinator).map { [$0] }
+        }
         let ids = columns.flatMap { $0 }
         guard ids.count >= (config.showSingle ? 1 : 2) else { return false }
+        let titles = config.showTitles ? WindowTitles.known(ids) : [:]
         items = ids.map { id in
             let window = coordinator.model.windows[id]!
             let running = NSRunningApplication(processIdentifier: window.pid)
-            return SwitcherItem(id: id, app: window.appName ?? running?.localizedName ?? "", icon: running?.icon)
+            let app = window.appName ?? running?.localizedName ?? ""
+            return SwitcherItem(id: id, app: app, icon: running?.icon, title: titles[id] ?? "")
         }
         let visible = display.visibleArea, maxWidth = (visible.width * 0.8).rounded()
-        let picked = workspace.focused.flatMap { ids.firstIndex(of: $0) } ?? 0
-        let mapped = config.tilesStyle == .map && [.tiles, .fixed].contains(kind(of: workspace))
-        if mapped {
+        // On a free workspace, the focused window, else the frontmost one there.
+        let focused = workspace.map(\.focused) ?? (ids.contains(coordinator.focusedWindow) ? coordinator.focusedWindow
+            : dinky_space_window_ids(display.currentSpaceID, false).lazy.map(\.uint32Value).first(where: ids.contains))
+        let picked = focused.flatMap { ids.firstIndex(of: $0) } ?? 0
+        let mapped = config.tilesStyle == .map && workspace.map { [.tiles, .fixed].contains(kind(of: $0)) } == true
+        if mapped, let workspace {
             let map = SwitcherMap(tiles: ids.map { tiles[$0]! }, bounds: workspace.bounds,
                                   cornerRadius: CGFloat(config.cornerRadius), maxWidth: maxWidth)
             arrangement = .map(map)
             place(map.size, visible: visible, atPointer: map.origin(anchor: picked, pointer: pointer, visible: visible))
         } else {
-            let aspects = columns.map { $0.map { id -> CGFloat in
-                let size = coordinator.model.windows[id]!.frame.size
-                return size.height > 0 ? size.width / size.height : 1
-            } }
-            let row = SwitcherLayout(columns: aspects, cornerRadius: CGFloat(config.cornerRadius), maxWidth: maxWidth)
+            // A column's stacked windows one over the other, as their tiles sit.
+            let groups = columns.map { ids in
+                SwitcherLayout.Group(aspects: ids.map { id -> CGFloat in
+                    let size = coordinator.model.windows[id]!.frame.size
+                    return size.height > 0 ? size.width / size.height : 1
+                }, tiles: ids.compactMap { tiles[$0] })
+            }
+            let row = SwitcherLayout(groups: groups, cornerRadius: CGFloat(config.cornerRadius), maxWidth: maxWidth,
+                                     titles: config.showTitles || config.letterKeys)
             arrangement = .row(row)
             place(row.size, visible: visible, atPointer: row.origin(anchor: picked, pointer: pointer, visible: visible))
         }
         startPointer = pointer
         pointerMoved = false
 
+        if config.letterKeys {
+            // As the cards read, left to right.
+            for (index, letter) in zip(SwitcherLayout.readingOrder(arrangement.frames), config.letters) {
+                items[index].letter = letter
+            }
+        }
         let scale = screen.backingScaleFactor
         view.animates = animates
+        view.highlight = config.highlightColor
         view.frame = CGRect(origin: .zero, size: arrangement.size)
-        view.show(items, frames: arrangement.frames, style: mapped ? .map : .row, picked: picked, scale: scale)
+        view.show(items, frames: arrangement.frames, style: mapped ? .map : .row, picked: picked, scale: scale,
+                  titles: config.showTitles, roomUnder: !mapped)
         present()
+        if config.showTitles { askTitles() }
 
         Thumbnails.shared.askOnce()
         // Tall enough for the biggest cell, grown.
@@ -249,9 +308,23 @@ final class WindowSwitcher {
             self.view.update(id, image: image)
         }
         shownSpace = display.currentSpaceID
+        shownFree = free
+        shownPick = ids[picked]
         shownDisplay = display.uuid
         startWatching()
         return true
+    }
+
+    /// Fills in the titles the window server did not give, as the apps answer.
+    private func askTitles() {
+        let asks = items.filter { $0.title.isEmpty }.compactMap { item in
+            AppState.shared.coordinator?.model.windows[item.id].map { (id: item.id, pid: $0.pid, app: item.app) }
+        }
+        let shown = generation
+        WindowTitles.ask(asks) { [weak self] id, title in
+            guard let self, self.generation == shown, self.isShowing else { return }
+            self.view.update(id, title: title)
+        }
     }
 
     /// Sets `origin` where `position` puts a capsule of `size`, `atPointer` being where it goes over the pointer.
@@ -291,7 +364,11 @@ final class WindowSwitcher {
         hide()
         guard items.indices.contains(view.picked), let coordinator = AppState.shared.coordinator else { return }
         let id = items[view.picked].id
-        guard coordinator.workspaces[space]?.contains(id) == true, coordinator.workspaces[space]?.focused != id else { return }
+        if shownFree {
+            guard id != shownPick, coordinator.model.windows[id]?.spaceID == space, coordinator.focusedWindow != id else { return }
+        } else {
+            guard coordinator.workspaces[space]?.contains(id) == true, coordinator.workspaces[space]?.focused != id else { return }
+        }
         coordinator.focus(id)
     }
 

@@ -1,11 +1,10 @@
 import CoreGraphics
 
 /// The switcher's capsule as a map of a tiled workspace, in its own coordinates with a top-left origin: each window's
-/// tile scaled down to `height` with the workspace's proportions, a gap of `cellGap` between neighbours. The padding
-/// around the tiles grows with the corner radius so the corners never clip a tile, and a map too wide for `maxWidth`
-/// is scaled down whole.
+/// tile scaled down with the workspace's proportions, the workspace as tall as a row's thumbnails so the capsule is as
+/// tall as a scrolling workspace's, a gap of `cellGap` between neighbours. The padding around the tiles grows with the
+/// corner radius so the corners never clip a tile, and a map too wide for `maxWidth` is scaled down whole.
 public struct SwitcherMap: Equatable {
-    public static let height: CGFloat = 220
     public static let minPadding: CGFloat = 14
     public static let cellGap: CGFloat = 4
 
@@ -21,7 +20,7 @@ public struct SwitcherMap: Equatable {
             frames = tiles.map { _ in .zero }
             return
         }
-        var scale = (Self.height - padding * 2) / bounds.height
+        var scale = SwitcherLayout.thumbHeight / bounds.height
         if bounds.width * scale + padding * 2 > maxWidth { scale = max(maxWidth - padding * 2, 0) / bounds.width }
         size = CGSize(width: (bounds.width * scale + padding * 2).rounded(), height: (bounds.height * scale + padding * 2).rounded())
         let half = Self.cellGap / 2

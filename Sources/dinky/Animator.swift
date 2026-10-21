@@ -1,5 +1,6 @@
 import AppKit
 import DinkyLayout
+import DinkyPrivate
 
 // Glides windows to their tiles. Each window rides a spring, or an easing over a fixed time, from where it is to its
 // tile, stepped on every frame of the main display and written through the applier's per-app queues without
@@ -13,7 +14,8 @@ import DinkyLayout
 // windows; one that takes longer than `FrameScheduler.slowStep` over a step is then moved only every third frame
 // rather than dropped for the rest of the glide, so it keeps gliding at a pace it can hold instead of freezing and
 // jumping to its tile at the end; frames coalesce per window in the scheduler, so a throttled app never has a backlog
-// to leap through.
+// to leap through. A strip's column of a slow app's window and a quick app's would come apart that way, so its quick
+// windows keep with the slow one as it shows, and wait for it at the end (see `ColumnHold`).
 //
 // A tree can glide something other than its windows instead, such as their Dock transforms (see ScriptingAddition): its
 // frames go to its `sink` and nowhere else, at the display's full rate, since no app has to keep up. Main thread only.
@@ -65,6 +67,17 @@ final class Animator: NSObject {
     private var landed: [WindowID: (asked: CGRect, got: CGRect)] = [:]
     /// Called with the windows that just arrived.
     var onArrive: ([WindowID]) -> Void = { _ in }
+    /// By tree, the strip's columns, so the windows of one glide together.
+    var columns: (UInt64) -> [[WindowID]] = { AppState.shared.coordinator?.workspaces[$0]?.stripColumns ?? [] }
+    /// Apps found too slow to follow a glide frame by frame, in this glide or an earlier one: a column holds to their
+    /// windows from a glide's first frame, rather than snapping back to them once they have fallen behind.
+    private var slowPids: Set<pid_t> = []
+    /// Each window's app, as the passes have it, so a column still knows its slow window once that has arrived.
+    private var windowPids: [WindowID: pid_t] = [:]
+    /// Since when each window at its target has waited for the slow window of its column to land.
+    private var waitingSince: [WindowID: CFTimeInterval] = [:]
+    /// How long a window at its target waits for the slow window of its column at most.
+    private static let columnWait: CFTimeInterval = 0.5
 
     init(applier: FrameApplier) {
         self.applier = applier
@@ -97,23 +110,28 @@ final class Animator: NSObject {
     /// or with it, starts over from `starts`. `resting` has where the strip's windows are on screen now, so one that
     /// does not glide is moved as soon as `place` puts it elsewhere. A window in `slower` takes that many times as
     /// long as `stretch` has the others take. A window in `anchors` grows to the left as it glides, its right edge held
-    /// past the screen's; one that did so before and no longer does carries on from where it was written.
+    /// past the screen's; one that did so before and no longer does carries on from where it was written. A window in
+    /// `restart` sets out from its start even if it is moving already, as one a strip's long scroll takes straight on
+    /// out of view does (see ScrollShortcut.swift).
     func animate(_ key: UInt64, from starts: [WindowID: CGRect], to targets: [WindowID: CGRect],
                  pids: [WindowID: pid_t], place: (([WindowID: CGRect]) -> [WindowID: CGRect])? = nil,
                  resting: [WindowID: CGRect] = [:], stretch: Double = 1, slower: [WindowID: Double] = [:],
-                 anchors: [WindowID: ResizeOnce.Anchor] = [:], sink: (([WindowID: CGRect]) -> Void)? = nil,
-                 then finish: @escaping () -> Void) {
+                 anchors: [WindowID: ResizeOnce.Anchor] = [:], restart: Set<WindowID> = [],
+                 sink: (([WindowID: CGRect]) -> Void)? = nil, then finish: @escaping () -> Void) {
         // A new glide: every app gets another chance to keep up.
         if entries.isEmpty { applier.clearSlow() }
+        windowPids.merge(pids) { $1 }
         let wasPlaced = placers[key] != nil
         let still = Dictionary(uniqueKeysWithValues: resting.compactMap { id, frame in pids[id].map { (id, ($0, frame)) } })
         placers[key] = place.map { (targets, $0, still) }
         sinks[key] = sink
-        for (id, entry) in entries where entry.key == key && (targets[id] == nil || wasPlaced != (place != nil)) {
+        for (id, entry) in entries where entry.key == key
+            && (targets[id] == nil || wasPlaced != (place != nil) || restart.contains(id)) {
             entries[id] = nil
             written[id] = nil
         }
         for (id, target) in targets {
+            waitingSince[id] = nil
             if entries[id] != nil {
                 if entries[id]!.anchor != nil, anchors[id] == nil { entries[id]!.animation.carryOn(from: entries[id]!.frame) }
                 if entries[id]!.anchor == nil, anchors[id] != nil { entries[id]!.heldSince = CACurrentMediaTime() }
@@ -156,6 +174,7 @@ final class Animator: NSObject {
         for (id, entry) in entries where entry.key == key {
             entries[id] = nil
             written[id] = nil
+            waitingSince[id] = nil
         }
         finishes[key] = nil
         placers[key] = nil
@@ -167,6 +186,8 @@ final class Animator: NSObject {
         entries[id] = nil
         landed[id] = nil
         written[id] = nil
+        waitingSince[id] = nil
+        windowPids[id] = nil
     }
 
     /// Stops every animation where it is. Nothing is finished.
@@ -176,6 +197,7 @@ final class Animator: NSObject {
         placers = [:]
         sinks = [:]
         written = [:]
+        waitingSince = [:]
         link?.isPaused = true
         lastTick = nil
         watchdog?.invalidate()
@@ -227,7 +249,7 @@ final class Animator: NSObject {
     /// Advances every window by `dt` seconds and writes the frames; `dt` of `timeout` or more lands them all.
     private func step(dt: Double) {
         lastStepAt = CACurrentMediaTime()
-        var frames: [WindowID: CGRect] = [:], arrived: [WindowID] = []
+        var frames: [WindowID: CGRect] = [:], arrived: [WindowID] = [], done: Set<WindowID> = []
         let moving = entries
         for id in moving.keys {
             // Standing at its start until its lead-in is written, or for long enough that the app has not answered.
@@ -237,22 +259,31 @@ final class Animator: NSObject {
             }
             entries[id]!.heldSince = nil
             let stretch = entries[id]!.stretch
-            let done = entries[id]!.animation.step(curve.stretched(stretch), dt: dt, timeout: timeout * stretch)
+            let finished = entries[id]!.animation.step(curve.stretched(stretch), dt: dt, timeout: timeout * stretch)
             frames[id] = entries[id]!.frame
-            if done { entries[id] = nil; arrived.append(id) }
+            if finished { done.insert(id) }
         }
+        for entry in moving.values where applier.isSlow(entry.pid) { slowPids.insert(entry.pid) }
         // A tree gliding something else takes its frames, and its windows are left alone.
         for (key, sink) in sinks {
             let ours = frames.filter { moving[$0.key]?.key == key }
             frames = frames.filter { moving[$0.key]?.key != key }
             if !ours.isEmpty { sink(ours) }
         }
-        // A strip's windows go on screen together, each tree's resting ones where they rest.
-        var restingJobs: [FrameJob] = []
+        // A strip's windows go on screen together, each tree's resting ones where they rest, and each column's quick
+        // windows where its slow one shows.
+        var restingJobs: [FrameJob] = [], held: Set<WindowID> = []
         for (key, placer) in placers {
             let ours = frames.filter { moving[$0.key]?.key == key }
             guard !ours.isEmpty else { continue }
-            let placed = placer.place(placer.base.merging(ours) { $1 })
+            var placed = placer.place(placer.base.merging(ours) { $1 })
+            let slow = Set(placed.keys.filter { windowPids[$0].map(slowPids.contains) ?? false })
+            let hold = ColumnHold.held(placed, columns: columns(key), slow: slow) { id in
+                let info = dinky_window_info(id)
+                return info.exists ? info.frame : nil
+            }
+            placed.merge(hold.frames) { $1 }
+            held.formUnion(hold.held)
             for id in ours.keys { frames[id] = placed[id] ?? frames[id] }
             for (id, still) in placer.resting where moving[id] == nil {
                 guard let frame = placed[id], frame != still.frame, !applier.isSlow(still.pid) || stepCount % 3 == 2 else { continue }
@@ -260,12 +291,24 @@ final class Animator: NSObject {
                 restingJobs.append(FrameJob(pid: still.pid, id: id, frame: frame))
             }
         }
+        // A window at its target arrives, unless it is held for the slow window of its column, for a while at most.
+        for id in done {
+            if held.contains(id) {
+                let since = waitingSince[id] ?? lastStepAt
+                waitingSince[id] = since
+                if lastStepAt - since < Self.columnWait { continue }
+            }
+            waitingSince[id] = nil
+            entries[id] = nil
+            arrived.append(id)
+        }
         stepCount &+= 1
         var jobs = restingJobs
         for (id, frame) in frames where written[id] != frame {
             let pid = moving[id]!.pid
-            // A slow app keeps gliding at a third of the rate rather than freezing for the rest of the glide.
-            if applier.isSlow(pid), stepCount % 3 != 0 { continue }
+            // A slow app keeps gliding at a third of the rate rather than freezing for the rest of the glide, and is
+            // written its target when it gets there, which the quick windows of its column wait for.
+            if applier.isSlow(pid), stepCount % 3 != 0, !done.contains(id) { continue }
             written[id] = frame
             jobs.append(FrameJob(pid: pid, id: id, frame: frame, leadEdge: moving[id]!.anchor?.edge))
         }

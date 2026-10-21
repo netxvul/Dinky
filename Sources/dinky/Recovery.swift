@@ -177,7 +177,7 @@ final class Recovery {
                             order: entries.map(\.id).sorted { (stacking[$0] ?? .max) < (stacking[$1] ?? .max) })
         let done = DispatchSemaphore(value: 0)
         var results: [FrameResult] = []
-        applier.apply(layout, pids: Dictionary(uniqueKeysWithValues: entries.map { ($0.id, $0.pid) })) {
+        applier.apply(layout, pids: Dictionary(uniqueKeysWithValues: entries.map { ($0.id, $0.pid) }), ignoringBusy: true) {
             results = $0
             done.signal()
         }

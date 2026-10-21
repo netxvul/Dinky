@@ -23,17 +23,17 @@ prints it.
 | `move <left\|down\|up\|right> [<points>] [--floating-only]` | Move the focused window in the tree. A floating window moves that many points, `[floating] move-step` without a number; see [Floating windows](#floating-windows). |
 | `join-with <left\|down\|up\|right>` | Put the focused window and its neighbour in a new container. |
 | `resize <smart\|width\|height> <+n\|-n> [--floating-only]` | Resize by n points. A floating window grows about its centre, or its top-left corner with `[floating] resize-anchor`. |
-| `layout <tiles\|accordion\|horizontal\|vertical\|auto\|h_tiles\|v_tiles\|h_accordion\|v_accordion\|floating\|tiling\|scrolling>...` | Set the container's layout, float/tile the window, or switch the workspace to [scrolling](configuration.md#scrolling); a container layout switches it back. Given several, applies the one after the current one, so `layout floating tiling` toggles and `layout tiles accordion scrolling` cycles. Acts on the focused window, tiling it first if it floats, so it does nothing on an empty workspace. |
+| `layout <tiles\|accordion\|horizontal\|vertical\|auto\|h_tiles\|v_tiles\|h_accordion\|v_accordion\|floating\|tiling\|scrolling>...` | Set the container's layout, float/tile the window, or switch the workspace to [scrolling](configuration.md#scrolling); a container layout switches it back. Given several, applies the one after the current one, so `layout floating tiling` toggles and `layout tiles accordion scrolling` cycles. Acts on the focused window, tiling it first if it floats, so it does nothing on an empty workspace. On a [free](configuration.md#workspacenumber) workspace, where every window floats, anything but `floating` is an error. |
 | `fullscreen` | Toggle filling the workspace (not macOS full screen). [`[fullscreen] focus-change`](configuration.md#fullscreen) says what focusing another window does meanwhile. A floating window fills its display, then goes back. |
-| `grid [--toggle] <rows>:<columns>:<x>:<y>:<width>:<height>` | Float the focused window and glide it onto a grid over its display, as yabai's `--grid`. `--toggle` tiles a floating window instead. See [Grid](#grid). |
+| `grid [--toggle] <rows>:<columns>:<x>:<y>:<width>:<height>` | Float the focused window and glide it onto a grid over its display, as yabai's `--grid`. `--toggle` tiles a floating window instead, or on a free workspace puts it back where it was. See [Grid](#grid). |
 | `cycle-size <percent>...` | Step the focused window to the next of these sizes, as percentages of its display. A floating window is centred at that width and height; a tile or scrolling column takes that width. See [Cycle size](#cycle-size). |
 | `flatten-workspace-tree` | Put every window back into the workspace's layout, in order, undoing tree edits. A scrolling workspace keeps its column widths. |
 | `balance-sizes` | Give every window an equal share. |
 | `rotate <90\|180\|270>` | Turn the workspace's tiles clockwise, as yabai's `space --rotate`: a quarter turn makes a row a column, its first window on top, and a column a row, its top window on the right; a half turn reverses everything. A container set to `auto` keeps the turned axis as its orientation. Not for fixed or scrolling layouts. |
 | `mirror <x-axis\|y-axis>` | Flip the workspace's tiles, as yabai's `space --mirror`: `y-axis` swaps left and right, `x-axis` top and bottom. Not for fixed or scrolling layouts. |
 | `retile` | Re-read windows and re-apply every layout. |
-| `window-switcher` | Show the [window switcher](configuration.md#window-switcher) in the middle of the display under the pointer, for a key binding. The arrows or h, j, k, l move the pick, Tab and Shift-Tab step through, Return or Space focuses the window and Esc closes it. Run again while it shows, it steps to the next one; from a binding with modifiers, letting go of them takes the pick, as Cmd-Tab does. |
-| `workspace-switcher` | Show the [workspace switcher](configuration.md#workspace-switcher) the same way; Return or Space switches to the workspace picked. |
+| `window-switcher` | Show the [window switcher](configuration.md#window-switcher) in the middle of the display under the pointer, for a key binding. The arrows or h, j, k, l move the pick, Tab and Shift-Tab step through, Return or Space focuses the window, a window's letter focuses it at once and Esc closes it. Run again while it shows, it steps to the next one; from a binding with modifiers, letting go of them takes the pick, as Cmd-Tab does. |
+| `workspace-switcher` | Show the [workspace switcher](configuration.md#workspace-switcher) the same way; Return or Space switches to the workspace picked, and a window's letter switches to its workspace and focuses it. |
 | `clear-minimum-sizes` | Forget the minimum window sizes learned for every app and re-apply every layout. |
 | `mode <name>` | Switch binding mode. |
 | `reload-config` | Reload the config. |
@@ -62,7 +62,7 @@ size it. With animations on, it glides.
 | `cycle-size <percent>...` | Centres it at the next of the sizes, that share of the visible area's width and height inside the outer gaps. |
 | `fullscreen` | Fills the display's visible area inside the outer gaps, as fullscreen does for a tile. Again, it goes back to where it was. The place is remembered until dinky quits. |
 | `balance-sizes`, `flatten-workspace-tree` | Act on the tiles of its workspace. |
-| `join-with <direction>` | An error: a floating window has no neighbour in the tree. Tile it first. |
+| `join-with <direction>` | An error: a floating window has no neighbour in the tree. Tile it first. On a [free](configuration.md#workspacenumber) workspace, where nothing tiles, it answers that the workspace is free. |
 
 A resized window is no smaller than 100 by 100 points nor larger than the
 visible area, and stays inside it. Apps that refuse a size, such as Safari
@@ -98,7 +98,9 @@ With animations on, the window glides to its cells while the tiles it left
 close up.
 
 With `--toggle`, a window that already floats is tiled instead, so one key
-floats a window onto the grid and the next puts it back:
+floats a window onto the grid and the next puts it back. On a
+[free](configuration.md#workspacenumber) workspace, which floats every window,
+the next press puts it back where it was before the grid placed it:
 
 ```toml
 [mode.main]

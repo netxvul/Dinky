@@ -59,8 +59,8 @@ enum Dispatcher {
             if floatingOnly { return .ok("\(name): the focused window does not float") }
             return tree(name) { $0.move(direction) }
         case .joinWith(let direction):
-            if let reply = floating("join-with \(direction)", window: window, { _, _ in
-                "the focused window floats; tile it first"
+            if let reply = floating("join-with \(direction)", window: window, { coordinator, id in
+                coordinator.isOnFreeWorkspace(id) ? freeRefusal : "the focused window floats; tile it first"
             }) { return reply }
             return tree("join-with \(direction)") { $0.join(direction) }
         case .resize(let dimension, let delta, let floatingOnly):
@@ -85,8 +85,8 @@ enum Dispatcher {
             guard let coordinator = AppState.shared.coordinator else { return .error("tiling is not running") }
             let id = window ?? coordinator.focusedWindow
             if toggle, coordinator.isFloating(id) == true {
-                // A float workspace would float the window again at once, so the toggle goes back to its frame instead.
-                if coordinator.workspaceFloats(id) {
+                // A free workspace would float the window again at once, so the toggle goes back to its frame instead.
+                if coordinator.isOnFreeWorkspace(id) {
                     if let error = coordinator.toggleGrid(id, on: placement) { return .error("grid: \(error)") }
                     return .ok("grid --toggle \(placement)")
                 }
@@ -127,10 +127,12 @@ enum Dispatcher {
             return .ok("retiled")
         case .windowSwitcher:
             guard AppState.shared.coordinator != nil else { return .error("tiling is not running") }
+            guard AppState.shared.config.windowSwitcher.enabled else { return .error("the window switcher is off: enabled = false") }
             return WindowSwitcher.shared.showFromKeyboard() ? .ok("window-switcher")
-                : .error("the workspace under the pointer has too few tiled windows, as [window-switcher] show-single says, or a layout its layouts leave out")
+                : .error("the workspace under the pointer has too few windows, as [window-switcher] show-single says, or a layout its layouts leave out")
         case .workspaceSwitcher:
             guard AppState.shared.coordinator != nil else { return .error("tiling is not running") }
+            guard AppState.shared.config.workspaceSwitcher.enabled else { return .error("the workspace switcher is off: enabled = false") }
             return WorkspaceSwitcher.shared.showFromKeyboard() ? .ok("workspace-switcher")
                 : .error("fewer than two workspaces to pick from")
         case .clearMinimumSizes:
@@ -236,6 +238,12 @@ enum Dispatcher {
         return .ok("workspace \(n)")
     }
 
+    /// Puts workspace `n` on screen as `workspace n` does, and focuses window `id` once it shows, for the workspace
+    /// switcher's letter keys.
+    static func showWorkspace(_ n: Int, focusing id: WindowID) -> Reply {
+        show(n) { AppState.shared.coordinator?.focus(id) }
+    }
+
     private static func moveWindowToWorkspace(_ target: WorkspaceTarget, follow: Bool, window wid: WindowID) -> Reply {
         let n: Int
         do {
@@ -255,6 +263,9 @@ enum Dispatcher {
     }
 
     // MARK: Layout tree
+
+    /// Why a command that would tile a window of a `free` workspace does nothing: the workspace floats it again.
+    private static let freeRefusal = "the window's workspace is free, so its windows float and none tiles"
 
     /// For a floating window (`window`, else the focused one), the reply of `run`, which does the command's
     /// floating version and answers nil once done or why not. Nil for any other window, which the tree handles.
@@ -309,6 +320,8 @@ enum Dispatcher {
             current += LayoutName.describing(container.mode, axis: axis, auto: container.orientation == .auto)
         }
         let name = LayoutName.next(in: names, current: current)
+        // Its workspace would float the window again at once, leaving nothing changed.
+        if name != .floating, coordinator.isOnFreeWorkspace(id) { return .error("layout \(name.rawValue): \(freeRefusal)") }
         switch name {
         case .floating, .tiling:
             coordinator.setFloating(id, name == .floating)
@@ -358,7 +371,7 @@ enum Dispatcher {
     static func adopt(_ wid: WindowID, onto display: Display) -> Reply? {
         let from = AppState.shared.displays.display(ofWindow: wid)
         if let error = move(wid, to: display.currentSpaceID, arriving: "display \(display.id)") { return error }
-        if let from { keepOffset(of: wid, from: from, to: display) }
+        if let from { keepOffset(of: wid, from: from, to: display, space: display.currentSpaceID) }
         return nil
     }
 
@@ -371,15 +384,16 @@ enum Dispatcher {
         guard dinky_window_space_id(wid) != space else { return .ok("window \(wid) is already on \(destination)") }
         let from = AppState.shared.displays.display(ofWindow: wid)
         if let error = move(wid, to: space, arriving: destination) { return error }
-        if let from { keepOffset(of: wid, from: from, to: to) }
+        if let from { keepOffset(of: wid, from: from, to: to, space: space) }
         AppState.shared.coordinator?.windowMoved(wid, refocus: !follow)
         return nil
     }
 
-    /// A floating window moved to another display keeps its offset from the display's corner; the tree places a
-    /// tiled one.
-    private static func keepOffset(of wid: WindowID, from: Display, to: Display) {
-        guard from.uuid != to.uuid, AppState.shared.coordinator?.isFloating(wid) != false,
+    /// A floating window moved to another display keeps its offset from the display's corner, as does one going to
+    /// `space` on a free workspace, which floats it there; the tree places a tiled one.
+    private static func keepOffset(of wid: WindowID, from: Display, to: Display, space: UInt64) {
+        let coordinator = AppState.shared.coordinator
+        guard from.uuid != to.uuid, coordinator?.isFloating(wid) != false || coordinator?.settings(for: space).isFree == true,
               let pid = windowPID(wid), let element = axWindow(pid: pid, wid: wid) else { return }
         let frame = dinky_window_info(wid).frame
         var origin = CGPoint(x: to.frame.minX + max(0, frame.minX - from.frame.minX),

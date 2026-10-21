@@ -50,6 +50,16 @@ final class Table {
         }
     }
 
+    /// `'#rrggbb'`, `'#rrggbbaa'` or `'accent'`.
+    func highlight(_ key: String) throws -> Highlight? {
+        guard let text = try string(key) else { return nil }
+        do {
+            return try Highlight(text)
+        } catch {
+            throw ConfigError(path: path(key), error.message)
+        }
+    }
+
     /// A list of strings, e.g. bundle IDs.
     func strings(_ key: String) throws -> [String]? {
         guard use(key) else { return nil }

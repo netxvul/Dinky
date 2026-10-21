@@ -32,9 +32,9 @@ struct ConfigCheckTests {
     }
 
     @Test func `Unknown command in gesture`() throws {
-        let findings = try check("[mode.main]\n[gestures]\nswipe-left = 'fly left'")
+        let findings = try check("[mode.main]\n[gestures.trackpad]\nswipe-left = 'fly left'")
         #expect(findings.count == 1)
-        #expect(findings[0].message.hasPrefix("gestures.swipe-left:"))
+        #expect(findings[0].message.hasPrefix("gestures.trackpad.swipe-left:"))
     }
 
     @Test func `Mode command must name a mode`() throws {

@@ -23,3 +23,18 @@ public struct Color: Equatable {
         self.init(red: component(24), green: component(16), blue: component(8), alpha: component(0))
     }
 }
+
+/// A highlight colour from config: `'accent'`, the accent colour in System Settings, or a colour of its own.
+public enum Highlight: Equatable {
+    case accent
+    case color(Color)
+
+    public init(_ text: String) throws(ConfigError) {
+        if text == "accent" { self = .accent; return }
+        do {
+            self = .color(try Color(hex: text))
+        } catch {
+            throw ConfigError("'\(text)' is not a colour, expected '#rrggbb', '#rrggbbaa' or 'accent'")
+        }
+    }
+}

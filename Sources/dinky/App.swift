@@ -54,6 +54,9 @@ final class DinkyApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func start() {
+        // The ceiling for every Accessibility call made without a timeout of its own, in place of the system's
+        // seconds: an app that stops answering must not hold dinky, or the keys and clicks its event taps see.
+        AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 0.5)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .bold)
         statusItem.button?.imagePosition = .imageLeft
@@ -94,7 +97,12 @@ final class DinkyApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         let trouble = state.configError != nil || !otherTilers.isEmpty
         let mark = trouble ? "!" : ""
-        statusItem.isVisible = state.config.menuBarIcon != .none
+        let hidden = switch state.config.hideMenuBarIcon {
+        case .never: false
+        case .always: true
+        case .singleDisplay: state.displays.displays.count <= 1
+        }
+        statusItem.isVisible = state.config.menuBarIcon != .none && !hidden
         switch state.config.menuBarIcon {
         case .none:
             shownBlocks = nil
@@ -125,7 +133,7 @@ final class DinkyApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.removeAllItems()
         let state = AppState.shared
         let mode = state.hotkeys.currentMode
-        bindings = MenuBindings(state.config.modes[mode])
+        bindings = MenuBindings(state.config.modes[mode], on: state.coordinator?.focusedRuleLayout())
         let count = state.numbers.count
         let current = state.displays.focusedDisplay().flatMap(state.numbers.current(on:))
         menu.addItem(withTitle: "Workspace \(current.map { "\($0)" } ?? "?") of \(count)", action: nil, keyEquivalent: "")

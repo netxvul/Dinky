@@ -8,8 +8,10 @@ import DinkyPrivate
 // drawn small with the windows where its layout puts them; with `displays = 'all'`, every display's, a group per
 // display left to right as the displays are arranged, named when there is more than one. Moving across picks a
 // card; releasing the modifier switches to it as `workspace` does, giving its display focus. A display with no
-// numbered workspace shows its Space unnumbered, and picking it focuses that display. Esc, or any other key, closes
-// the capsule without switching. Thumbnails are the window switcher's, captured as windows lose focus, as a dinky
+// numbered workspace shows its Space unnumbered, and picking it focuses that display. With `letter-keys`, the windows
+// in the cards carry the letters of `letters`, card by card as each reads, drawn as keys; a letter's key switches to
+// its window's workspace at once and focuses the window there. Esc, or any other key, closes the capsule without
+// switching. Thumbnails are the window switcher's, captured as windows lose focus, as a dinky
 // switch leaves a workspace, and for the workspaces on screen as the capsule shows; macOS draws no other Space's
 // windows. The holding is `ModifierHold`'s. Main thread only.
 final class WorkspaceSwitcher {
@@ -33,6 +35,8 @@ final class WorkspaceSwitcher {
     private var pointerMoved = false
     /// Bumped on every showing, so a fade-out that finishes after a newer showing leaves the panel up.
     private var generation = 0
+    /// The window a letter's key picked, focused on its workspace as the pick is taken.
+    private var jumpTo: WindowID?
 
     private lazy var view = WorkspaceSwitcherView(frame: .zero)
     private lazy var glass = GlassPanel(content: view, cornerRadius: cornerRadius)
@@ -49,6 +53,13 @@ final class WorkspaceSwitcher {
             view.pick(index)
             return true
         }
+        hold.hasLetter = { [unowned self] letter in view.letterTargets[letter] != nil }
+        hold.pickLetter = { [unowned self] letter in
+            guard let target = view.letterTargets[letter] else { return false }
+            view.pick(target.card)
+            jumpTo = target.id
+            return true
+        }
         hold.within = { [unowned self] in CGRect(origin: origin, size: layout.size).contains($0) }
         hold.cycle = { [unowned self] in navigate($0 ? .right : .left) }
     }
@@ -62,15 +73,17 @@ final class WorkspaceSwitcher {
     /// The `workspace-switcher` command: the capsule in the middle of the display under the pointer, picked with the
     /// keys. False if there is nothing to pick from.
     func showFromKeyboard() -> Bool {
-        hold.showFromKeyboard()
+        config.enabled && hold.showFromKeyboard()
     }
 
     func update(config: Config) {
         self.config = config.workspaceSwitcher
-        enabled = self.config.modifier != .none || config.binds("workspace-switcher")
-        cornerRadius = CGFloat(self.config.cornerRadius ?? config.windowSwitcher.cornerRadius)
-        position = self.config.position ?? config.windowSwitcher.position
-        hold.update(modifier: self.config.modifier, sides: config.modifiers, delayMs: self.config.delayMs)
+        let modifier = self.config.enabled ? self.config.modifier : .none
+        enabled = self.config.enabled && (modifier != .none || config.binds("workspace-switcher"))
+        cornerRadius = CGFloat(self.config.cornerRadius)
+        position = self.config.position
+        hold.update(modifier: modifier, sides: config.modifiers, delayMs: self.config.delayMs,
+                    trigger: self.config.trigger, doubleTapMs: self.config.doubleTapMs)
     }
 
     /// Closes the capsule without switching, as a binding that runs while it is up does.
@@ -85,7 +98,7 @@ final class WorkspaceSwitcher {
     /// Captures a window that just lost focus, so its workspace's card is recent.
     func focusLeft(_ id: WindowID) {
         guard capturing, id != 0, AppState.shared.coordinator?.model.windows[id] != nil else { return }
-        Thumbnails.shared.refresh(id, scale: NSScreen.main?.backingScaleFactor ?? 2)
+        Thumbnails.shared.refreshSoon(id, scale: NSScreen.main?.backingScaleFactor ?? 2)
     }
 
     /// Captures the windows of a Space a display is about to leave, while macOS still draws them.
@@ -135,6 +148,8 @@ final class WorkspaceSwitcher {
             },
             cardHeight: CGFloat(config.cardHeight), cornerRadius: cornerRadius, maxWidth: (visible.width * 0.9).rounded())
         let model = coordinator.model
+        let titled = config.showTitles && config.thumbnails != .schematic
+        var titles: [WindowID: String] = [:]
         cards = groups.flatMap { display, spaces in
             spaces.map { space, number in
                 let workspace = coordinator.workspaces[space]
@@ -152,12 +167,14 @@ final class WorkspaceSwitcher {
                         guard let pid = model.windows[tile.id]?.pid else { continue }
                         icons[tile.id] = NSRunningApplication(processIdentifier: pid)?.icon
                     }
+                    if titled { titles.merge(WindowTitles.known(miniature.tiles.map(\.id))) { $1 } }
                 }
                 let name = coordinator.layoutName(ofSpace: space)
                 return WorkspaceCard(space: space, number: number, display: display,
                                      label: number.map { "\($0) · \(name)" } ?? name,
                                      current: display.currentSpaceID == space, miniature: miniature, icons: icons,
-                                     schematic: config.thumbnails == .schematic)
+                                     schematic: config.thumbnails == .schematic, titles: titled ? titles : nil,
+                                     letters: config.letterKeys && config.thumbnails != .schematic)
             }
         }
         let picked = cards.firstIndex { $0.display.uuid == here.uuid && $0.current }
@@ -170,9 +187,25 @@ final class WorkspaceSwitcher {
         let scale = screen.backingScaleFactor
         let headers = groups.map { display, _ in display.name.isEmpty ? "Display \(display.id)" : display.name }
         view.animates = animates
+        view.highlight = config.highlightColor
         view.frame = CGRect(origin: .zero, size: layout.size)
-        view.show(cards, layout: layout, headers: layout.headers.isEmpty ? [] : headers, picked: picked, scale: scale)
+        jumpTo = nil
+        view.show(cards, layout: layout, headers: layout.headers.isEmpty ? [] : headers, picked: picked, scale: scale,
+                  letters: config.letterKeys ? config.letters : [])
         present()
+        if titled {
+            // The windows the window server gave no title, asked of their apps.
+            let asks = cards.flatMap { $0.miniature.tiles.map(\.id) }.filter { titles[$0] == nil }.compactMap { id in
+                model.windows[id].map { window in
+                    (id: id, pid: window.pid, app: window.appName ?? NSRunningApplication(processIdentifier: window.pid)?.localizedName ?? "")
+                }
+            }
+            let shown = generation
+            WindowTitles.ask(asks) { [weak self] id, title in
+                guard let self, self.generation == shown, self.isShowing else { return }
+                self.view.update(id, title: title)
+            }
+        }
 
         if config.thumbnails == .windows {
             Thumbnails.shared.askOnce()
@@ -189,15 +222,15 @@ final class WorkspaceSwitcher {
     /// The picture a schematic card draws for a Space: floating where dinky does not tile it, else its layout as
     /// the HUD names it, a fixed workspace as its template, and a workspace not laid out yet as its config says.
     private func schematic(of space: UInt64, _ coordinator: Coordinator) -> Schematic {
+        guard !coordinator.isFree(space) else { return .floating }
         let settings = coordinator.settings(for: space)
-        guard settings.tiling, !settings.float else { return .floating }
         if settings.layout == .fixed, coordinator.workspaces[space]?.isScrolling != true {
             return .fixed(rows: settings.rows, columns: settings.columns)
         }
         switch coordinator.layoutName(ofSpace: space) {
         case "scrolling": return .scrolling
         case "fullscreen": return .fullscreen
-        case "floating": return .floating
+        case "free": return .floating
         case "v_tiles": return .tiles(.vertical)
         case "h_accordion", "accordion": return .accordion(.horizontal)
         case "v_accordion": return .accordion(.vertical)
@@ -227,9 +260,18 @@ final class WorkspaceSwitcher {
     /// Switches to the picked workspace, or focuses the picked display's Space, and closes the capsule.
     private func commit() {
         hide()
+        let jump = jumpTo
+        jumpTo = nil
         guard cards.indices.contains(view.picked) else { return }
         let card = cards[view.picked]
-        if let number = card.number {
+        if let jump, AppState.shared.coordinator?.model.windows[jump] != nil {
+            if let number = card.number {
+                let reply = Dispatcher.showWorkspace(number, focusing: jump)
+                if !reply.ok { fputs("workspace-switcher: \(reply.text)\n", stderr) }
+            } else if let display = AppState.shared.displays.displays.first(where: { $0.uuid == card.display.uuid }) {
+                _ = Dispatcher.focus(display, window: jump)
+            }
+        } else if let number = card.number {
             let reply = Dispatcher.run("workspace \(number)")
             if !reply.ok { fputs("workspace-switcher: \(reply.text)\n", stderr) }
         } else if let display = AppState.shared.displays.displays.first(where: { $0.uuid == card.display.uuid }) {

@@ -182,6 +182,9 @@ extension Workspace {
         isScrolling ? stripLayout(pushed: pushedColumns).frames : [:]
     }
 
+    /// The strip's columns left to right, each as its windows top to bottom; none outside the scrolling layout.
+    public var stripColumns: [[WindowID]] { isScrolling ? root.children.map(\.windows) : [] }
+
     /// Where strip frames, such as `stripFrames` part way through a glide, go on screen: parked as `layout()` parks
     /// them.
     public func placeStrip(_ frames: [WindowID: CGRect]) -> [WindowID: CGRect] { parked(frames) }

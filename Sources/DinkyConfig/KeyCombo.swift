@@ -15,6 +15,21 @@ public struct KeyCombo: Hashable, CustomStringConvertible {
 
         /// In canonical order.
         static let names: [(String, Modifiers)] = [("alt", .alt), ("ctrl", .ctrl), ("cmd", .cmd), ("shift", .shift)]
+
+        /// Modifier names joined by `-`, such as `ctrl-cmd`, or `none` for no modifiers. Nil for anything else.
+        init?(names: String) {
+            self = []
+            guard names != "none" else { return }
+            for name in names.split(separator: "-", omittingEmptySubsequences: false) {
+                guard let modifier = Self.names.first(where: { $0.0 == name })?.1 else { return nil }
+                insert(modifier)
+            }
+        }
+
+        /// Canonical form, such as `ctrl-cmd`, or `none`.
+        public var name: String {
+            isEmpty ? "none" : Self.names.filter { contains($0.1) }.map(\.0).joined(separator: "-")
+        }
     }
 
     public var modifiers: Modifiers

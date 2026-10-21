@@ -77,7 +77,7 @@ final class DragPlaceholders {
     func update(style drag: Drag) {
         guard drag != style else { return }
         style = drag
-        let border = drag.previewBorderColor.map(Self.nsColor) ?? .controlAccentColor
+        let border = drag.previewBorderColor?.nsColor ?? .controlAccentColor
         let fill = drag.previewFillColor.map(Self.nsColor) ?? border.withAlphaComponent(border.alphaComponent * 0.3)
         let width = CGFloat(drag.previewBorderWidth)
         splitLook = Look(stroke: border, fill: fill, width: width)

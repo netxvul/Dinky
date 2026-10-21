@@ -95,7 +95,7 @@ static void do_handshake(int sockfd)
     memcpy(bytes + version_length + 1, &attrib, sizeof(uint32_t));
     int total = version_length + 1 + sizeof(uint32_t);
     bytes[total] = '\n';
-    send(sockfd, bytes, total + 1, 0);
+    send(sockfd, bytes, total + 1, MSG_NOSIGNAL);
 }
 
 static void handle_message(int sockfd, char *message)
@@ -132,14 +132,16 @@ static void *handle_connection(void *unused)
     for (;;) {
         int sockfd = accept(daemon_sockfd, NULL, 0);
         if (sockfd == -1) continue;
-        // Critical: without this, a send() to a client that already closed raises SIGPIPE, whose default action
-        // terminates the process — and this process is Dock. SO_NOSIGPIPE makes such a send return EPIPE instead.
-        int one = 1;
-        setsockopt(sockfd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+        // Critical: a send() to a client that already closed raises SIGPIPE, whose default action terminates the
+        // process — and this process is Dock. The accepted socket inherits SO_NOSIGPIPE from the listening one (set
+        // here too it fails with EINVAL once the client has closed, as dinky's probe does at once), and every send
+        // passes MSG_NOSIGNAL as well, so such a send returns EPIPE instead. Nothing read, nothing answered.
         char message[DINKY_SA_SOCKET_BUFF_LEN];
-        if (read_message(sockfd, message)) handle_message(sockfd, message);
-        char ack = 1;
-        send(sockfd, &ack, 1, 0);
+        if (read_message(sockfd, message)) {
+            handle_message(sockfd, message);
+            char ack = 1;
+            send(sockfd, &ack, 1, MSG_NOSIGNAL);
+        }
         shutdown(sockfd, SHUT_RDWR);
         close(sockfd);
     }
@@ -154,6 +156,9 @@ static bool start_daemon(const char *socket_path)
     unlink(socket_path);
 
     if ((daemon_sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) return false;
+    // Inherited by every accepted socket, even one whose client closed before it was accepted (see handle_connection).
+    int one = 1;
+    setsockopt(daemon_sockfd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
     if (bind(daemon_sockfd, (struct sockaddr *) &addr, sizeof(addr)) == -1) return false;
     if (chmod(socket_path, 0600) != 0) return false;
     if (listen(daemon_sockfd, SOMAXCONN) == -1) return false;

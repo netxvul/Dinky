@@ -47,12 +47,19 @@ func runDoctor(_ args: [String]) -> Int32 {
         }
     }
 
-    if !config.gestures.swipes.isEmpty {
-        let fingers = config.gestures.fingers
-        let clashes = gestureClashes(fingers: fingers, swipes: Set(config.gestures.swipes.keys))
+    if !config.gestures.trackpadSwipes.isEmpty {
+        let fingers = config.gestures.trackpad.fingers
+        let clashes = gestureClashes(fingers: fingers, swipes: Set(config.gestures.trackpadSwipes.keys))
         clashes.isEmpty ? ok("\(fingers)-finger swipes clash with nothing macOS does")
                         : warn("\(fingers)-finger swipes also \(clashes.joined(separator: " and ")) in macOS; "
-                               + "change it in System Settings > Trackpad > More Gestures, or [gestures] fingers")
+                               + "change it in System Settings > Trackpad > More Gestures, or [gestures.trackpad] fingers")
+    }
+    let mouse = config.gestures.mouse
+    if !config.gestures.mouseSwipes.isEmpty {
+        let clashes = mouseGestureClashes(fingers: mouse.fingers, swipes: Set(config.gestures.mouseSwipes.keys))
+        clashes.isEmpty ? ok("\(mouse.fingers)-finger swipes on a Magic Mouse clash with nothing macOS does")
+                        : warn("\(mouse.fingers)-finger swipes on a Magic Mouse also \(clashes.joined(separator: " and ")) in macOS; "
+                               + "change it in System Settings > Mouse, or [gestures.mouse]")
     }
 
     // Where the workspaces go with the displays connected now; the app arranges the Spaces to match.
@@ -88,6 +95,20 @@ func runDoctor(_ args: [String]) -> Int32 {
 /// A boolean Dock setting, nil when unset.
 func dockSetting(_ key: String) -> Bool? {
     CFPreferencesCopyAppValue(key as CFString, "com.apple.dock" as CFString) as? Bool
+}
+
+/// What macOS does with the `swipes` dinky has bound for `fingers` fingers on a Magic Mouse, from its mouse settings:
+/// one finger scrolls and swipes between pages, two scroll up and down and swipe across between full-screen apps.
+func mouseGestureClashes(fingers: Int, swipes: Set<GestureSwipe>) -> [String] {
+    guard fingers == 2 else { return [] }
+    let swipe = CFPreferencesCopyAppValue("MouseTwoFingerHorizSwipeGesture" as CFString,
+                                          "com.apple.AppleMultitouchMouse" as CFString) as? Int
+    var clashes: [String] = []
+    if swipes.contains(.swipeLeft) || swipes.contains(.swipeRight), (swipe ?? 2) != 0 {
+        clashes.append("swipe between full-screen apps")
+    }
+    if swipes.contains(.swipeUp) || swipes.contains(.swipeDown) { clashes.append("scroll") }
+    return clashes
 }
 
 /// What macOS does with the `swipes` dinky has bound for `fingers` fingers, from its trackpad settings.

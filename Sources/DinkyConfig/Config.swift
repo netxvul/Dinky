@@ -24,9 +24,14 @@ public struct Config: Equatable {
     public var floatWindowsWithoutFullscreen = true
     /// What the menu bar item shows.
     public var menuBarIcon = MenuBarIcon.blocks
+    /// When dinky hides its menu bar item: never, always, or while only one display is connected.
+    public var hideMenuBarIcon = MenuBarIconHiding.never
     /// Whether dinky may use its Dock scripting addition, which needs SIP off. Off, it never probes or injects it,
     /// even with SIP off and the addition installed, and a scrolling strip moves its windows frame by frame instead.
     public var scriptingAddition = true
+    /// What every highlight a table leaves unset takes: the switchers' pick, the focused window's border and a drag's
+    /// preview. Nil leaves each its own default.
+    public var highlightColor: Highlight?
     public var accordion = Accordion()
     public var scrolling = Scrolling()
     public var floating = Floating()
@@ -39,6 +44,8 @@ public struct Config: Equatable {
     public var animations = Animations()
     public var drag = Drag()
     public var hud = Hud()
+    /// `[switcher]` as the file sets it, already taken by the two switchers below where their own tables leave a key out.
+    public var switcher = SwitcherDefaults()
     public var windowSwitcher = Switcher()
     public var workspaceSwitcher = WorkspaceSwitcher()
     public var gestures = Gestures()
@@ -119,7 +126,9 @@ public struct Config: Equatable {
         followAppActivation = try t.bool("follow-app-activation") ?? followAppActivation
         floatWindowsWithoutFullscreen = try t.bool("float-windows-without-fullscreen") ?? floatWindowsWithoutFullscreen
         menuBarIcon = try t.choice("menu-bar-icon") ?? menuBarIcon
+        hideMenuBarIcon = try t.choice("hide-menu-bar-icon") ?? hideMenuBarIcon
         scriptingAddition = try t.bool("scripting-addition") ?? scriptingAddition
+        highlightColor = try t.highlight("highlight-color") ?? highlightColor
         accordion = try t.table("accordion").map(Accordion.init) ?? accordion
         scrolling = try t.table("scrolling").map(Scrolling.init) ?? scrolling
         floating = try t.table("floating").map(Floating.init) ?? floating
@@ -130,18 +139,31 @@ public struct Config: Equatable {
                 displays.append(try DisplayOverride(pattern, displayTable.table(pattern)!))
             }
         }
-        borders = try t.table("borders").map(Borders.init) ?? borders
+        borders = try Borders(t.table("borders"), highlight: highlightColor)
         focusFollowsMouse = try t.table("focus-follows-mouse").map(FocusFollowsMouse.init) ?? focusFollowsMouse
         animations = try t.table("animations").map(Animations.init) ?? animations
         drag = try t.table("drag").map(Drag.init) ?? drag
+        drag.previewBorderColor = drag.previewBorderColor ?? highlightColor
         hud = try t.table("hud").map(Hud.init) ?? hud
-        windowSwitcher = try t.table("window-switcher").map(Switcher.init) ?? windowSwitcher
-        workspaceSwitcher = try t.table("workspace-switcher").map(WorkspaceSwitcher.init) ?? workspaceSwitcher
-        if workspaceSwitcher.modifier != .none, workspaceSwitcher.modifier == windowSwitcher.modifier {
-            throw ConfigError(path: "workspace-switcher.modifier", "[window-switcher] already uses '\(windowSwitcher.modifier.rawValue)'")
+        switcher = try t.table("switcher").map(SwitcherDefaults.init) ?? switcher
+        var shared = switcher
+        shared.highlightColor = shared.highlightColor ?? highlightColor
+        windowSwitcher = try Switcher(t.table("window-switcher"), defaults: shared)
+        workspaceSwitcher = try WorkspaceSwitcher(t.table("workspace-switcher"), defaults: shared)
+        modifiers = try t.table("modifiers").map(ModifierSides.init) ?? modifiers
+        // One modifier can serve both when one holds and the other double-taps.
+        if workspaceSwitcher.modifier != .none, workspaceSwitcher.modifier == windowSwitcher.modifier,
+           workspaceSwitcher.trigger == windowSwitcher.trigger {
+            throw ConfigError(path: "workspace-switcher.modifier",
+                              "[window-switcher] already uses '\(windowSwitcher.modifier.rawValue)' with trigger '\(windowSwitcher.trigger.rawValue)'; use another modifier or trigger")
+        }
+        // Held alone, a switcher's modifier shows its capsule before the press that would drag.
+        for (table, modifier) in [("window-switcher", windowSwitcher.modifier), ("workspace-switcher", workspaceSwitcher.modifier)]
+        where modifier != .none
+            && (modifier == .hyper ? modifiers.hyper : KeyCombo.Modifiers(names: modifier.rawValue)) == drag.mouseModifier {
+            throw ConfigError(path: "drag.mouse-modifier", "[\(table)] already uses '\(modifier.rawValue)'")
         }
         gestures = try t.table("gestures").map(Gestures.init) ?? gestures
-        modifiers = try t.table("modifiers").map(ModifierSides.init) ?? modifiers
         hooks = try t.table("hooks").map(Hooks.init) ?? hooks
         rules = try t.tables("rules")?.map(WindowRule.init) ?? []
         if let modeTable = try t.table("mode") {
@@ -153,8 +175,10 @@ public struct Config: Equatable {
     }
 }
 
+/// A workspace's layout. `free` lays out nothing: every window on the workspace floats where it stands, as on a
+/// desktop without dinky, and tiles again once it is on a workspace with another layout.
 public enum LayoutKind: String, CaseIterable {
-    case tiles, dwindle, accordion, fixed, scrolling
+    case tiles, dwindle, accordion, fixed, scrolling, free
 }
 
 public enum ExpansionKind: String, CaseIterable {
@@ -164,8 +188,6 @@ public enum ExpansionKind: String, CaseIterable {
 /// A workspace's tiling settings: a `[workspace.N]` table with omitted keys taken from the top-level settings.
 public struct WorkspaceSettings: Equatable {
     public var tiling: Bool
-    /// Every window on the workspace floats, whatever `tiling` says.
-    public var float = false
     public var layout: LayoutKind
     public var rows = 1
     public var columns = 1
@@ -176,9 +198,14 @@ public struct WorkspaceSettings: Equatable {
         self.layout = layout
     }
 
+    /// Every window on the workspace floats, whatever `tiling` says.
+    public var isFree: Bool { layout == .free }
+
     init(_ t: Table, tiling: Bool, layout: LayoutKind) throws {
         self.tiling = try t.bool("tiling") ?? tiling
-        float = try t.bool("float") ?? float
+        if t.keys.contains("float") {
+            throw ConfigError(path: t.path("float"), "a workspace whose windows all float has layout = 'free' now")
+        }
         self.layout = try t.choice("layout") ?? layout
         let columns: Int? = try t.int("columns")
         let rows: Int? = try t.int("rows")
@@ -196,10 +223,10 @@ public struct WorkspaceSettings: Equatable {
 }
 
 extension Config {
-    /// Whether a key binding in any mode or a trackpad gesture runs `command`, a command name such as
+    /// Whether a key binding in any mode or a trackpad or mouse gesture runs `command`, a command name such as
     /// `workspace-switcher`.
     public func binds(_ command: String) -> Bool {
-        let lists = modes.values.flatMap(\.bindings.values) + gestures.swipes.values
+        let lists = modes.values.flatMap(\.allCommands) + gestures.trackpadSwipes.values + gestures.mouseSwipes.values
         return lists.contains { $0.contains { $0.split(separator: " ").first.map(String.init) == command } }
     }
 
@@ -249,14 +276,22 @@ public struct Scrolling: Equatable {
     }
 }
 
-/// The modifier that shows the switcher, its side as `[modifiers]` says; `none` turns the switcher off.
+/// The modifier that shows the switcher, its side as `[modifiers]` says; `none` turns the switcher off. `hyper` is
+/// `[modifiers] hyper`'s modifiers held together, from either side.
 public enum SwitcherModifier: String, CaseIterable {
-    case none, alt, ctrl, cmd, shift
+    case none, alt, ctrl, cmd, shift, hyper
 }
 
-/// A layout the switcher shows for: `tiles` is dwindle, `accordion` a dwindle accordion root.
+/// A layout the switcher shows for: `tiles` is dwindle, `accordion` a dwindle accordion root, `free` a workspace dinky
+/// does not tile (`layout = 'free'` or `tiling = false`).
 public enum SwitcherLayoutKind: String, CaseIterable {
-    case scrolling, tiles, accordion, fixed
+    case scrolling, tiles, accordion, fixed, free
+}
+
+/// How the modifier shows the switcher: held on its own, or tapped twice on its own.
+public enum SwitcherTrigger: String, CaseIterable {
+    case hold
+    case doubleTap = "double-tap"
 }
 
 /// How the switcher shows a tiles or fixed workspace: a map of its tiles, or a row like a strip's.
@@ -278,26 +313,119 @@ public enum SwitcherPosition: String, CaseIterable {
     case mouse
 }
 
-/// `[window-switcher]`: hold the modifier on its own over a workspace laid out by one of `layouts` and a capsule of its
-/// windows shows at the pointer; release to focus the one picked.
-public struct Switcher: Equatable {
-    public var modifier = SwitcherModifier.none
+/// `[switcher]`: what the window and workspace switchers share, each key what both take where their own table leaves
+/// it out.
+public struct SwitcherDefaults: Equatable {
+    /// Whether the switcher shows at all, its modifier held, a binding pressed or a swipe made.
+    public var enabled = true
     /// How long the modifier is held alone before the capsule shows.
     public var delayMs = 200
-    public var layouts: [SwitcherLayoutKind] = [.scrolling, .tiles]
+    public var trigger = SwitcherTrigger.hold
+    /// With `double-tap`, how long each tap and the gap between them may last.
+    public var doubleTapMs = 300
     /// Points; at half the capsule's height or more its ends are round.
     public var cornerRadius = 52.0
-    public var tilesStyle = SwitcherTilesStyle.map
-    /// Whether the capsule shows for a workspace with a lone tiled window, the modifier held or the binding pressed.
-    public var showSingle = true
     public var position = SwitcherPosition.auto
+    /// Whether each window shows its title: under its card in the window switcher, on a band along its foot in a
+    /// workspace card.
+    public var showTitles = true
+    /// Whether each window gets a letter of `letters`, drawn as a key beside its title, whose key jumps to it.
+    public var letterKeys = true
+    /// The letters handed out, in order, to the windows as they read left to right: a to z, each once, but h, j, k
+    /// and l, which move the pick.
+    public var letters = SwitcherDefaults.defaultLetters
+    /// The pick's ring and glow; nil takes the top-level `highlight-color`.
+    public var highlightColor: Highlight?
+
+    /// The home row first, then the rows above and below.
+    public static let defaultLetters = Array("asdfgqwertyuiopzxcvbnm")
 
     public init() {}
 
     init(_ t: Table) throws {
-        modifier = try t.choice("modifier") ?? modifier
+        try read(t)
+        try t.done()
+    }
+
+    /// Takes the shared keys `t` sets over these: `[switcher]`'s, or a switcher's own.
+    mutating func read(_ t: Table) throws {
+        enabled = try t.bool("enabled") ?? enabled
         delayMs = try t.int("delay-ms") ?? delayMs
         guard (0...2000).contains(delayMs) else { throw ConfigError(path: t.path("delay-ms"), "must be 0 to 2000") }
+        trigger = try t.choice("trigger") ?? trigger
+        doubleTapMs = try t.int("double-tap-ms") ?? doubleTapMs
+        guard (100...1000).contains(doubleTapMs) else {
+            throw ConfigError(path: t.path("double-tap-ms"), "must be 100 to 1000")
+        }
+        cornerRadius = try t.double("corner-radius") ?? cornerRadius
+        guard (0...80).contains(cornerRadius) else { throw ConfigError(path: t.path("corner-radius"), "must be 0 to 80") }
+        position = try t.choice("position") ?? position
+        showTitles = try t.bool("show-titles") ?? showTitles
+        letterKeys = try t.bool("letter-keys") ?? letterKeys
+        if let string = try t.string("letters") {
+            let letters = Array(string)
+            guard !letters.isEmpty else { throw ConfigError(path: t.path("letters"), "must have a letter at least") }
+            for letter in letters {
+                guard ("a"..."z").contains(letter), letter.isASCII else {
+                    throw ConfigError(path: t.path("letters"), "'\(letter)' is not a lowercase letter, a to z")
+                }
+                guard !"hjkl".contains(letter) else {
+                    throw ConfigError(path: t.path("letters"), "'\(letter)' moves the pick; leave out h, j, k and l")
+                }
+            }
+            if let twice = letters.first(where: { l in letters.filter { $0 == l }.count > 1 }) {
+                throw ConfigError(path: t.path("letters"), "'\(twice)' is there twice")
+            }
+            self.letters = letters
+        }
+        highlightColor = try t.highlight("highlight-color") ?? highlightColor
+    }
+}
+
+/// `[window-switcher]`: hold the modifier on its own over a workspace laid out by one of `layouts` and a capsule of its
+/// windows shows at the pointer; release to focus the one picked. `enabled`, `delay-ms`, `corner-radius`, `position`,
+/// `show-titles`, `letter-keys`, `letters` and `highlight-color` left out are `[switcher]`'s.
+public struct Switcher: Equatable {
+    public var enabled = true
+    public var modifier = SwitcherModifier.none
+    /// How long the modifier is held alone before the capsule shows.
+    public var delayMs = 200
+    public var trigger = SwitcherTrigger.hold
+    /// With `double-tap`, how long each tap and the gap between them may last.
+    public var doubleTapMs = 300
+    public var layouts: [SwitcherLayoutKind] = [.scrolling, .tiles]
+    /// Points; at half the capsule's height or more its ends are round.
+    public var cornerRadius = 52.0
+    public var tilesStyle = SwitcherTilesStyle.map
+    /// Whether the capsule shows for a workspace with a lone tiled window (on a free workspace, a lone window), the
+    /// modifier held or the binding pressed.
+    public var showSingle = true
+    /// Whether each window's title shows under its card, or along its foot where another card sits below it.
+    public var showTitles = true
+    /// Whether each window has a letter key beside its title that jumps to it, and the letters, in reading order.
+    public var letterKeys = true
+    public var letters = SwitcherDefaults.defaultLetters
+    public var position = SwitcherPosition.auto
+    /// The pick's ring and glow.
+    public var highlightColor = Highlight.accent
+
+    public init() {}
+
+    init(_ t: Table?, defaults: SwitcherDefaults) throws {
+        var shared = defaults
+        if let t { try shared.read(t) }
+        enabled = shared.enabled
+        delayMs = shared.delayMs
+        trigger = shared.trigger
+        doubleTapMs = shared.doubleTapMs
+        cornerRadius = shared.cornerRadius
+        position = shared.position
+        showTitles = shared.showTitles
+        letterKeys = shared.letterKeys
+        letters = shared.letters
+        highlightColor = shared.highlightColor ?? .accent
+        guard let t else { return }
+        modifier = try t.choice("modifier") ?? modifier
         if let names = try t.strings("layouts") {
             layouts = try names.map { name in
                 guard let kind = SwitcherLayoutKind(rawValue: name) else {
@@ -307,25 +435,54 @@ public struct Switcher: Equatable {
                 return kind
             }
         }
-        cornerRadius = try t.double("corner-radius") ?? cornerRadius
-        guard (0...80).contains(cornerRadius) else { throw ConfigError(path: t.path("corner-radius"), "must be 0 to 80") }
         tilesStyle = try t.choice("tiles-style") ?? tilesStyle
         showSingle = try t.bool("show-single") ?? showSingle
-        position = try t.choice("position") ?? position
         try t.done()
     }
 }
 
-/// A swipe on the trackpad that `[gestures]` can bind, by the way the fingers move.
+/// A swipe on the trackpad or mouse that `[gestures]` can bind, by the way the fingers move.
 public enum GestureSwipe: String, CaseIterable {
     case swipeLeft = "swipe-left", swipeRight = "swipe-right", swipeUp = "swipe-up", swipeDown = "swipe-down"
 }
 
-/// `[gestures]`: swipes on the trackpad with `fingers` fingers, each running commands as a key binding does. A swipe
-/// that shows a switcher goes on picking with the same fingers, a step every `step` millimetres, until they lift.
+/// `[gestures]`: swipes on the trackpad in `[gestures.trackpad]` and on a Magic Mouse in `[gestures.mouse]`, each
+/// running commands as a key binding does.
 public struct Gestures: Equatable {
+    public var trackpad = TrackpadSwipes()
+    public var mouse = MouseSwipes()
+
+    public init() {}
+
+    init(_ t: Table) throws {
+        for key in t.keys where !["trackpad", "mouse"].contains(key) {
+            guard key == "fingers" || key == "distance" || key == "step" || GestureSwipe(rawValue: key) != nil else {
+                throw ConfigError(path: t.path(key), "'\(key)' is not one of 'trackpad', 'mouse'")
+            }
+            throw ConfigError(path: t.path(key), "'\(key)' goes in [gestures.trackpad] now")
+        }
+        trackpad = try t.table("trackpad").map(TrackpadSwipes.init) ?? trackpad
+        mouse = try t.table("mouse").map(MouseSwipes.init) ?? mouse
+        try t.done()
+    }
+
+    /// What the trackpad swipes run; none while it is off.
+    public var trackpadSwipes: [GestureSwipe: [String]] { trackpad.enabled ? trackpad.swipes : [:] }
+
+    /// What the mouse swipes run: its own, or the trackpad's; none while it is off.
+    public var mouseSwipes: [GestureSwipe: [String]] {
+        mouse.enabled ? mouse.swipes ?? trackpad.swipes : [:]
+    }
+}
+
+/// `[gestures.trackpad]`: swipes on the trackpad with `fingers` fingers, once they move `distance` millimetres. A
+/// swipe that shows a switcher goes on picking with the same fingers, a step every `step` millimetres, until they lift.
+public struct TrackpadSwipes: Equatable {
+    public var enabled = true
     /// How many fingers swipe, 2 to 5.
     public var fingers = 3
+    /// Millimetres the fingers move before it is a swipe.
+    public var distance = 15.0
     /// Millimetres the fingers move for each step of a switcher's pick.
     public var step = 12.0
     public var swipes: [GestureSwipe: [String]] = [:]
@@ -333,19 +490,60 @@ public struct Gestures: Equatable {
     public init() {}
 
     init(_ t: Table) throws {
+        enabled = try t.bool("enabled") ?? enabled
         fingers = try t.int("fingers") ?? fingers
         guard (2...5).contains(fingers) else { throw ConfigError(path: t.path("fingers"), "must be 2 to 5") }
+        distance = try t.double("distance") ?? distance
+        guard (6...40).contains(distance) else { throw ConfigError(path: t.path("distance"), "must be 6 to 40") }
         step = try t.double("step") ?? step
         guard (4...50).contains(step) else { throw ConfigError(path: t.path("step"), "must be 4 to 50") }
-        for key in t.keys where key != "fingers" && key != "step" {
-            guard let swipe = GestureSwipe(rawValue: key) else {
-                let choices = GestureSwipe.allCases.map { "'\($0.rawValue)'" }.joined(separator: ", ")
-                throw ConfigError(path: t.path(key), "'\(key)' is not one of \(choices)")
-            }
-            swipes[swipe] = try t.commands(key)
-        }
+        swipes = try gestureSwipes(t, besides: ["enabled", "fingers", "distance", "step"])
         try t.done()
     }
+}
+
+/// `[gestures.mouse]`: swipes on a Magic Mouse, as `[gestures.trackpad]` has them on the trackpad but with lengths for
+/// its narrower surface, and fingers that may already rest on it before the last lands. Two by default: held as a
+/// mouse is, it seldom feels a third, which lies along its edge. Its own swipes replace all of the trackpad's; without
+/// any, those run. Off until `enabled`.
+public struct MouseSwipes: Equatable {
+    public var enabled = false
+    /// How many fingers swipe, 2 to 4. One scrolls; two swipe between full-screen apps unless that is off.
+    public var fingers = 2
+    /// Millimetres the fingers move before it is a swipe.
+    public var distance = 8.0
+    /// Millimetres the fingers move for each step of a switcher's pick.
+    public var step = 4.0
+    /// Nil for the trackpad's.
+    public var swipes: [GestureSwipe: [String]]?
+
+    public init() {}
+
+    init(_ t: Table) throws {
+        enabled = try t.bool("enabled") ?? enabled
+        fingers = try t.int("fingers") ?? fingers
+        guard (2...4).contains(fingers) else { throw ConfigError(path: t.path("fingers"), "must be 2 to 4") }
+        distance = try t.double("distance") ?? distance
+        guard (3...30).contains(distance) else { throw ConfigError(path: t.path("distance"), "must be 3 to 30") }
+        step = try t.double("step") ?? step
+        guard (2...30).contains(step) else { throw ConfigError(path: t.path("step"), "must be 2 to 30") }
+        let own = try gestureSwipes(t, besides: ["enabled", "fingers", "distance", "step"])
+        swipes = own.isEmpty ? nil : own
+        try t.done()
+    }
+}
+
+/// A gesture table's swipes: every key but `besides` must be one.
+private func gestureSwipes(_ t: Table, besides: [String]) throws -> [GestureSwipe: [String]] {
+    var swipes: [GestureSwipe: [String]] = [:]
+    for key in t.keys where !besides.contains(key) {
+        guard let swipe = GestureSwipe(rawValue: key) else {
+            let choices = GestureSwipe.allCases.map { "'\($0.rawValue)'" }.joined(separator: ", ")
+            throw ConfigError(path: t.path(key), "'\(key)' is not one of \(choices)")
+        }
+        swipes[swipe] = try t.commands(key)
+    }
+    return swipes
 }
 
 /// Which displays' workspaces the workspace switcher shows.
@@ -367,11 +565,16 @@ public enum WorkspaceSwitcherThumbnails: String, CaseIterable {
 }
 
 /// `[workspace-switcher]`: hold the modifier on its own and a capsule of the workspaces shows at the pointer, each
-/// drawn small in its layout; release to switch to the one picked.
+/// drawn small in its layout; release to switch to the one picked. `enabled`, `delay-ms`, `corner-radius`, `position`,
+/// `show-titles`, `letter-keys`, `letters` and `highlight-color` left out are `[switcher]`'s.
 public struct WorkspaceSwitcher: Equatable {
+    public var enabled = true
     public var modifier = SwitcherModifier.none
     /// How long the modifier is held alone before the capsule shows.
     public var delayMs = 200
+    public var trigger = SwitcherTrigger.hold
+    /// With `double-tap`, how long each tap and the gap between them may last.
+    public var doubleTapMs = 300
     public var displays = WorkspaceSwitcherDisplays.all
     /// Whether workspaces without windows get a card.
     public var showEmpty = true
@@ -380,17 +583,35 @@ public struct WorkspaceSwitcher: Equatable {
     /// Points; each card is as wide as its display's proportions give.
     public var cardHeight = 85.0
     public var thumbnails = WorkspaceSwitcherThumbnails.windows
-    /// Points; nil takes `[window-switcher]`'s.
-    public var cornerRadius: Double?
-    /// Nil takes `[window-switcher]`'s.
-    public var position: SwitcherPosition?
+    /// Points.
+    public var cornerRadius = 52.0
+    public var position = SwitcherPosition.auto
+    /// Whether each window in a card shows its title on a band along its foot; not on a schematic card.
+    public var showTitles = true
+    /// Whether each window in a card has a letter key that switches to its workspace and focuses it, and the
+    /// letters, in reading order; not on a schematic card.
+    public var letterKeys = true
+    public var letters = SwitcherDefaults.defaultLetters
+    /// The pick's ring and glow, and a schematic card's windows once picked.
+    public var highlightColor = Highlight.accent
 
     public init() {}
 
-    init(_ t: Table) throws {
+    init(_ t: Table?, defaults: SwitcherDefaults) throws {
+        var shared = defaults
+        if let t { try shared.read(t) }
+        enabled = shared.enabled
+        delayMs = shared.delayMs
+        trigger = shared.trigger
+        doubleTapMs = shared.doubleTapMs
+        cornerRadius = shared.cornerRadius
+        position = shared.position
+        showTitles = shared.showTitles
+        letterKeys = shared.letterKeys
+        letters = shared.letters
+        highlightColor = shared.highlightColor ?? .accent
+        guard let t else { return }
         modifier = try t.choice("modifier") ?? modifier
-        delayMs = try t.int("delay-ms") ?? delayMs
-        guard (0...2000).contains(delayMs) else { throw ConfigError(path: t.path("delay-ms"), "must be 0 to 2000") }
         displays = try t.choice("displays") ?? displays
         showEmpty = try t.bool("show-empty") ?? showEmpty
         exclude = try t.ints("exclude") ?? exclude
@@ -398,11 +619,6 @@ public struct WorkspaceSwitcher: Equatable {
         cardHeight = try t.double("card-height") ?? cardHeight
         guard (60...200).contains(cardHeight) else { throw ConfigError(path: t.path("card-height"), "must be 60 to 200") }
         thumbnails = try t.choice("thumbnails") ?? thumbnails
-        cornerRadius = try t.double("corner-radius") ?? cornerRadius
-        if let cornerRadius, !(0...80).contains(cornerRadius) {
-            throw ConfigError(path: t.path("corner-radius"), "must be 0 to 80")
-        }
-        position = try t.choice("position") ?? position
         try t.done()
     }
 }
@@ -478,6 +694,13 @@ public enum MenuBarIcon: String, CaseIterable {
     case blocks, text, none
 }
 
+/// Show the menu bar item, hide it, or hide it only while a single display is connected, where one block or number
+/// tells nothing the screen doesn't.
+public enum MenuBarIconHiding: String, CaseIterable {
+    case never, always
+    case singleDisplay = "single-display"
+}
+
 /// Below the target, or above it as a ring that never covers content or takes clicks.
 public enum BorderOrder: String, CaseIterable {
     case below, above
@@ -486,7 +709,8 @@ public enum BorderOrder: String, CaseIterable {
 public struct Borders: Equatable {
     public var enabled = true
     public var width = 4.0
-    public var activeColor = try! Color(hex: "#e1e3e4")
+    /// The focused window's: the top-level `highlight-color` when the table leaves it out and that is set.
+    public var activeColor = Highlight.color(try! Color(hex: "#e1e3e4"))
     public var inactiveColor = try! Color(hex: "#494d64")
     public var order = BorderOrder.below
     /// Bundle IDs whose windows get no border.
@@ -494,10 +718,12 @@ public struct Borders: Equatable {
 
     public init() {}
 
-    init(_ t: Table) throws {
+    init(_ t: Table?, highlight: Highlight?) throws {
+        activeColor = highlight ?? activeColor
+        guard let t else { return }
         enabled = try t.bool("enabled") ?? enabled
         width = try t.double("width") ?? width
-        activeColor = try t.color("active-color") ?? activeColor
+        activeColor = try t.highlight("active-color") ?? activeColor
         inactiveColor = try t.color("inactive-color") ?? inactiveColor
         order = try t.choice("order") ?? order
         excludeApps = try t.strings("exclude-apps") ?? excludeApps
@@ -564,8 +790,9 @@ public struct Animations: Equatable {
 public struct Drag: Equatable {
     /// Outline the tile a dragged window came from and the one it will swap with.
     public var placeholders = true
-    /// The border of the part of a tile a drop will take. Nil follows the system accent colour.
-    public var previewBorderColor: Color?
+    /// The border of the part of a tile a drop will take: the top-level `highlight-color` when the table leaves it
+    /// out. Nil follows the system accent colour.
+    public var previewBorderColor: Highlight?
     /// Its fill. Nil is the border colour at 30%.
     public var previewFillColor: Color?
     /// Points, for the preview and the outlines around it.
@@ -573,12 +800,21 @@ public struct Drag: Equatable {
     /// Whether the tile a dragged window came from is outlined. Off, only the feedback over the tile under the
     /// pointer shows.
     public var homeOutline = true
+    /// Held, exactly these, a press anywhere in a window drags it, not only on its title bar. Empty is off.
+    public var mouseModifier: KeyCombo.Modifiers = []
 
     public init() {}
 
     init(_ t: Table) throws {
         placeholders = try t.bool("placeholders") ?? placeholders
-        previewBorderColor = try t.color("preview-border-color") ?? previewBorderColor
+        if let names = try t.string("mouse-modifier") {
+            guard let modifiers = KeyCombo.Modifiers(names: names) else {
+                throw ConfigError(path: t.path("mouse-modifier"),
+                                  "'\(names)' is not 'none' or modifiers (alt, ctrl, cmd, shift) joined by '-'")
+            }
+            mouseModifier = modifiers
+        }
+        previewBorderColor = try t.highlight("preview-border-color") ?? previewBorderColor
         previewFillColor = try t.color("preview-fill-color") ?? previewFillColor
         previewBorderWidth = try t.double("preview-border-width") ?? previewBorderWidth
         homeOutline = try t.bool("home-outline") ?? homeOutline
@@ -637,6 +873,8 @@ public struct ModifierSides: Equatable {
     public var ctrl = ModifierSide.both
     public var cmd = ModifierSide.both
     public var shift = ModifierSide.both
+    /// The modifiers a switcher's `hyper` holds together, two or more.
+    public var hyper: KeyCombo.Modifiers = [.alt, .ctrl, .cmd, .shift]
 
     public init() {}
 
@@ -645,6 +883,13 @@ public struct ModifierSides: Equatable {
         ctrl = try t.choice("ctrl") ?? ctrl
         cmd = try t.choice("cmd") ?? cmd
         shift = try t.choice("shift") ?? shift
+        if let names = try t.string("hyper") {
+            guard let modifiers = KeyCombo.Modifiers(names: names),
+                  KeyCombo.Modifiers.names.filter({ modifiers.contains($0.1) }).count >= 2 else {
+                throw ConfigError(path: t.path("hyper"), "'\(names)' is not two or more of alt, ctrl, cmd, shift joined by -")
+            }
+            hyper = modifiers
+        }
         try t.done()
     }
 }

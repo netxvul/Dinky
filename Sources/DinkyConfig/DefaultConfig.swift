@@ -10,13 +10,15 @@ extension Config {
 
     start-at-login = true
     workspaces = 5                  # across all displays, one native Space each
-    default-layout = 'tiles'        # tiles (dwindle) | dwindle | accordion | fixed | scrolling
+    default-layout = 'tiles'        # tiles (dwindle) | dwindle | accordion | fixed | scrolling | free (every window floats)
     default-tiling = true           # false leaves workspaces untiled unless overridden
     follow-app-activation = true    # Cmd-Tab and Dock clicks switch Spaces the fast way
     float-windows-without-fullscreen = true   # progress windows, About, Calculator and the like float
     menu-bar-icon = 'blocks'        # blocks (one per display, focused filled) | text (the focused display's number) | none (hidden)
+    hide-menu-bar-icon = 'never'    # never | always (as menu-bar-icon = 'none') | single-display (hidden while only one display is connected)
     scripting-addition = true       # scroll strips through the Dock scripting addition where it is injected (SIP off);
                                     # without it, or false, their windows move frame by frame
+    # highlight-color = '#7aa2f7'  # what every highlight left unset takes: the switchers' pick, the focused border, a drag's preview
 
     # Example: only tile workspace 2 in a fixed 2x3 template.
     # Empty cells stay empty; a seventh window adds a column by default.
@@ -60,7 +62,7 @@ extension Config {
     [borders]
     enabled = true
     width = 4
-    active-color = '#e1e3e4'        # '#rrggbb' or '#rrggbbaa'
+    # active-color = '#e1e3e4'      # '#rrggbb', '#rrggbbaa' or 'accent'; unset is highlight-color, else '#e1e3e4'
     inactive-color = '#494d64'
     order = 'below'                 # below | above (a click-through ring over the window)
     exclude-apps = []               # bundle IDs whose windows get no border
@@ -81,6 +83,7 @@ extension Config {
     # preview-fill-color = '#7aa2f74d'  # unset is the border colour at 30%
     preview-border-width = 3        # points, for the preview and the outlines
     home-outline = true             # outline where a dragged tile came from; false shows only where it will go
+    mouse-modifier = 'none'         # held, drag a window from anywhere in it; set, only such drags drop on tiles: none (off) | alt | ctrl | cmd | shift, or joined, 'ctrl-cmd'
 
     # A glass capsule naming the new layout or mode for a moment.
     [hud]
@@ -92,37 +95,54 @@ extension Config {
     on-mode-change = true           # when the binding mode changes
     on-workspace-change = true      # the new workspace's layout when a display moves to another workspace
 
+    # What both switchers below share. Each of these keys can go in [window-switcher] or [workspace-switcher] too,
+    # for that one alone.
+    [switcher]
+    enabled = true                  # false turns both off: the modifier, the bindings and the swipes
+    delay-ms = 200                  # how long the modifier is held alone before the capsule shows, 0 to 2000
+    trigger = 'hold'                # hold (the modifier held alone) | double-tap (tapped alone twice; keys, pointer or a click pick)
+    double-tap-ms = 300             # with double-tap, how long each tap and the gap between them may last, 100 to 1000
+    corner-radius = 52              # points, 0 to 80; about 70 or more makes a row's ends round
+    position = 'auto'               # auto (at the pointer when held, the middle from a binding) | center | top | bottom | mouse
+    show-titles = true              # window titles: under each card in the window switcher, along each window's foot in a workspace card
+    letter-keys = true              # a letter key beside each title; press the letter to jump to that window
+    letters = 'asdfgqwertyuiopzxcvbnm'  # handed out left to right; a to z, each once, not h, j, k, l
+    # highlight-color = 'accent'    # the pick's ring and glow; unset is highlight-color, else the accent colour
+
     # Hold the modifier alone for a glass capsule of the workspace's windows at the pointer; move across to pick
     # one, release to focus it.
     [window-switcher]
-    modifier = 'none'               # none (off) | alt | ctrl | cmd | shift
-    delay-ms = 200                  # how long it is held alone before the capsule shows, 0 to 2000
-    layouts = ['scrolling', 'tiles']  # where it shows: scrolling | tiles | accordion | fixed
-    corner-radius = 52              # points, 0 to 80; about 70 or more makes the row's ends round
+    modifier = 'none'               # none (off) | alt | ctrl | cmd | shift | hyper
+    layouts = ['scrolling', 'tiles']  # where it shows: scrolling | tiles | accordion | fixed | free
     tiles-style = 'map'             # tiles and fixed: map (their tiles, picked in two dimensions) | row
-    show-single = true              # also show it for a workspace with a lone tiled window
-    position = 'auto'               # auto (at the pointer when held, the middle from a binding) | center | top | bottom | mouse
+    show-single = true              # also show it for a workspace with a lone tiled window (free: a lone window)
 
     # Hold the modifier alone for a glass capsule of the workspaces at the pointer, each drawn small in its layout;
     # move across to pick one, release to switch to it.
     [workspace-switcher]
-    modifier = 'none'               # none (off) | alt | ctrl | cmd | shift; not the same as [window-switcher]'s
-    delay-ms = 200                  # how long it is held alone before the capsule shows, 0 to 2000
+    modifier = 'none'               # none (off) | alt | ctrl | cmd | shift | hyper; not [window-switcher]'s unless the triggers differ
     displays = 'all'                # all (a group per display) | pointer (the display under the pointer)
     show-empty = true               # cards for workspaces without windows
     exclude = []                    # workspace numbers left out
     card-height = 85                # points, 60 to 200; the width follows each display's proportions
     thumbnails = 'windows'          # windows (pictures, need Screen Recording) | icons (app icons) | schematic (a fixed picture of the layout)
-    # corner-radius = 18            # points, 0 to 80; [window-switcher]'s when left out
-    # position = 'auto'             # auto | center | top | bottom | mouse; [window-switcher]'s when left out
+    # delay-ms = 300                # any [switcher] key set here is for this switcher alone
 
-    # Swipes on the trackpad, each running commands as a key binding does. A swipe that shows a switcher goes on
-    # picking with the same fingers, a step every `step` millimetres; lift them to take the pick.
-    # [gestures]
+    # Swipes on the trackpad and a Magic Mouse, each running commands as a key binding does. A swipe that shows a
+    # switcher goes on picking with the same fingers, a step every `step` millimetres; lift them to take the pick.
+    # [gestures.trackpad]
+    # enabled = true
     # fingers = 3                   # 2 to 5
+    # distance = 15                 # millimetres before it is a swipe, 6 to 40
     # step = 12                     # millimetres per step, 4 to 50
     # swipe-right = 'window-switcher'   # also swipe-left, swipe-up, swipe-down
     # swipe-left = 'workspace-switcher'
+    # [gestures.mouse]              # the same on a Magic Mouse, off by default
+    # enabled = true
+    # fingers = 2                   # 2 to 4; it seldom feels a third
+    # distance = 8                  # millimetres, 3 to 30
+    # step = 4                      # millimetres per step, 2 to 30
+    # swipe-up = 'window-switcher'  # its own swipes replace the trackpad's; none, and those run
 
     # Which key of each pair bindings answer to: both | left | right. With alt = 'left',
     # right Option still types special characters.
@@ -131,6 +151,7 @@ extension Config {
     ctrl = 'both'
     cmd = 'both'
     shift = 'both'
+    hyper = 'alt-ctrl-cmd-shift'     # what a switcher's modifier = 'hyper' holds together, two or more, either side
 
     # dinky commands run on events. exec-and-forget gets $DINKY_WORKSPACE, $DINKY_PREV_WORKSPACE and $DINKY_DISPLAY
     # in the workspace hooks, and $DINKY_MODE, $DINKY_PREV_MODE in mode-changed.
@@ -142,7 +163,7 @@ extension Config {
 
     # Every rule whose conditions all match a new window runs, in order.
     [[rules]]
-    app-id = 'com.apple.systempreferences'   # also: app-name, title (regexes), kind (normal|dialog|sheet|panel)
+    app-id = 'com.apple.systempreferences'   # also: app-name, title (regexes), kind (normal|dialog|sheet|panel), disk-image
     run = 'layout floating'
 
     [mode.main]

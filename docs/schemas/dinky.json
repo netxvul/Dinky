@@ -30,9 +30,9 @@
     },
     "default-layout": {
       "type": "string",
-      "enum": ["tiles", "dwindle", "accordion", "fixed", "scrolling"],
+      "enum": ["tiles", "dwindle", "accordion", "fixed", "scrolling", "free"],
       "default": "tiles",
-      "description": "Workspace layout. tiles is the original name for dwindle."
+      "description": "Workspace layout. tiles is the original name for dwindle; free tiles nothing, every window floats."
     },
     "default-tiling": { "type": "boolean", "default": true, "description": "Whether dinky tiles numbered workspaces by default." },
     "workspace": {
@@ -44,13 +44,12 @@
         "additionalProperties": false,
         "properties": {
           "tiling": { "type": "boolean" },
-          "float": { "type": "boolean", "default": false, "description": "Float every window on the workspace, whatever tiling says. A window floated here keeps floating on other workspaces." },
-          "layout": { "type": "string", "enum": ["tiles", "dwindle", "accordion", "fixed", "scrolling"] },
+          "layout": { "type": "string", "enum": ["tiles", "dwindle", "accordion", "fixed", "scrolling", "free"], "description": "free floats every window on the workspace, whatever tiling says, and tiles it again on a workspace with another layout." },
           "columns": { "type": "integer", "minimum": 1, "default": 1, "description": "Reserved columns for a fixed layout." },
           "rows": { "type": "integer", "minimum": 1, "default": 1, "description": "Reserved rows for a fixed layout." },
           "expand": { "type": "string", "enum": ["columns", "rows", "accordion"], "default": "columns", "description": "Where overflow windows go when every fixed cell is full." }
         },
-        "if": { "required": ["layout"], "properties": { "layout": { "enum": ["tiles", "dwindle", "accordion", "scrolling"] } } },
+        "if": { "required": ["layout"], "properties": { "layout": { "enum": ["tiles", "dwindle", "accordion", "scrolling", "free"] } } },
         "then": { "not": { "anyOf": [ { "required": ["columns"] }, { "required": ["rows"] }, { "required": ["expand"] } ] } }
       }
     },
@@ -70,10 +69,20 @@
       "default": "blocks",
       "description": "blocks shows a block per display with the workspace it shows, the focused display's filled. text shows the focused display's workspace number. none hides it."
     },
+    "hide-menu-bar-icon": {
+      "type": "string",
+      "enum": ["never", "always", "single-display"],
+      "default": "never",
+      "description": "When to hide dinky's menu bar item. single-display hides it while only one display is connected. always hides it, as menu-bar-icon = 'none' does. never leaves it to menu-bar-icon."
+    },
     "scripting-addition": {
       "type": "boolean",
       "default": true,
       "description": "Whether dinky may use its Dock scripting addition (SIP off). Where it is injected, a scrolling strip scrolls through it; without it, or false, the strip moves its windows frame by frame. false never checks for or injects it, even with SIP off."
+    },
+    "highlight-color": {
+      "$ref": "#/definitions/highlight",
+      "description": "What every highlight left unset takes: the switchers' pick, the focused window's border and a drag's preview. Unset, each keeps its own default."
     },
     "scrolling": {
       "type": "object",
@@ -173,7 +182,7 @@
       "properties": {
         "enabled": { "type": "boolean", "default": true, "description": "Draw a border around windows." },
         "width": { "type": "number", "minimum": 0, "default": 4, "description": "Border width in points." },
-        "active-color": { "$ref": "#/definitions/color", "default": "#e1e3e4", "description": "Colour of the focused window's border." },
+        "active-color": { "$ref": "#/definitions/highlight", "description": "Colour of the focused window's border. Unset, the top-level highlight-color, or #e1e3e4 without one." },
         "inactive-color": { "$ref": "#/definitions/color", "default": "#494d64", "description": "Colour of other windows' borders." },
         "order": {
           "type": "string",
@@ -246,22 +255,27 @@
           "default": true,
           "description": "While you drag a tiled window, outline the tile it came from, and show over the tile under the pointer the part the window will take."
         },
-        "preview-border-color": { "$ref": "#/definitions/color", "description": "Border of the part of the tile a dragged window will take. Unset, the system accent colour." },
+        "preview-border-color": { "$ref": "#/definitions/highlight", "description": "Border of the part of the tile a dragged window will take. Unset, the top-level highlight-color, or the system accent colour without one." },
         "preview-fill-color": { "$ref": "#/definitions/color", "description": "Fill of that part. Unset, the border colour at 30%." },
         "home-outline": { "type": "boolean", "default": true, "description": "Outline the tile a dragged window came from. false shows only the feedback over the tile under the pointer." },
-        "preview-border-width": { "type": "number", "minimum": 0, "maximum": 20, "default": 3, "description": "Points, for every border while you drag: the preview, a swap's, and the outlines of the tiles." }
+        "preview-border-width": { "type": "number", "minimum": 0, "maximum": 20, "default": 3, "description": "Points, for every border while you drag: the preview, a swap's, and the outlines of the tiles." },
+        "mouse-modifier": {
+          "type": "string",
+          "pattern": "^(none|(alt|ctrl|cmd|shift)(-(alt|ctrl|cmd|shift))*)$",
+          "default": "none",
+          "description": "Held exactly, drag a window from anywhere in it, not only by its title bar: alt, ctrl, cmd or shift, or several joined by -, such as ctrl-cmd. Once set, only a drag with it held drops onto a tile; a tiled window dragged by its title bar alone goes back. The press goes to dinky, not the app. The key's side follows [modifiers]; none turns it off."
+        }
       }
     },
-    "window-switcher": {
+    "switcher": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Hold the modifier alone over a workspace for a capsule of its windows at the pointer; release to focus the one picked.",
+      "description": "What [window-switcher] and [workspace-switcher] share. Each key can go in either of them too, for that switcher alone.",
       "properties": {
-        "modifier": {
-          "type": "string",
-          "enum": ["none", "alt", "ctrl", "cmd", "shift"],
-          "default": "none",
-          "description": "The modifier that shows the capsule; none turns it off. The key's side follows [modifiers]."
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether the switchers show at all: false turns off the modifier, the bindings and the swipes."
         },
         "delay-ms": {
           "type": "integer",
@@ -270,11 +284,18 @@
           "default": 200,
           "description": "How long the modifier is held alone before the capsule shows."
         },
-        "layouts": {
-          "type": "array",
-          "items": { "type": "string", "enum": ["scrolling", "tiles", "accordion", "fixed"] },
-          "default": ["scrolling", "tiles"],
-          "description": "The layouts the capsule shows for. tiles is dwindle."
+        "trigger": {
+          "type": "string",
+          "enum": ["hold", "double-tap"],
+          "default": "hold",
+          "description": "How the modifier shows the capsule. hold: held alone for delay-ms, released to take the pick. double-tap: tapped alone twice; the capsule stays up for the keys, the pointer or a click, as from a key binding."
+        },
+        "double-tap-ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 1000,
+          "default": 300,
+          "description": "With double-tap, how long each tap and the gap between them may last."
         },
         "corner-radius": {
           "type": "number",
@@ -282,6 +303,78 @@
           "maximum": 80,
           "default": 52,
           "description": "The capsule's corner radius in points. Half its height or more makes round ends."
+        },
+        "position": {
+          "type": "string",
+          "enum": ["auto", "center", "top", "bottom", "mouse"],
+          "default": "auto",
+          "description": "Where the capsule shows on the display under the pointer. auto: over the pointer when held or swiped, in the middle from a key binding. center: the middle. top: below the menu bar. bottom: above the Dock. mouse: over the pointer, from a key binding too."
+        },
+        "show-titles": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether windows show their titles: under each card in the window switcher (on a map, and over a column's upper window, on a band along its foot), on a band along each window's foot in a workspace card (not a covered or tiny window's, nor with schematic thumbnails). A window without a title shows its app's name."
+        },
+        "letter-keys": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether each window gets a letter, drawn as a key at its title's right; pressing it while the capsule is up jumps to the window: the window switcher focuses it, the workspace switcher switches to its workspace and focuses it."
+        },
+        "letters": {
+          "type": "string",
+          "pattern": "^[a-gim-z]+$",
+          "default": "asdfgqwertyuiopzxcvbnm",
+          "description": "The letters handed out, in order, to the windows as they read, left to right. Lowercase a to z, each once, without h, j, k and l, which move the pick."
+        },
+        "highlight-color": {
+          "$ref": "#/definitions/highlight",
+          "description": "The pick's ring and the glow under it. Unset, the top-level highlight-color, or the system accent colour without one."
+        }
+      }
+    },
+    "window-switcher": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Hold the modifier alone over a workspace for a capsule of its windows at the pointer; release to focus the one picked.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether this switcher shows at all; [switcher]'s when left out."
+        },
+        "modifier": {
+          "type": "string",
+          "enum": ["none", "alt", "ctrl", "cmd", "shift", "hyper"],
+          "default": "none",
+          "description": "The modifier that shows the capsule; none turns it off. The key's side follows [modifiers]."
+        },
+        "delay-ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2000,
+          "description": "How long the modifier is held alone before the capsule shows; [switcher]'s when left out."
+        },
+        "trigger": {
+          "type": "string",
+          "enum": ["hold", "double-tap"],
+          "description": "How the modifier shows the capsule, as [switcher]'s trigger; [switcher]'s when left out."
+        },
+        "double-tap-ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 1000,
+          "description": "With double-tap, how long each tap and the gap between them may last; [switcher]'s when left out."
+        },
+        "layouts": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["scrolling", "tiles", "accordion", "fixed", "free"] },
+          "default": ["scrolling", "tiles"],
+          "description": "The layouts the capsule shows for. tiles is dwindle; free is a workspace dinky does not tile, its windows in a row left to right."
+        },
+        "corner-radius": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 80,
+          "description": "The capsule's corner radius in points; [switcher]'s when left out."
         },
         "tiles-style": {
           "type": "string",
@@ -292,13 +385,29 @@
         "show-single": {
           "type": "boolean",
           "default": true,
-          "description": "Whether the capsule shows for a workspace with a lone tiled window, held or from a binding. false shows it only with two or more."
+          "description": "Whether the capsule shows for a workspace with a lone tiled window (on a free workspace, a lone window), held or from a binding. false shows it only with two or more."
+        },
+        "show-titles": {
+          "type": "boolean",
+          "description": "Whether each window's title shows under its card, as [switcher]'s show-titles; [switcher]'s when left out."
         },
         "position": {
           "type": "string",
           "enum": ["auto", "center", "top", "bottom", "mouse"],
-          "default": "auto",
-          "description": "Where the capsule shows on the display under the pointer. auto: over the pointer when held or swiped, in the middle from a key binding. center: the middle. top: below the menu bar. bottom: above the Dock. mouse: over the pointer, from a key binding too."
+          "description": "Where the capsule shows, as [switcher]'s position; [switcher]'s when left out."
+        },
+        "letter-keys": {
+          "type": "boolean",
+          "description": "As [switcher]'s letter-keys, for this switcher alone; [switcher]'s when left out."
+        },
+        "letters": {
+          "type": "string",
+          "pattern": "^[a-gim-z]+$",
+          "description": "As [switcher]'s letters, for this switcher alone; [switcher]'s when left out."
+        },
+        "highlight-color": {
+          "$ref": "#/definitions/highlight",
+          "description": "The pick's ring and the glow under it; [switcher]'s when left out."
         }
       }
     },
@@ -307,18 +416,32 @@
       "additionalProperties": false,
       "description": "Hold the modifier alone for a capsule of the workspaces at the pointer, each drawn small in its layout; release to switch to the one picked.",
       "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether this switcher shows at all; [switcher]'s when left out."
+        },
         "modifier": {
           "type": "string",
-          "enum": ["none", "alt", "ctrl", "cmd", "shift"],
+          "enum": ["none", "alt", "ctrl", "cmd", "shift", "hyper"],
           "default": "none",
-          "description": "The modifier that shows the capsule; none turns it off. Not the same as [window-switcher]'s. The key's side follows [modifiers]."
+          "description": "The modifier that shows the capsule; none turns it off. Not the same as [window-switcher]'s unless their triggers differ. The key's side follows [modifiers]."
         },
         "delay-ms": {
           "type": "integer",
           "minimum": 0,
           "maximum": 2000,
-          "default": 200,
-          "description": "How long the modifier is held alone before the capsule shows."
+          "description": "How long the modifier is held alone before the capsule shows; [switcher]'s when left out."
+        },
+        "trigger": {
+          "type": "string",
+          "enum": ["hold", "double-tap"],
+          "description": "How the modifier shows the capsule, as [switcher]'s trigger; [switcher]'s when left out."
+        },
+        "double-tap-ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 1000,
+          "description": "With double-tap, how long each tap and the gap between them may last; [switcher]'s when left out."
         },
         "displays": {
           "type": "string",
@@ -350,12 +473,29 @@
           "type": "number",
           "minimum": 0,
           "maximum": 80,
-          "description": "The capsule's corner radius in points; [window-switcher]'s when left out."
+          "description": "The capsule's corner radius in points; [switcher]'s when left out."
         },
         "position": {
           "type": "string",
           "enum": ["auto", "center", "top", "bottom", "mouse"],
-          "description": "Where the capsule shows, as [window-switcher]'s position; [window-switcher]'s when left out."
+          "description": "Where the capsule shows, as [switcher]'s position; [switcher]'s when left out."
+        },
+        "show-titles": {
+          "type": "boolean",
+          "description": "Whether each window in a card shows its title on a band along its foot, as [switcher]'s show-titles; [switcher]'s when left out."
+        },
+        "letter-keys": {
+          "type": "boolean",
+          "description": "As [switcher]'s letter-keys, for this switcher alone; [switcher]'s when left out."
+        },
+        "letters": {
+          "type": "string",
+          "pattern": "^[a-gim-z]+$",
+          "description": "As [switcher]'s letters, for this switcher alone; [switcher]'s when left out."
+        },
+        "highlight-color": {
+          "$ref": "#/definitions/highlight",
+          "description": "The pick's ring, the glow under it and, with schematic thumbnails, the picked card's windows; [switcher]'s when left out."
         }
       }
     },
@@ -376,14 +516,38 @@
     "gestures": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Swipes on the trackpad with `fingers` fingers, each running a command or commands as a key binding does. A swipe that shows a switcher goes on picking with the same fingers until they lift.",
+      "description": "Swipes on the trackpad and on a Magic Mouse, each running a command or commands as a key binding does. A swipe that shows a switcher goes on picking with the same fingers until they lift.",
       "properties": {
-        "fingers": { "type": "integer", "minimum": 2, "maximum": 5, "default": 3, "description": "How many fingers swipe. 2 also scrolls." },
-        "step": { "type": "number", "minimum": 4, "maximum": 50, "default": 12, "description": "Millimetres the fingers move for each step of a switcher's pick." },
-        "swipe-left": { "$ref": "#/definitions/commands" },
-        "swipe-right": { "$ref": "#/definitions/commands" },
-        "swipe-up": { "$ref": "#/definitions/commands" },
-        "swipe-down": { "$ref": "#/definitions/commands" }
+        "trackpad": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Swipes on the trackpad with `fingers` fingers.",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true, "description": "false turns swipes on the trackpad off." },
+            "fingers": { "type": "integer", "minimum": 2, "maximum": 5, "default": 3, "description": "How many fingers swipe. 2 also scrolls." },
+            "distance": { "type": "number", "minimum": 6, "maximum": 40, "default": 15, "description": "Millimetres the fingers move, mostly one way, before it is a swipe." },
+            "step": { "type": "number", "minimum": 4, "maximum": 50, "default": 12, "description": "Millimetres the fingers move for each step of a switcher's pick." },
+            "swipe-left": { "$ref": "#/definitions/commands" },
+            "swipe-right": { "$ref": "#/definitions/commands" },
+            "swipe-up": { "$ref": "#/definitions/commands" },
+            "swipe-down": { "$ref": "#/definitions/commands" }
+          }
+        },
+        "mouse": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "The same swipes on a Magic Mouse. Its own swipes replace all of the trackpad's; without any, those run.",
+          "properties": {
+            "enabled": { "type": "boolean", "default": false, "description": "true swipes on the mouse too." },
+            "fingers": { "type": "integer", "minimum": 2, "maximum": 4, "default": 2, "description": "How many fingers swipe on the mouse. Two also swipe between full-screen apps unless that is off." },
+            "distance": { "type": "number", "minimum": 3, "maximum": 30, "default": 8, "description": "Millimetres the fingers move, mostly one way, before it is a swipe." },
+            "step": { "type": "number", "minimum": 2, "maximum": 30, "default": 4, "description": "Millimetres the fingers move for each step of a switcher's pick." },
+            "swipe-left": { "$ref": "#/definitions/commands" },
+            "swipe-right": { "$ref": "#/definitions/commands" },
+            "swipe-up": { "$ref": "#/definitions/commands" },
+            "swipe-down": { "$ref": "#/definitions/commands" }
+          }
+        }
       }
     },
     "modifiers": {
@@ -394,7 +558,13 @@
         "alt": { "enum": ["both", "left", "right"], "default": "both", "description": "Which Option key is alt in bindings." },
         "ctrl": { "enum": ["both", "left", "right"], "default": "both", "description": "Which Control key is ctrl in bindings." },
         "cmd": { "enum": ["both", "left", "right"], "default": "both", "description": "Which Command key is cmd in bindings." },
-        "shift": { "enum": ["both", "left", "right"], "default": "both", "description": "Which Shift key is shift in bindings." }
+        "shift": { "enum": ["both", "left", "right"], "default": "both", "description": "Which Shift key is shift in bindings." },
+        "hyper": {
+          "type": "string",
+          "pattern": "^(alt|ctrl|cmd|shift)(-(alt|ctrl|cmd|shift))+$",
+          "default": "alt-ctrl-cmd-shift",
+          "description": "The modifiers, two or more joined by -, that a switcher's modifier = 'hyper' holds together, from either side."
+        }
       }
     },
     "hooks": {
@@ -427,8 +597,9 @@
           "app-name": { "type": "string", "minLength": 1, "description": "Case-insensitive regex found anywhere in the app's name." },
           "title": { "type": "string", "minLength": 1, "description": "Case-insensitive regex found anywhere in the window title." },
           "kind": { "type": "string", "enum": ["normal", "dialog", "sheet", "panel"], "description": "The kind of window." },
+          "disk-image": { "type": "boolean", "description": "Whether the window comes from a mounted disk image: a Finder window showing a .dmg's contents, or a window of an app run from one." },
           "workspace-layout": {
-            "description": "The layout of the window's workspace as the rule's commands run, or a list of them. floating is a workspace that does not tile.",
+            "description": "The layout of the window's workspace as the rule's commands run, or a list of them. free is a workspace that does not tile (layout = 'free' or tiling = false); floating is its old name.",
             "oneOf": [
               { "$ref": "#/definitions/ruleLayout" },
               { "type": "array", "minItems": 1, "items": { "$ref": "#/definitions/ruleLayout" } }
@@ -450,14 +621,22 @@
       "description": "Key bindings, grouped in modes. dinky starts in main; the `mode <name>` command switches.",
       "additionalProperties": {
         "type": "object",
-        "description": "Key combinations mapped to the command or commands they run.",
-        "propertyNames": { "$ref": "#/definitions/keyCombo" },
+        "description": "Key combinations mapped to the command or commands they run, and tables named for a layout whose keys take over on a workspace laid out that way.",
+        "propertyNames": { "anyOf": [ { "$ref": "#/definitions/keyCombo" }, { "enum": ["scrolling", "tiles", "dwindle", "accordion", "fixed", "free"] } ] },
+        "patternProperties": {
+          "^(scrolling|tiles|dwindle|accordion|fixed|free)$": {
+            "type": "object",
+            "description": "Bindings for a workspace with this layout, over the mode's own: a key here replaces the mode's, the rest stay. tiles and dwindle are one layout.",
+            "propertyNames": { "$ref": "#/definitions/keyCombo" },
+            "additionalProperties": { "$ref": "#/definitions/commands" }
+          }
+        },
         "additionalProperties": { "$ref": "#/definitions/commands" }
       }
     }
   },
   "definitions": {
-    "ruleLayout": { "type": "string", "enum": ["scrolling", "tiles", "dwindle", "accordion", "fixed", "floating"] },
+    "ruleLayout": { "type": "string", "enum": ["scrolling", "tiles", "dwindle", "accordion", "fixed", "free", "floating"] },
     "gaps": {
       "type": "object",
       "additionalProperties": false,
@@ -499,6 +678,11 @@
       "type": "string",
       "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$",
       "description": "A colour, '#rrggbb' or '#rrggbbaa'."
+    },
+    "highlight": {
+      "type": "string",
+      "pattern": "^(accent|#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?)$",
+      "description": "A highlight colour, '#rrggbb' or '#rrggbbaa', or accent for the accent colour in System Settings."
     },
     "command": {
       "type": "string",

@@ -1,4 +1,5 @@
 import AppKit
+import os
 import DinkyPrivate
 
 @_silgen_name("_AXUIElementGetWindow")
@@ -55,8 +56,12 @@ func frontWindowID() -> UInt32 {
     guard let app = NSWorkspace.shared.frontmostApplication else { return 0 }
     var value: CFTypeRef?
     let element = AXUIElementCreateApplication(app.processIdentifier)
+    // Asked on the main thread, which also runs the event taps: an app slow to answer must not hold every key and
+    // click with it, nor dinky, while its own frames wait on WindowServer.
+    AXUIElementSetMessagingTimeout(element, 0.1)
     guard AXUIElementCopyAttributeValue(element, kAXFocusedWindowAttribute as CFString, &value) == .success,
           let window = value else { return 0 }
+    AXUIElementSetMessagingTimeout(window as! AXUIElement, 0.1)
     return axWindowID(window as! AXUIElement)
 }
 
@@ -65,21 +70,57 @@ func frontWindowID() -> UInt32 {
 /// window, which can still be one on another Space when the activation lands. This is the primitive for windows
 /// no tree models (e.g. `focusOnScreen` when the coordinator is not running); a window the coordinator models is
 /// focused through `Coordinator.focus(_:)`, which also arms the grace against stale focus reads.
-func focusWindow(pid: pid_t, id: UInt32) {
+///
+/// The Accessibility calls into the app run on a queue of their own and the app is activated once they are done:
+/// the app can be slow to answer, and the main thread, which also runs the event taps, must not wait on it. An app
+/// that is not answering dinky's frame writes either is only activated. A newer focus supersedes one still under
+/// way, and so does anything else that brings another app to the front meanwhile: a click, Cmd-Tab. `done` runs on
+/// the main thread with whether the app was activated.
+func focusWindow(pid: pid_t, id: UInt32, done: ((Bool) -> Void)? = nil) {
     // Focus is on a window again, even when it is the one that had it before a `focus-monitor`.
     AppState.shared.displays.focusOverride = nil
     if let display = AppState.shared.displays.display(ofWindow: id) {
         noteOwnSwitch(to: display.currentSpaceID, on: display.uuid)
     }
-    if let element = axWindow(pid: pid, wid: id, timeout: FrameApplier.timeout) {
-        // Raise alone makes the window main; the app's key window can stay one on another Space, and the
-        // next command would then act on that one. Make this window main and key explicitly.
-        AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
-        AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
-        AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+    focusRequests += 1
+    let request = focusRequests
+    focusLatest.withLock { $0 = request }
+    let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
+    let activate = {
+        let now = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        guard request == focusRequests, now == front || now == pid else { done?(false); return }
+        NSRunningApplication(processIdentifier: pid)?.activate()
+        done?(true)
     }
-    NSRunningApplication(processIdentifier: pid)?.activate()
+    if AppState.shared.coordinator?.applier.isBusy(pid) == true { return activate() }
+    focusQueue.async {
+        let current = { focusLatest.withLock { $0 } == request }
+        if current(), let element = axWindow(pid: pid, wid: id, timeout: focusTimeout) {
+            // Raise alone makes the window main; the app's key window can stay one on another Space, and the
+            // next command would then act on that one. Make this window main and key explicitly.
+            AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
+            if current() { AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue) }
+            if current() { AXUIElementPerformAction(element, kAXRaiseAction as CFString) }
+        }
+        DispatchQueue.main.async(execute: activate)
+    }
 }
+
+/// Whether the left button is down, or was pressed within `seconds`: a click may still be activating an app, which
+/// dinky's windows writes and screen captures should not reach yet.
+func clickUnderWay(within seconds: CFTimeInterval) -> Bool {
+    CGEventSource.buttonState(.combinedSessionState, button: .left)
+        || CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .leftMouseDown) < seconds
+}
+
+/// Where `focusWindow` talks to the app it focuses, off the main thread.
+private let focusQueue = DispatchQueue(label: "dinky.focus", qos: .userInteractive)
+/// How long each Accessibility call of `focusWindow` may wait on the app.
+private let focusTimeout: Float = 0.5
+/// Counts `focusWindow` calls, on the main thread only; the newest is the one that activates its app.
+private var focusRequests = 0
+/// The newest request, for the queue to skip calls into an app that a later focus has made moot.
+private let focusLatest = OSAllocatedUnfairLock(initialState: 0)
 
 /// Activates Finder when `display` has no window to focus, as macOS does on an empty Space with the desktop shown.
 /// Without the desktop, or with separate Spaces per display, macOS can leave active an app whose window is on another

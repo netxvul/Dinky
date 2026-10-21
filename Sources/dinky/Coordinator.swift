@@ -5,10 +5,12 @@ import DinkyLayout
 import DinkyPrivate
 
 /// What the coordinator knows about a window it has classified. `space` is nil off the user Spaces
-/// (on a native full-screen Space), where nothing is tiled.
+/// (on a native full-screen Space), where nothing is tiled. `freed` marks a window floating only because a `free`
+/// workspace floated it, which tiles again on a workspace with another layout.
 struct Placement {
     let floating: Bool
     var space: UInt64?
+    var freed = false
 }
 
 // The serialized owner of layout state: one Workspace per Space, keyed by Space ID, fed by the window and
@@ -18,7 +20,10 @@ final class Coordinator {
     let model = WindowModel()
     var enabled = true {
         didSet {
-            if !enabled { applier.cancel(); animator.cancel(); pushes = [:]; stagingWindows = [:]; systemTiling = [:] }
+            if !enabled {
+                applier.cancel(); animator.cancel(); pushes = [:]; stagingWindows = [:]; systemTiling = [:]
+                PeekClicks.shared.clear()
+            }
             if enabled, !oldValue { reconcile() }
         }
     }
@@ -50,9 +55,18 @@ final class Coordinator {
     var adopting: Set<WindowID> = []
     /// The tiled window being dragged with the mouse, until the button is released. See Drag.swift.
     var dragging: WindowID?
+    /// Whether that drag shows where it will drop and drops there on release: any drag, unless `[drag]
+    /// mouse-modifier` is set, and then only one with it held. Any other drag puts the window back.
+    var dragDrops = false
+    /// Where a window grabbed with `[drag] mouse-modifier` was last sent, and the pointer that sent it there; nil
+    /// while the system drags one. The pointer is the drag's own: the session never sees the swallowed drag, so asking
+    /// it for the pointer can answer with where the button went down.
+    var held: (frame: CGRect, pointer: CGPoint)?
     /// What the drag's feedback last showed, for the log.
     var shownDrop: String?
     lazy var placeholders = DragPlaceholders()
+    /// Grabs windows pressed anywhere with `[drag] mouse-modifier` held.
+    private lazy var modifierDrag = ModifierDrag(coordinator: self)
     /// Called when the focused window changes.
     var onFocusChange: (() -> Void)?
     private(set) var lastFocused: WindowID = 0
@@ -60,6 +74,11 @@ final class Coordinator {
     private(set) var displayBeforeFocus: String?
     /// A window dinky just focused, and until when focus reads that disagree are taken as stale.
     private var focusing: (id: WindowID, until: Date)?
+    /// Set from a focus change a click made until `clickQuiet` after its button comes up: nothing is laid out
+    /// meanwhile. See `holdForClick()`.
+    private var clickHold = false
+    /// How long after the button of a click that moved focus comes up before the pass it held runs.
+    private static let clickQuiet: CFTimeInterval = 0.1
     /// Trees to place without gliding the next time they are applied: after displays come or go, apps have
     /// moved the windows of Spaces that were not on screen to frames of their own, and a glide from there
     /// would only show the mess.
@@ -91,13 +110,21 @@ final class Coordinator {
     private var systemTilingTokens = 0
     /// Windows Fill took to fullscreen, and the frame each had before, for Return to Previous Size to bring them back to.
     private var systemFilled: [WindowID: CGRect] = [:]
+    /// Windows macOS still has tiled, which only Return to Previous Size undoes: frames dinky writes do not. Picking a
+    /// window in Mission Control puts every such window on its display back where macOS's tiling has it, filling the
+    /// screen or side by side, over the strip (see `missionControlClosed`). Fill tiles a window, and one Mission Control
+    /// moved as it closed is taken to be tiled; a tree's window here is put back through the system the next time it is
+    /// focused out of fullscreen, then laid out from there.
+    private var systemTiled: Set<WindowID> = []
     private let tiler = SystemTiler()
+    /// The `strip` lines of the log. See StripTelemetry.swift.
+    private let telemetry = StripTelemetry()
     /// Where dinky last sent each floating window, so a command pressed again mid-glide starts from where the
     /// window is going rather than where it is.
     private(set) var floatingTargets: [WindowID: CGRect] = [:]
     /// Floating windows filling their display with `fullscreen`, and the frame each had before. In memory only.
     var filledFrom: [WindowID: CGRect] = [:]
-    /// Windows of `float = true` workspaces that `grid --toggle` placed, and the frame each had before. In memory only.
+    /// Windows of `free` workspaces that `grid --toggle` placed, and the frame each had before. In memory only.
     var griddedFrom: [WindowID: CGRect] = [:]
 
     init(displays: DisplayModel, config: Config) {
@@ -107,6 +134,21 @@ final class Coordinator {
 
     func start() {
         model.observe { [weak self] event in self?.handle(event) }
+        // Frames held while an app was not answering are written as a pass of their own, which reports to no one:
+        // lay its windows out again, so their landing, stacking and minimum sizes are taken in as after any pass.
+        PeekClicks.shared.onClick = { [weak self] id in self?.reveal(id) }
+        telemetry.name = { [unowned self] id in "\(id) \(model.windows[id]?.appName ?? "?")" }
+        PeekClicks.shared.start()
+        applier.onRecovered = { [weak self] pid in
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                let windows = model.windows
+                for (key, workspace) in workspaces where workspace.windows.contains(where: { windows[$0]?.pid == pid }) {
+                    dirty.insert(key)
+                }
+                flush()
+            }
+        }
         animator.onArrive = { [weak self] ids in self?.borders?.arrived(ids) }
         var known = Set(displays.displays.map(\.uuid))
         displays.observe { [weak self] displays in
@@ -134,6 +176,7 @@ final class Coordinator {
         ScriptingAddition.enabled = config.scriptingAddition
         animator.configure(durationMs: config.animations.durationMs,
                            easing: Easing(rawValue: config.animations.curve.rawValue))
+        modifierDrag.update(modifiers: config.drag.mouseModifier, sides: config.modifiers)
         if config.borders.enabled {
             borders = borders ?? BorderManager(config: config.borders, model: model,
                                                isAnimating: { [unowned self] id in animator.isAnimating(id) })
@@ -142,7 +185,7 @@ final class Coordinator {
             borders = nil
         }
         configureWorkspaces()
-        // A workspace switched to/from floating must release/acquire its existing windows too.
+        // A workspace switched to/from free or untiled must release/acquire its existing windows too.
         for window in model.windows.values { track(window) }
         fitToDisplays()
         dirty.formUnion(workspaces.keys)
@@ -153,7 +196,10 @@ final class Coordinator {
 
     private func handle(_ event: WindowEvent) {
         // Detected here, not in the border manager, so hover focus stands down even with borders off.
-        if MissionControl.shared.update(from: model) { borders?.missionControlChanged() }
+        if MissionControl.shared.update(from: model) {
+            borders?.missionControlChanged()
+            if !MissionControl.shared.active { missionControlClosed() }
+        }
         borders?.handle(event)
         if let window = event.window {
             event.change == .removed ? forget(window.id) : track(window)
@@ -169,6 +215,33 @@ final class Coordinator {
             }
         }
         flush()
+    }
+
+    /// Picking a window in Mission Control puts the windows macOS still has tiled back where its tiling has them as it
+    /// closes, over the frames dinky wrote, and holds them there until its animation is over (see `systemTiled`). Once
+    /// it is, every tree on screen is laid out again, and a window found out of place is taken to be tiled.
+    private func missionControlClosed() {
+        for delay in [0.4, 1.0, 2.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, enabled, !MissionControl.shared.active else { return }
+                var moved: [WindowID] = []
+                for (key, workspace) in workspaces where isVisible(key) {
+                    let layout = workspace.layout()
+                    // Not one whose app is not answering, which is out of place for that.
+                    for id in workspace.windows where !isAnimating(id) && id != dragging {
+                        guard let want = layout.frames[id], let pid = model.windows[id]?.pid, !applier.isBusy(pid) else { continue }
+                        let live = dinky_window_info(id)
+                        if live.exists, !live.frame.isClose(to: want, within: 4) { moved.append(id) }
+                    }
+                    dirty.insert(key)
+                }
+                if !moved.isEmpty {
+                    systemTiled.formUnion(moved)
+                    print("\(stamp()) mission control: closed, put back \(moved.map(String.init).joined(separator: " "))")
+                }
+                flush()
+            }
+        }
     }
 
     /// Re-reads every window and display, moves windows to the trees of the Spaces they are on now
@@ -258,7 +331,8 @@ final class Coordinator {
         case .accordion: .accordion
         }
         return switch settings.layout {
-        case .tiles, .dwindle: .dwindle(.tiles)
+        // A free workspace tiles nothing; a tree kept from before it was free lays out as tiles if it ever must.
+        case .tiles, .dwindle, .free: .dwindle(.tiles)
         case .accordion: .dwindle(.accordion)
         case .fixed: .fixed(rows: settings.rows, columns: settings.columns, expand: expand)
         case .scrolling: .scrolling
@@ -278,34 +352,55 @@ final class Coordinator {
             placements[window.id] = Placement(floating: classification.floating, space: nil)
             if !classification.runsRules, adopt(window) { return }
         }
-        if !placements[window.id]!.floating, settings(for: window.spaceID).float { float(window.id) }
+        // Off a user Space (an inactive tab, a hidden app's window, a native full-screen Space) a window keeps what it
+        // has: that is no workspace whose layout it could take.
+        let shown = !window.isMinimized && window.isOrderedIn
+            && displays.display(containingSpace: window.spaceID)?.userSpaces.contains(window.spaceID) == true
+        let free = settings(for: window.spaceID).isFree
+        if shown, !placements[window.id]!.floating, free {
+            float(window.id)
+        } else if shown, placements[window.id]!.freed, !free {
+            filledFrom[window.id] = nil
+            griddedFrom[window.id] = nil
+            placements[window.id] = Placement(floating: false, space: nil)
+        }
         guard !adopting.contains(window.id), !placements[window.id]!.floating else { return }
         let old = placements[window.id]!.space
         if let old, window.isMinimized || !window.isOrderedIn, takeOverTile(of: window.id, in: old) {
+            telemetry.member(old, workspaces[old], window.id, joined: false, "an inactive tab, its tab took its place")
             placements[window.id]!.space = nil
             return
         }
         let new = window.isMinimized ? nil : key(of: window)
         guard old != new, heldTabs[window.id] == nil else { return }
-        if let old { edit(old) { $0.remove(window.id) } }
+        if let old {
+            let why = window.isMinimized ? "minimized, or its app hidden" : !window.isOrderedIn ? "ordered out"
+                : new.map { "moved to Space \($0)" } ?? "on Space \(window.spaceID), which dinky does not tile"
+            telemetry.member(old, workspaces[old], window.id, joined: false, why)
+            edit(old) { $0.remove(window.id) }
+        }
         // A window coming from another Space's tree is moving, not switching tabs: tabs share a Space.
         if let new, old == nil, holdAsTab(window, in: new) { return }
-        if let new { edit(new) { $0.insert(window.id) } }
+        if let new {
+            edit(new) { $0.insert(window.id) }
+            telemetry.member(new, workspaces[new], window.id, joined: true, old.map { "from Space \($0)" } ?? "shown")
+        }
         placements[window.id]!.space = new
     }
 
-    /// Floats tiled windows that two passes in a row could not read back: their AX element is gone (an app that
-    /// stopped answering Accessibility), so they would hold a tile they never move into. They are looked at again
-    /// when they take focus.
+    /// Floats tiled windows that two passes in a row found gone from Accessibility, so they would hold a tile they
+    /// never move into. They are looked at again when they take focus. A window whose app is only slow to answer is
+    /// busy, not gone: it keeps its tile, and the count it has so far stands until the app answers.
     private func noteUnread(_ results: [FrameResult]) {
         for result in results {
             let id = result.job.id
-            guard result.got == nil, placements[id]?.floating == false, model.windows[id] != nil else { unread[id] = nil; continue }
+            if result.busy { continue }
+            guard result.gone, placements[id]?.floating == false, model.windows[id] != nil else { unread[id] = nil; continue }
             unread[id, default: 0] += 1
             guard unread[id]! >= 2 else { continue }
             unread[id] = nil
             NSLog("dinky: window %u cannot be read through Accessibility; floating it until it can", id)
-            float(id)
+            float(id, freed: false)
             unreachable[id] = CACurrentMediaTime()
         }
     }
@@ -313,7 +408,7 @@ final class Coordinator {
     /// Looks again at a window floated because its AX element could not be reached, at most every few seconds, and
     /// classifies it afresh once it can be, so it tiles as any window would.
     func retryUnreachable(_ window: Window) {
-        guard let since = unreachable[window.id], CACurrentMediaTime() - since > 3 else { return }
+        guard let since = unreachable[window.id], CACurrentMediaTime() - since > 3, !applier.isBusy(window.pid) else { return }
         unreachable[window.id] = CACurrentMediaTime()
         guard axWindow(pid: window.pid, wid: window.id, timeout: 0.25) != nil else { return }
         unreachable[window.id] = nil
@@ -323,18 +418,23 @@ final class Coordinator {
         flush()
     }
 
-    /// Floats a window that reached a `float = true` workspace, out of the tree it was tiled in. It floats from then
-    /// on, wherever it goes, as `layout floating` would leave it.
-    private func float(_ id: WindowID) {
-        if let space = placements[id]?.space { edit(space) { $0.remove(id) } }
+    /// Floats a window out of the tree it was tiled in: by default one that reached a `free` workspace, which tiles
+    /// again once it is on a workspace with another layout (see `track(_:)`).
+    private func float(_ id: WindowID, freed: Bool = true) {
+        if let space = placements[id]?.space {
+            telemetry.member(space, workspaces[space], id, joined: false,
+                             freed ? "floated, on a free workspace" : "floated, Accessibility cannot read it")
+            edit(space) { $0.remove(id) }
+        }
         heldTabs[id] = nil
-        placements[id] = Placement(floating: true, space: nil)
+        placements[id] = Placement(floating: true, space: nil, freed: freed)
     }
 
     private func forget(_ id: WindowID) {
         stagingWindows[id] = nil
         systemTiling[id] = nil
         systemFilled[id] = nil
+        systemTiled.remove(id)
         pushes[Self.floatingKey(id)] = nil
         attempts[id] = nil
         adoptTargets[id] = nil
@@ -349,25 +449,44 @@ final class Coordinator {
         floatingTargets[id] = nil
         filledFrom[id] = nil
         griddedFrom[id] = nil
-        guard let placement = placements.removeValue(forKey: id), let space = placement.space,
-              !takeOverTile(of: id, in: space) else { return }
+        guard let placement = placements.removeValue(forKey: id), let space = placement.space else { return }
+        telemetry.member(space, workspaces[space], id, joined: false, "closed")
+        guard !takeOverTile(of: id, in: space) else { return }
         edit(space) { $0.remove(id) }
     }
 
-    /// The front app's frontmost document window on a current Space.
-    var focusedWindow: WindowID { dinky_border_focused_window() }
+    /// The front app's frontmost document window on a current Space; or, while a window dinky focused has yet to
+    /// come to the front, that window: its app is activated once the Accessibility calls into it are done, off the
+    /// main thread, and a command run right after the focus acts on the window it chose.
+    var focusedWindow: WindowID {
+        if let focusing, Date() < focusing.until { return focusing.id }
+        return dinky_border_focused_window()
+    }
 
     /// Focuses a window, raising it and activating its app. For a moment after, focus events that still
     /// report the previous window are ignored, so they do not pull the trees back to it.
     func focus(_ id: WindowID) {
         guard let window = model.windows[id] else { return }
-        focusing = (id, Date() + 0.5)
-        focusWindow(pid: window.pid, id: id)
+        if let space = placements[id]?.space { telemetry.command(space, "dinky focused \(id) \(window.appName ?? "?")") }
+        // Until the app is activated, which waits on Accessibility calls into it off the main thread (at most about
+        // two seconds), and for half a second after.
+        focusing = (id, Date() + 3)
+        focusWindow(pid: window.pid, id: id) { [weak self] activated in
+            guard let self, focusing?.id == id else { return }
+            if activated {
+                focusing = (id, Date() + 0.5)
+            } else {
+                // Something else came to the front first: it has focus, and the trees follow it.
+                focusing = nil
+                syncFocus()
+                flush()
+            }
+        }
     }
 
     /// Follows focus into the trees, so new windows land beside the focused one and accordions show it.
     private func syncFocus() {
-        let id = focusedWindow
+        let id = dinky_border_focused_window()
         if id != lastFocused {
             // Before the override goes: a new window can take focus before it shows. See Adoption.swift.
             displayBeforeFocus = displays.focusedDisplay(window: lastFocused)?.uuid
@@ -377,12 +496,14 @@ final class Coordinator {
             if let window = model.windows[id] { retryUnreachable(window) }
             // Only a window takes focus from a display focused without one, not an app with no window here.
             if id != 0 { displays.focusOverride = nil }
-            displays.noteFocus()
+            displays.noteFocus(window: id)
             onFocusChange?()
+            if clickUnderWay(within: 0.3) { holdForClick() }
         }
         if let focusing, focusing.id != id, Date() < focusing.until { return }
         focusing = nil
-        guard let key = placements[id]?.space, workspaces[key]?.focused != id else { return }
+        guard let key = placements[id]?.space, let workspace = workspaces[key], workspace.focused != id else { return }
+        telemetry.focus(key, workspace, to: id, from: workspace.focused, click: clickUnderWay(within: 0.3))
         edit(key) { $0.focus(id) }
     }
 
@@ -391,7 +512,7 @@ final class Coordinator {
         guard let display = displays.display(containingSpace: window.spaceID),
               display.userSpaces.contains(window.spaceID) else { return nil }
         let settings = settings(for: window.spaceID)
-        guard settings.tiling else { return nil }
+        guard settings.tiling, !settings.isFree else { return nil }
         let key = window.spaceID
         if workspaces[key] == nil {
             workspaces[key] = Workspace(bounds: display.visibleArea, gaps: gaps(on: display),
@@ -434,13 +555,101 @@ final class Coordinator {
         }
     }
 
+    /// A click that moves focus is left to land where it was pressed: after a focus change a click made, the trees
+    /// follow focus at once, but nothing is laid out while the button is down and for `clickQuiet` after it comes
+    /// up; then the held pass runs. A strip scrolled under the pressed button would turn the click into a drag in
+    /// the app, and dinky's writes, raises and captures would reach the app while it is still taking the click. A drag, which drops on its own when the button comes up, lets it
+    /// run as soon as the button is up, and a button held past ten seconds stops holding.
+    private func holdForClick() {
+        guard !clickHold else { return }
+        clickHold = true
+        let began = CACurrentMediaTime()
+        var up: CFTimeInterval?
+        var dragged = false
+        func check() {
+            let now = CACurrentMediaTime()
+            dragged = dragged || dragging != nil
+            if CGEventSource.buttonState(.combinedSessionState, button: .left) {
+                up = nil
+            } else if up == nil {
+                up = now
+            }
+            let quiet = up.map { now - $0 >= (dragged ? 0 : Self.clickQuiet) } ?? false
+            guard quiet || now - began > 10 else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { check() }
+                return
+            }
+            clickHold = false
+            flush()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { check() }
+    }
+
     // MARK: Applying
 
     func flush() {
+        guard !clickHold else { return }
         let keys = dirty
         dirty = []
         guard enabled else { return }
         for key in keys where isVisible(key) { apply(key) }
+    }
+
+    /// Tells `PeekClicks` which of the strip's windows only peek in at a screen edge as this pass lays them out, and
+    /// where. None on a workspace without a strip.
+    private func notePeeks(_ key: UInt64, frames: [WindowID: CGRect], strip: [WindowID: CGRect]) {
+        guard !strip.isEmpty, let screen = displays.display(containingSpace: key)?.frame else {
+            return PeekClicks.shared.update([], space: key)
+        }
+        let peeks = strip.keys.compactMap { id -> PeekClicks.Peek? in
+            guard let frame = frames[id] else { return nil }
+            let shown = frame.intersection(screen)
+            guard !shown.isNull, shown.width > 0, shown.width <= PeekClicks.widest, shown.width < frame.width else { return nil }
+            return PeekClicks.Peek(id: id, rect: shown)
+        }
+        PeekClicks.shared.update(peeks, space: key)
+    }
+
+    /// Brings a strip window whose peek was clicked into view, then focuses it once it rests there: its app is not
+    /// activated while its window moves. Until then the tree keeps it focused against the window macOS still has in
+    /// front. See PeekClicks.swift.
+    func reveal(_ id: WindowID) {
+        guard enabled, let key = placements[id]?.space, model.windows[id] != nil else { return }
+        focusing = (id, Date() + 3)
+        telemetry.command(key, "peek of \(id) \(model.windows[id]?.appName ?? "?") clicked")
+        edit(key) { $0.focus(id) }
+        flush()
+        let began = CACurrentMediaTime()
+        func check() {
+            guard focusing?.id == id else { return }
+            let moving = animator.isAnimating(id) || pushes[key] != nil
+            guard !moving || CACurrentMediaTime() - began > 1.5 else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { check() }
+                return
+            }
+            focus(id)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { check() }
+    }
+
+    /// Once the strip on `key` is still, logs any of its windows not where it has them, and any window on its Space
+    /// that no tree holds sitting off the screen. See StripTelemetry.
+    private func checkStrip(_ key: UInt64) {
+        telemetry.schedule(key, moving: { [weak self] in
+            guard let self else { return false }
+            return saGlides[key] != nil || pushes[key] != nil || dragging != nil || clickHold
+                || workspaces[key]?.windows.contains(where: isAnimating) == true
+        }) { [weak self] in
+            guard let self, enabled, isVisible(key), let workspace = workspaces[key] else { return }
+            let loose = model.windows.values.filter { w in
+                w.spaceID == key && w.isNormal && !w.isMinimized && !workspace.contains(w.id) && !self.isBorderWindow(w.id)
+                    && NSRunningApplication(processIdentifier: w.pid)?.isHidden != true
+            }.map { w in
+                (id: w.id, placement: self.placements[w.id].map { $0.floating ? "floating" : "tiled on Space \($0.space ?? 0)" }
+                    ?? "not classified")
+            }
+            telemetry.check(key, workspace, loose: loose) { id in self.model.windows[id].map { self.applier.isBusy($0.pid) } ?? false }
+        }
     }
 
     /// Whether the Space is a display's current one.
@@ -471,18 +680,30 @@ final class Coordinator {
             workspace = workspace.showing(id, fullscreen: tiling.filling)
         }
         let layout = workspace.layout()
-        // A scripting-addition glide heading for this layout carries on; one heading elsewhere clears its transforms,
-        // so the windows show at the real frames this pass is about to write.
+        if workspace.isScrolling {
+            telemetry.pass(key, workspace, layout)
+            checkStrip(key)
+        }
+        // A scripting-addition glide heading for this layout carries on. One heading elsewhere is taken over, from where
+        // its windows show now, by this pass's own scripting-addition glide, so a scroll taken further or turned back
+        // part way goes on from there rather than jumping; before anything else, `settleGlide` clears its transforms, so
+        // the windows show at the real frames this pass is about to write.
+        var supersededGlide: [WindowID]?
         if let sa = saGlides[key] {
             if sa.layout == layout { return }
             saGlides[key] = nil
-            ScriptingAddition.reset(sa.ids)
+            supersededGlide = sa.ids
+        }
+        func settleGlide() {
+            guard let ids = supersededGlide else { return }
+            supersededGlide = nil
+            ScriptingAddition.reset(ids)
             animator.stop(key)
         }
         // Windows taking their whole fullscreen frames before the strip glides to this layout carry on; for another
         // layout, this pass takes them from wherever they have got to.
         if let push = pushes[key] {
-            if push.layout == layout { return }
+            if push.layout == layout { return settleGlide() }
             pushes[key] = nil
         }
         let pids = Dictionary(uniqueKeysWithValues: layout.order.compactMap { id in model.windows[id].map { (id, $0.pid) } })
@@ -504,7 +725,7 @@ final class Coordinator {
         // - Where its frames on the way would show where they must not (`ResizeOnce.applies`), or, in a strip, out of
         //   view or sharing its column, which the others in it would leave uncovered, one that pushes takes its whole
         //   frame first, growing, or holds its frame until the others are back, shrinking, and the strip glides around it.
-        // - Any other keeps to resizing as it glides.
+        // - Any other keeps to resizing as it glides, as does one whose app is not answering, which would hold it up.
         // Read where the window server has them: just after a glide the window model can be a move or two behind. A
         // window counts as coming back until it has its size.
         let frameOf = { [self] (id: WindowID) -> CGRect? in
@@ -520,15 +741,17 @@ final class Coordinator {
         var systemTiles: [WindowID: String] = [:]
         let focusedNow = dinky_border_focused_window()
         // Only once the tree has caught up with macOS's focus, as after a focus command it has not yet: the menu item
-        // acts on the app's key window.
+        // acts on the app's key window. Not for an app that is not answering.
         if animates, let display, systemTiling[focusedNow] == nil, workspace.focused == focusedNow,
-           let target = layout.frames[focusedNow], pids[focusedNow] != nil, let current = frameOf(focusedNow) {
+           let target = layout.frames[focusedNow], let pid = pids[focusedNow], !applier.isBusy(pid),
+           let current = frameOf(focusedNow) {
             let fill = SystemTiling.fillFrame(on: display)
             if fullscreenNow.contains(focusedNow), !wasFullscreen.contains(focusedNow), target.isClose(to: fill, within: 1),
                !current.isClose(to: fill, within: 1) {
                 systemTiles[focusedNow] = SystemTiling.fill
-            } else if wasFullscreen.contains(focusedNow), !fullscreenNow.contains(focusedNow),
-                      let before = systemFilled[focusedNow], target.isClose(to: before, within: 2) {
+            } else if !fullscreenNow.contains(focusedNow), systemTiled.contains(focusedNow) {
+                // Even where the tree has it somewhere else than Fill took it from, or long after it lost fullscreen to
+                // another window being focused: left tiled, Mission Control would take it back over the strip.
                 systemTiles[focusedNow] = SystemTiling.untile
             }
         }
@@ -536,7 +759,8 @@ final class Coordinator {
         enum Change { case once, whole, none }
         let change = { [self] (id: WindowID, pushing: Bool) -> Change in
             guard id != dragging, !leftAlone.contains(id), display != nil, let target = layout.frames[id],
-                  model.windows[id] != nil, let frame = frameOf(id), !animator.rests(id, at: frame, askedFor: target),
+                  let window = model.windows[id],
+                  let frame = frameOf(id), !applier.isBusy(window.pid), !animator.rests(id, at: frame, askedFor: target),
                   ResizeOnce.resizes(frame, target) else { return .none }
             let fits = (strip[id] == nil || workspace.isInView(id) && workspace.columns(around: id).own.count == 1)
                 && ResizeOnce.applies(from: frame, to: target, edge: edge, wall: workspace.walls.contains(.right), dock: dock)
@@ -593,6 +817,7 @@ final class Coordinator {
                     if !back.isEmpty { self.lastFullscreen[key]?.subtract(back) }
                     for result in results { if let got = result.got { self.landedWidths[result.job.id] = (result.job.frame.width, got.width) } }
                     self.noteUnread(results)
+                    if let workspace = self.workspaces[key] { self.telemetry.landed(key, workspace, results) }
                     let untucked = layout.screen.map { Self.untucked(results, on: $0) } ?? []
                     let unconfirmed = self.applier.unconfirmedMinimums
                     // A window that came out narrower than its tile is placed by its width from now on, at once.
@@ -621,6 +846,8 @@ final class Coordinator {
             let filling = systemTiles[id].map { $0 == SystemTiling.fill } ?? systemTiling[id]?.filling ?? false
             if filling { lastFullscreen[key]?.insert(id) } else { lastFullscreen[key]?.remove(id) }
         }
+        notePeeks(key, frames: layout.frames, strip: strip)
+        if !systemTiles.isEmpty { settleGlide() }
         for id in wasFullscreen.subtracting(fullscreenNow) where !leftAlone.contains(id) { systemFilled[id] = nil }
         for (id, identifier) in systemTiles {
             guard let pid = pids[id], let start = frameOf(id) else { continue }
@@ -637,7 +864,10 @@ final class Coordinator {
                 flush()
             }
         }
-        guard animates, snap.remove(key) == nil else { return write() }
+        guard animates, snap.remove(key) == nil else {
+            settleGlide()
+            return write()
+        }
         // Stacking first, so the window coming to the front of an accordion slides in on top.
         applier.raiseIntoOrder(layout, pids: pids, front: workspace.focused)
         let sized = staged.union(shrinkOnce), special = sized.union(held).union(growLeft)
@@ -666,6 +896,7 @@ final class Coordinator {
 
         /// Glides a tree that is no strip to `layout`.
         func glideTree() {
+            settleGlide()
             let starts = Dictionary(uniqueKeysWithValues: layout.order.compactMap { id in
                 id == dragging || leftAlone.contains(id) ? nil : frameNow(id).map { (id, $0) }
             })
@@ -693,24 +924,46 @@ final class Coordinator {
                 // Start a resting window where the strip had it, for a continuous scroll — but not one that was
                 // fullscreen last pass: it rests at its fullscreen frame, not a strip one, and must glide down from there.
                 // One changing size once or held keeps the size it has: only where it starts goes back to the strip's.
+                // One still gliding, through its Dock transform or its real frame, starts where its steps have it now,
+                // and one resting in a scripting-addition glide this pass takes over where its transform shows it.
                 if let start = starts[id], let was = previous?.strip[id], let placed = previous?.placed[id],
                    !(previous?.fullscreen.contains(id) ?? false),
-                   animator.isAnimating(id) || animator.rests(id, at: start, askedFor: placed) {
-                    starts[id] = special.contains(id) ? CGRect(origin: was.origin, size: start.size) : was
+                   animator.isAnimating(id) || supersededGlide?.contains(id) == true
+                    || animator.rests(id, at: start, askedFor: placed) {
+                    starts[id] = special.contains(id) ? CGRect(origin: was.origin, size: start.size)
+                        : animator.frame(of: id) ?? was
                 }
             }
             for id in leftAlone { targets[id] = nil }
             hold(&targets, from: starts)
+            var restart: Set<WindowID> = []
+            // A long scroll glides about a screen's width, past none of the columns between (see ScrollShortcut.swift);
+            // not with a window changing size, dragged, shown over the strip or left to the system.
+            if special.isEmpty, fullscreen.isEmpty, dragging.map({ strip[$0] == nil }) ?? true,
+               !leftAlone.contains(where: { strip[$0] != nil }),
+               let shortcut = workspace.scrollShortcut(from: starts, to: targets) {
+                restart = Set(shortcut.starts.filter { starts[$0.key] != $0.value }.keys)
+                starts = shortcut.starts
+                targets = shortcut.targets
+            }
             // Nothing of the strip to glide, as on arriving at a Space: written at once. Not while a glide is under way,
             // which this pass takes over and finishes before its write.
             let anyMoves = targets.contains { id, target in
                 guard let start = starts[id] else { return false }
                 return !start.isClose(to: target, within: 1) && !animator.rests(id, at: start, askedFor: target)
             }
-            guard anyMoves || strip.keys.contains(where: animator.isAnimating) else { return write() }
+            guard anyMoves || strip.keys.contains(where: animator.isAnimating) else {
+                settleGlide()
+                return write()
+            }
             // A long scroll takes longer, a little more for each column it passes, so a window an app is slow to move
-            // falls less far behind the others in a frame.
-            let moved = strip.compactMap { id, frame in starts[id].map { abs(frame.minX - $0.minX) } }.max() ?? 0
+            // falls less far behind the others in a frame. Only how far those in view at either end go counts.
+            let screen = workspace.bounds
+            let shows = { (r: CGRect) in r.maxX > screen.minX && r.minX < screen.maxX }
+            let moved = strip.keys.compactMap { id -> CGFloat? in
+                guard let start = starts[id], let target = targets[id], shows(start) || shows(target) else { return nil }
+                return abs(target.minX - start.minX)
+            }.max() ?? 0
             let column = max(workspace.bounds.width * CGFloat(workspace.columnWidth), 1)
             let stretch = AnimationCurve.stripStretch(base: Double(config.animations.durationMs) / 1000,
                                                       columns: Double(moved / column))
@@ -774,17 +1027,27 @@ final class Coordinator {
             }
             if fullscreen.isEmpty, !saResizing, ScriptingAddition.available {
                 let stripIDs = Array(strip.keys)
+                // The glide this pass takes over carries on into it: its windows keep their transforms and steps and head
+                // for the new targets from there. One it moved that is no longer in the strip goes back to its real frame.
+                if let ids = supersededGlide {
+                    supersededGlide = nil
+                    ScriptingAddition.reset(ids.filter { strip[$0] == nil })
+                }
                 saGlideTokens += 1
                 let token = saGlideTokens
                 saGlides[key] = (token, stripIDs, layout)
                 let saGlide = SAGlide { [weak self] in self?.endSAGlide(key, token) }
+                // Parked on every frame, as the window glide below is: a column scrolled out stays at the edge with its
+                // sliver showing rather than leaving the screen, and one coming in slides out from there, in view all the
+                // way. The last frame is where the real frames are written, so clearing the transforms moves nothing.
                 var initial: [WindowID: CGRect] = [:]
                 for id in stripIDs { initial[id] = starts[id] ?? strip[id] }
-                ScriptingAddition.transform(initial)
+                ScriptingAddition.transform(place(initial))
                 writeThen { saGlide.framesLanded() }
-                return animator.animate(key, from: starts, to: targets, pids: pids, stretch: stretch,
-                                        sink: { ScriptingAddition.transform(strip.merging($0) { $1 }) }) { saGlide.glideEnded() }
+                return animator.animate(key, from: starts, to: targets, pids: pids, stretch: stretch, restart: restart,
+                                        sink: { ScriptingAddition.transform(place($0)) }) { saGlide.glideEnded() }
             }
+            settleGlide()
             // A window moving away from the columns beside it, as one coming back from fullscreen does, takes a little
             // longer than they do, so it follows them rather than being held at their edges: an app coming back into view
             // can be slow over its first moves, and the window held at its edge would lurch along in its steps. A window
@@ -801,7 +1064,8 @@ final class Coordinator {
                 for id in (beside.left + beside.right).joined() { slower[id] = SystemTiling.followers }
             }
             return animator.animate(key, from: starts, to: targets, pids: pids, place: place, resting: resting,
-                                    stretch: stretch, slower: slower, anchors: anchors(to: targets), then: write)
+                                    stretch: stretch, slower: slower, anchors: anchors(to: targets), restart: restart,
+                                    then: write)
         }
 
         let glide = strip.isEmpty ? glideTree : glideStrip
@@ -814,6 +1078,7 @@ final class Coordinator {
         guard !staged.isEmpty else { return glide() }
         // A glide still under way, as after a focus change just before, would go on moving them, and write its layout
         // over their sizes once it ends.
+        settleGlide()
         animator.stop(key)
         pushTokens += 1
         let token = pushTokens
@@ -932,7 +1197,7 @@ final class Coordinator {
         let display = displays.display(ofWindow: id)
         let dock = display.map { $0.visibleArea.maxX < $0.frame.maxX - 0.5 } ?? false
         let edge = display.map { dock ? $0.visibleArea.maxX : $0.frame.maxX } ?? 0
-        if resizingOnce, bySystem, let display, dinky_border_focused_window() == id,
+        if resizingOnce, bySystem, let display, dinky_border_focused_window() == id, !applier.isBusy(window.pid),
            !animator.isAnimating(id) {
             let fill = SystemTiling.fillFrame(on: display)
             let identifier = frame.isClose(to: fill, within: 1) && !start.isClose(to: fill, within: 1) ? SystemTiling.fill
@@ -949,7 +1214,7 @@ final class Coordinator {
             }
         }
         if resizingOnce { systemFilled[id] = nil }
-        guard resizingOnce, ResizeOnce.movesAndResizes(start, frame), let display,
+        guard resizingOnce, ResizeOnce.movesAndResizes(start, frame), !applier.isBusy(window.pid), let display,
               ResizeOnce.applies(from: start, to: frame, edge: edge, wall: walls(of: display).contains(.right), dock: dock) else {
             return animator.animate(key, from: [id: start], to: [id: frame], pids: pids, then: write)
         }
@@ -992,6 +1257,8 @@ final class Coordinator {
         systemTilingTokens += 1
         let token = systemTilingTokens
         systemTiling[id] = (token, identifier == SystemTiling.fill, false)
+        // Tried once: a window whose app does not take it is most likely not tiled at all.
+        if identifier == SystemTiling.untile { systemTiled.remove(id) }
         let live = { [weak self] in self?.systemTiling[id]?.token == token && self?.enabled == true }
         // An app too slow to take the press in time is left to dinky; should it act on it late, its own animation still
         // ends where dinky puts the window.
@@ -1008,6 +1275,7 @@ final class Coordinator {
             }
             systemTiling[id]?.pressed = true
             systemFilled[id] = identifier == SystemTiling.fill ? start : nil
+            if identifier == SystemTiling.fill { systemTiled.insert(id) }
             // From where it is now: a step of a glide it was in can have landed since.
             let began = CACurrentMediaTime(), pressedAt = dinky_window_info(id)
             let from = pressedAt.exists ? pressedAt.frame : start
@@ -1027,7 +1295,10 @@ final class Coordinator {
                     return
                 }
                 systemTiling[id] = nil
-                if !moved, identifier == SystemTiling.fill { systemFilled[id] = nil }
+                if !moved, identifier == SystemTiling.fill {
+                    systemFilled[id] = nil
+                    systemTiled.remove(id)
+                }
                 landed(moved)
             }
             check()

@@ -34,6 +34,7 @@ final class AppState {
     private init() {
         hotkeys.load(modes: config.modes, sides: config.modifiers)
         hotkeys.yields = { WindowSwitcher.shared.takes($0) || WorkspaceSwitcher.shared.takes($0) }
+        hotkeys.layout = { AppState.shared.coordinator?.focusedRuleLayout() }
     }
 
     /// Loads `~/.config/dinky/dinky.toml`, writing the default config there first if it is missing.
@@ -55,6 +56,9 @@ final class AppState {
         guard coordinator == nil else { return }
         let coordinator = Coordinator(displays: displays, config: config)
         self.coordinator = coordinator
+        // A workspace's layout comes with its number, so no frame is written before `arrange()` numbers them: a free
+        // or untiled workspace's windows would be tiled first. `propagateEnabled()` turns it on, laying everything out.
+        coordinator.enabled = false
         coordinator.start()
         // Once the windows are known, so each workspace's windows move with it, and before the hooks, which
         // report workspace numbers.

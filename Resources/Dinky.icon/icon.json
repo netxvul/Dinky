@@ -1,41 +1,27 @@
 {
-  "fill" : {
-    "linear-gradient" : [
-      "display-p3:0.59661,0.74231,1.00000,1.00000",
-      "gray:0.94669,1.00000"
-    ]
-  },
   "groups" : [
     {
       "layers" : [
         {
           "glass" : false,
           "hidden" : false,
-          "image-name" : "ChatGPT Image Sep 27, 2026, 10_30_10 PM.png",
-          "name" : "ChatGPT Image Sep 27, 2026, 10_30_10 PM",
-          "position" : {
-            "scale" : 0.93,
-            "translation-in-points" : [
-              17,
-              14.450000000000045
-            ]
-          }
+          "image-name" : "dinky-icon.png",
+          "name" : "dinky-icon"
         }
       ],
       "shadow" : {
-        "kind" : "neutral",
-        "opacity" : 0.5
+        "kind" : "none",
+        "opacity" : 0
       },
       "translucency" : {
-        "enabled" : true,
-        "value" : 0.3
+        "enabled" : false,
+        "value" : 0
       }
     }
   ],
   "supported-platforms" : {
-    "circles" : [
-      "watchOS"
-    ],
-    "squares" : "shared"
+    "squares" : [
+      "macOS"
+    ]
   }
 }
