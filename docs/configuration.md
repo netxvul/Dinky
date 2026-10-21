@@ -500,8 +500,9 @@ displays are arranged, with the display's name over it; a dot marks the
 workspace each display shows. A display with no numbered workspace shows the
 Space it is on, and picking it focuses that display. With `show-fullscreen`,
 each native full-screen Space (the green button's) follows its display's
-workspaces as a card of its window filling the display, named for its app;
-picking it focuses the window, and macOS goes to its Space.
+workspaces as a card of its window filling the display, or of both windows
+side by side in Split View, named for its apps; picking it focuses the window
+in front, and macOS goes to its Space.
 
 Thumbnails are the [window-switcher](#window-switcher)'s and need Screen Recording too.
 macOS draws no Space but the ones on screen, so a workspace's windows are

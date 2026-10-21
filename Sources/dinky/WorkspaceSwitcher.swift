@@ -138,14 +138,27 @@ final class WorkspaceSwitcher {
 
     /// A display's native full-screen Spaces that hold a window dinky knows, in Mission Control order.
     private func fullscreenSpaces(on display: Display) -> [UInt64] {
-        display.spaces.filter { !display.userSpaces.contains($0) && fullscreenWindow(on: $0) != nil }
+        display.spaces.filter { !display.userSpaces.contains($0) && !fullscreenWindows(on: $0).isEmpty }
     }
 
-    /// The window a native full-screen Space shows: the frontmost dinky knows. Nil for a user Space.
-    private func fullscreenWindow(on space: UInt64) -> WindowID? {
+    /// The windows a native full-screen Space shows, front to back: one, or two side by side in Split View. Empty for
+    /// a user Space.
+    private func fullscreenWindows(on space: UInt64) -> [WindowID] {
         guard let display = AppState.shared.displays.display(containingSpace: space),
-              !display.userSpaces.contains(space) else { return nil }
-        return windows(on: space).first
+              !display.userSpaces.contains(space), let model = AppState.shared.coordinator?.model else { return [] }
+        return windows(on: space).filter { model.windows[$0]?.isMinimized == false }
+    }
+
+    /// Where a native full-screen Space's windows are, back to front: a lone window fills the display; Split View's
+    /// windows where the window server has them, or halves of the display left to right when a frame is off it.
+    private func fullscreenFrames(_ ids: [WindowID], on display: CGRect, _ model: WindowModel) -> [(id: WindowID, frame: CGRect)] {
+        guard ids.count > 1 else { return ids.map { (id: $0, frame: display) } }
+        let frames = ids.reversed().map { (id: $0, frame: model.windows[$0]?.frame ?? .zero) }
+        if frames.allSatisfy({ !$0.frame.isEmpty && display.insetBy(dx: -1, dy: -1).contains($0.frame) }) { return frames }
+        let width = display.width / CGFloat(ids.count)
+        return frames.sorted { $0.frame.minX < $1.frame.minX }.enumerated().map { i, entry in
+            (id: entry.id, frame: CGRect(x: display.minX + width * CGFloat(i), y: display.minY, width: width, height: display.height))
+        }
     }
 
     /// Shows the capsule on the display under the pointer, if there are two workspaces or more to pick from.
@@ -171,18 +184,17 @@ final class WorkspaceSwitcher {
         cards = groups.flatMap { display, spaces in
             spaces.map { space, number in
                 let workspace = coordinator.workspaces[space]
-                let fullscreen = fullscreenWindow(on: space)
+                let fullscreen = fullscreenWindows(on: space)
                 let miniature: Miniature
                 var icons: [WindowID: NSImage] = [:]
-                if config.thumbnails == .schematic, fullscreen != nil {
+                if config.thumbnails == .schematic, !fullscreen.isEmpty {
                     miniature = Miniature(schematic: .fullscreen, screen: display.frame, height: layout.cardHeight)
                 } else if config.thumbnails == .schematic {
                     miniature = Miniature(schematic: schematic(of: space, coordinator), screen: display.frame, height: layout.cardHeight)
                 } else {
-                    if let fullscreen {
-                        // Its window fills the display, whatever frame the model last read.
+                    if !fullscreen.isEmpty {
                         miniature = Miniature(screen: display.frame, height: layout.cardHeight, workspace: nil,
-                                              floating: [(id: fullscreen, frame: display.frame)])
+                                              floating: fullscreenFrames(fullscreen, on: display.frame, model))
                     } else {
                         let tiled = Set(workspace?.windows ?? [])
                         let floating = windows(on: space).reversed().filter { !tiled.contains($0) && model.windows[$0]?.isMinimized == false }
@@ -196,9 +208,12 @@ final class WorkspaceSwitcher {
                     }
                     if titled { titles.merge(WindowTitles.known(miniature.tiles.map(\.id))) { $1 } }
                 }
-                let name = fullscreen.flatMap { id in
-                    model.windows[id].flatMap { $0.appName ?? NSRunningApplication(processIdentifier: $0.pid)?.localizedName }
-                } ?? coordinator.layoutName(ofSpace: space)
+                // A full-screen Space is named for its apps, left to right in Split View.
+                let apps = fullscreenFrames(fullscreen, on: display.frame, model).sorted { $0.frame.minX < $1.frame.minX }
+                    .compactMap { entry in
+                        model.windows[entry.id].flatMap { $0.appName ?? NSRunningApplication(processIdentifier: $0.pid)?.localizedName }
+                    }
+                let name = apps.isEmpty ? coordinator.layoutName(ofSpace: space) : apps.joined(separator: " | ")
                 return WorkspaceCard(space: space, number: number, display: display,
                                      label: number.map { "\($0) · \(name)" } ?? name,
                                      current: display.currentSpaceID == space, miniature: miniature, icons: icons,
@@ -303,7 +318,7 @@ final class WorkspaceSwitcher {
         } else if let number = card.number {
             let reply = Dispatcher.run("workspace \(number)")
             if !reply.ok { fputs("workspace-switcher: \(reply.text)\n", stderr) }
-        } else if let window = fullscreenWindow(on: card.space),
+        } else if let window = fullscreenWindows(on: card.space).first,
                   let display = AppState.shared.displays.displays.first(where: { $0.uuid == card.display.uuid }) {
             // Focusing the window takes macOS to its full-screen Space.
             _ = Dispatcher.focus(display, window: window)
