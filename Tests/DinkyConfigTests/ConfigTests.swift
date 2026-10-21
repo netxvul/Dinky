@@ -233,6 +233,7 @@ struct ConfigTests {
         #expect(defaults.exclude.isEmpty)
         #expect(defaults.cardHeight == 85)
         #expect(defaults.thumbnails == .windows)
+        #expect(defaults.showFullscreen)
         #expect(defaults.enabled)
         #expect(defaults.delayMs == 200)
         #expect(defaults.cornerRadius == 52)
@@ -243,6 +244,7 @@ struct ConfigTests {
             delay-ms = 300
             displays = 'pointer'
             show-empty = false
+            show-fullscreen = false
             exclude = [3, 5]
             card-height = 100
             thumbnails = 'icons'
@@ -253,6 +255,7 @@ struct ConfigTests {
         #expect(switcher.delayMs == 300)
         #expect(switcher.displays == .pointer)
         #expect(!switcher.showEmpty)
+        #expect(!switcher.showFullscreen)
         #expect(switcher.exclude == [3, 5])
         #expect(switcher.cardHeight == 100)
         #expect(switcher.thumbnails == .icons)

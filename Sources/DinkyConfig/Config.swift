@@ -578,6 +578,8 @@ public struct WorkspaceSwitcher: Equatable {
     public var displays = WorkspaceSwitcherDisplays.all
     /// Whether workspaces without windows get a card.
     public var showEmpty = true
+    /// Whether each native full-screen Space gets a card, after its display's workspaces.
+    public var showFullscreen = true
     /// Workspace numbers left out.
     public var exclude: [Int] = []
     /// Points; each card is as wide as its display's proportions give.
@@ -614,6 +616,7 @@ public struct WorkspaceSwitcher: Equatable {
         modifier = try t.choice("modifier") ?? modifier
         displays = try t.choice("displays") ?? displays
         showEmpty = try t.bool("show-empty") ?? showEmpty
+        showFullscreen = try t.bool("show-fullscreen") ?? showFullscreen
         exclude = try t.ints("exclude") ?? exclude
         guard exclude.allSatisfy({ $0 >= 1 }) else { throw ConfigError(path: t.path("exclude"), "workspace numbers start at 1") }
         cardHeight = try t.double("card-height") ?? cardHeight

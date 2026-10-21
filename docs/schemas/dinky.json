@@ -450,6 +450,7 @@
           "description": "all: every display's workspaces, a group per display. pointer: only the display under the pointer."
         },
         "show-empty": { "type": "boolean", "default": true, "description": "Cards for workspaces without windows." },
+        "show-fullscreen": { "type": "boolean", "default": true, "description": "A card for each native full-screen Space, after its display's workspaces." },
         "exclude": {
           "type": "array",
           "items": { "type": "integer", "minimum": 1 },

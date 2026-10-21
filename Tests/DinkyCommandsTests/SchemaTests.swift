@@ -188,6 +188,7 @@ struct SchemaTests {
         double-tap-ms = 400
         displays = 'pointer'
         show-empty = false
+        show-fullscreen = false
         exclude = [3]
         card-height = 90
         thumbnails = 'icons'
