@@ -228,7 +228,7 @@ enum Dispatcher {
             model.reconcile()
             guard let shown = model.displays.first(where: { $0.uuid == display.uuid }) else { return }
             if !elsewhere, dinky_window_space_id(frontWindowID()) == shown.currentSpaceID { return }
-            _ = focus(shown, window: AppState.shared.coordinator?.workspace(on: shown)?.focused)
+            _ = focus(shown, window: windowToFocus(on: shown))
         }
         if showing {
             arrive()
@@ -236,6 +236,16 @@ enum Dispatcher {
         }
         guard switchSpace(toSpaceID: space, on: display, landed: arrive) else { return .error("switch to workspace \(n) failed") }
         return .ok("workspace \(n)")
+    }
+
+    /// The window to focus on the workspace a display shows: its focused one, unless that is away on a native
+    /// full-screen Space, as a window in full screen keeps its place in the tree and focusing it would take macOS
+    /// back there; then the first of its windows on the Space, or none.
+    static func windowToFocus(on display: Display) -> WindowID? {
+        guard let workspace = AppState.shared.coordinator?.workspace(on: display) else { return nil }
+        let here = { (id: WindowID) in dinky_window_space_id(id) == display.currentSpaceID }
+        if let focused = workspace.focused, here(focused) { return focused }
+        return workspace.windows.first(where: here)
     }
 
     /// Puts workspace `n` on screen as `workspace n` does, and focuses window `id` once it shows, for the workspace

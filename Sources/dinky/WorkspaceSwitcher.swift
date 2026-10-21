@@ -179,6 +179,11 @@ final class WorkspaceSwitcher {
             },
             cardHeight: CGFloat(config.cardHeight), cornerRadius: cornerRadius, maxWidth: (visible.width * 0.9).rounded())
         let model = coordinator.model
+        // Windows in native full screen keep their place in their workspace's tree; they show on their own Space's
+        // card only, so a letter or a pick of their workspace does not take macOS back to them.
+        let away = Set(app.displays.displays.flatMap { display in
+            display.spaces.filter { !display.userSpaces.contains($0) }.flatMap { fullscreenWindows(on: $0) }
+        })
         let titled = config.showTitles && config.thumbnails != .schematic
         var titles: [WindowID: String] = [:]
         cards = groups.flatMap { display, spaces in
@@ -199,7 +204,7 @@ final class WorkspaceSwitcher {
                         let tiled = Set(workspace?.windows ?? [])
                         let floating = windows(on: space).reversed().filter { !tiled.contains($0) && model.windows[$0]?.isMinimized == false }
                         miniature = Miniature(screen: display.frame, height: layout.cardHeight, workspace: workspace,
-                                              known: { model.windows[$0] != nil },
+                                              known: { model.windows[$0] != nil && !away.contains($0) },
                                               floating: floating.map { (id: $0, frame: model.windows[$0]!.frame) })
                     }
                     for tile in miniature.tiles {
@@ -323,7 +328,7 @@ final class WorkspaceSwitcher {
             // Focusing the window takes macOS to its full-screen Space.
             _ = Dispatcher.focus(display, window: window)
         } else if let display = AppState.shared.displays.displays.first(where: { $0.uuid == card.display.uuid }) {
-            _ = Dispatcher.focus(display, window: AppState.shared.coordinator?.workspace(on: display)?.focused)
+            _ = Dispatcher.focus(display, window: Dispatcher.windowToFocus(on: display))
         }
     }
 
