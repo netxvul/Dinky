@@ -44,6 +44,11 @@ final class Coordinator {
     var unreachable: [WindowID: CFTimeInterval] = [:]
     /// By tiled window, how many passes in a row could not read it back.
     private var unread: [WindowID: Int] = [:]
+    /// When a display last came, went, moved or changed size. While macOS rearranges the displays, Accessibility cannot
+    /// read some windows for a moment, so until `displaySettle` after this a window it cannot read keeps its tile. See
+    /// `noteUnread(_:)`.
+    private var displaysChangedAt: CFTimeInterval = 0
+    private static let displaySettle: CFTimeInterval = 10
     /// Newly shown windows at the exact frame of a tile of their app, held out of the trees for a moment in case
     /// they are a tab switch: by newcomer, the tile's window. See Tabs.swift.
     var heldTabs: [WindowID: WindowID] = [:]
@@ -151,11 +156,20 @@ final class Coordinator {
         }
         animator.onArrive = { [weak self] ids in self?.borders?.arrived(ids) }
         var known = Set(displays.displays.map(\.uuid))
+        var arrangement = Self.arrangement(of: displays)
         displays.observe { [weak self] displays in
             guard let self else { return }
             let now = Set(displays.displays.map(\.uuid))
             if now != known { snap.formUnion(workspaces.keys) }
             known = now
+            let arranged = Self.arrangement(of: displays)
+            if arranged != arrangement {
+                displaysChangedAt = CACurrentMediaTime()
+                // Once they have settled, every tree is laid out again, so a window that could not be read meanwhile
+                // goes back into its tile.
+                DispatchQueue.main.asyncAfter(deadline: .now() + Self.displaySettle) { [weak self] in self?.reconcile() }
+            }
+            arrangement = arranged
             reconcile()
         }
         // A hidden app's windows can read as shown when their hide event arrives; re-read them once it is hidden.
@@ -277,6 +291,11 @@ final class Coordinator {
         }
     }
 
+    /// Where each display is, by UUID: what changes when one comes, goes, moves or changes size.
+    private static func arrangement(of model: DisplayModel) -> [String: CGRect] {
+        Dictionary(model.displays.map { ($0.uuid, $0.frame) }) { first, _ in first }
+    }
+
     /// The sides of a display with another display right against them, which a scrolled-out window must not
     /// hang over.
     private func walls(of display: Display) -> Set<Direction> {
@@ -390,12 +409,17 @@ final class Coordinator {
 
     /// Floats tiled windows that two passes in a row found gone from Accessibility, so they would hold a tile they
     /// never move into. They are looked at again when they take focus. A window whose app is only slow to answer is
-    /// busy, not gone: it keeps its tile, and the count it has so far stands until the app answers.
+    /// busy, not gone: it keeps its tile, and the count it has so far stands until the app answers. Nor does one
+    /// count while the displays settle (see `displaysChangedAt`): floated then and tiled again later, a strip's
+    /// windows would come back in a new order.
     private func noteUnread(_ results: [FrameResult]) {
         for result in results {
             let id = result.job.id
             if result.busy { continue }
             guard result.gone, placements[id]?.floating == false, model.windows[id] != nil else { unread[id] = nil; continue }
+            // While the displays settle, a window that cannot be read is most likely only being moved: it keeps its tile,
+            // and what was counted before starts over.
+            if CACurrentMediaTime() - displaysChangedAt < Self.displaySettle { unread[id] = nil; continue }
             unread[id, default: 0] += 1
             guard unread[id]! >= 2 else { continue }
             unread[id] = nil
@@ -1008,8 +1032,10 @@ final class Coordinator {
                 }
                 var placed = workspace.placeStrip(input)
                 // Placed as the guard has it: hanging past the screen edge at its size, such a window is no window
-                // scrolled out to be parked.
-                for (lead, _) in leads where input[lead] != nil { placed[lead] = input[lead] }
+                // scrolled out to be parked. Not past a wall, though: one coming back into view from behind the column
+                // at a wall starts where the strip had it, off the screen, which there is on the other display, and
+                // macOS would take it to that display's Space.
+                for (lead, _) in leads where input[lead] != nil { placed[lead] = workspace.keptOffWalls(input[lead]!) }
                 for id in fullscreen where frames[id] != nil { placed[id] = frames[id] }
                 return placed
             }

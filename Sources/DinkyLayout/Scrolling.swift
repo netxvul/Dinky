@@ -189,6 +189,16 @@ extension Workspace {
     /// them.
     public func placeStrip(_ frames: [WindowID: CGRect]) -> [WindowID: CGRect] { parked(frames) }
 
+    /// `frame` moved back to a wall it would hang past, for one placed where the strip has it rather than parked: past
+    /// the wall it would be on the other display, and macOS would take it to that display's Space. One wider than the
+    /// screen between two walls stays at the left one.
+    public func keptOffWalls(_ frame: CGRect) -> CGRect {
+        var x = frame.minX
+        if walls.contains(.right) { x = min(x, bounds.maxX - frame.width) }
+        if walls.contains(.left) { x = max(x, bounds.minX) }
+        return CGRect(x: x, y: frame.minY, width: frame.width, height: frame.height)
+    }
+
     /// The windows of `id`'s column, and of the columns left and right of it, each side nearest column first.
     public func columns(around id: WindowID) -> (own: [WindowID], left: [[WindowID]], right: [[WindowID]]) {
         guard isScrolling, let column = root.path(of: id)?.first else { return ([], [], []) }

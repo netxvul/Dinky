@@ -275,6 +275,17 @@ struct ScrollingCommandTests {
 }
 
 struct ScrollingGlideTests {
+    @Test func `A window placed where the strip has it stops at a wall`() {
+        let off = rect(-900, 0, 500, 600), wide = rect(-900, 0, 2000, 600)
+        #expect(strip(2).keptOffWalls(off) == off, "no wall, it hangs off the screen")
+        let left = strip(2, walls: [.left])
+        #expect(left.keptOffWalls(off) == rect(-peek, 0, 500, 600))
+        #expect(left.keptOffWalls(rect(900, 0, 500, 600)).minX == 900, "no wall on the right")
+        let both = strip(2, walls: [.left, .right])
+        #expect(both.keptOffWalls(rect(900, 0, 500, 600)) == rect(1000 + peek - 500, 0, 500, 600))
+        #expect(both.keptOffWalls(wide).minX == -peek, "wider than the screen, it stays at the left wall")
+    }
+
     @Test func `Placing the strip frames gives the layout`() {
         for walls: Set<Direction> in [[], [.left], [.left, .right]] {
             var ws = strip(10, walls: walls)
