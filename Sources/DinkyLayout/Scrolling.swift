@@ -8,9 +8,10 @@ import CoreGraphics
 // macOS cannot clip another app's window at the screen edge, so a window scrolled out of view is parked
 // instead: on an edge with nothing beyond it, the column nearest the screen hangs off it with `peek` points left
 // on, in a gutter the columns keep an inner gap clear of, and the columns beyond tuck under that one with only
-// `tuck` points left on, so a single shadow shows at the edge rather than one per parked window piled up; on an
-// edge with another display beyond it, a window stops flush at the border, behind the columns in view, so it
-// never shows on the other display.
+// `tuck` points left on, so a single shadow shows at the edge rather than one per parked window piled up. On an
+// edge with another display beyond it (a wall), nothing leaves the screen, which would put it on the other display:
+// the columns scrolled out past it hide behind the column in view nearest it, `shadowReach` inside it so their
+// shadows hide too, and that column reaches out to the outer gap over the room they leave.
 //
 // Fullscreen, with `fullscreenPushesStrip`, widens the fullscreen window's column to the whole width the columns
 // get, clear of the gutters, and scrolls to it, so its neighbours slide off and park in the gutters, a gap from it,
@@ -27,6 +28,10 @@ extension Workspace {
     /// AppKit's limit. Its edge is then `peek - tuck` inside the peek in front of it, past the 22.5 points an
     /// inactive window's shadow reaches, so its shadow hides under that peek too.
     public static let tuck: CGFloat = 2
+
+    /// How far inside the column in view a window hiding behind it at a wall keeps, all round, so its shadow hides
+    /// there too: past the 22.5 points an inactive window's shadow reaches.
+    public static let shadowReach: CGFloat = 24
 
     /// How much narrower than its tile a window that snaps its size may be taken to be, from its last seen width,
     /// when placing it off the left edge, where its width decides how much of it stays on screen.
@@ -136,7 +141,8 @@ extension Workspace {
     /// The columns in `pushed` are as wide as the strip's area and their fullscreen windows fill them; the focused
     /// one, if pushed, fills the area whatever the scroll offset, its neighbours parked in the gutters either side. The other windows of a pushed
     /// column keep the width the column has otherwise, behind its fullscreen window. With `pushedFullscreenFills`, the
-    /// focused one's fullscreen windows fill the area inside the outer gaps, over the gutters.
+    /// focused one's fullscreen windows fill the area inside the outer gaps, over the gutters. At a wall, the column in
+    /// view nearest it may reach out to the outer gap there (see `reachingWalls`).
     func stripLayout(pushed: Set<Int> = []) -> Layout {
         var result = Layout()
         let area = stripArea, spans = columnSpans(in: area, pushed: pushed), inset = gaps.inset(bounds)
@@ -150,12 +156,17 @@ extension Workspace {
             pushedFullscreenFills && i == focusedColumn && pushed.contains(i) && fullscreenWindows.contains(id)
         }
         let unpushed = pushed.isEmpty ? spans : columnSpans(in: area)
+        let edges = spans.indices.map { i -> (left: CGFloat, right: CGFloat) in
+            let x = area.minX + spans[i].start - offset
+            return ((x + (i > 0 ? gap / 2 : 0)).rounded(), (x + spans[i].width - (i < last ? gap / 2 : 0)).rounded())
+        }
+        let reaching: (left: Int?, right: Int?) = pushed.isEmpty ? reachingWalls(edges, in: area) : (nil, nil)
         result.containerRects[[]] = inset
         for i in root.stackingOrder {
-            let span = spans[i]
-            let lead = i > 0 ? gap / 2 : 0, trail = i < last ? gap / 2 : 0
-            let x = area.minX + span.start - offset
-            let (a, b) = ((x + lead).rounded(), (x + span.width - trail).rounded())
+            let trail = i < last ? gap / 2 : 0
+            let x = area.minX + spans[i].start - offset
+            let a = i == reaching.left ? inset.minX : edges[i].left
+            let b = i == reaching.right ? inset.maxX : edges[i].right
             let rect = CGRect(x: a, y: area.minY, width: b - a, height: area.height)
             switch root.children[i] {
             case .window(let id):
@@ -173,6 +184,25 @@ extension Workspace {
             }
         }
         return result
+    }
+
+    /// The column in view nearest each wall that reaches out to the outer gap there, if any. A column scrolled out past
+    /// a wall hides behind the column in view nearest it (see `parked`) and leaves the room it had: half an inner gap,
+    /// and at the far end of the strip the gutter there too, which the end column reaches into instead of a column
+    /// parking in it. Not reached over, that room would show the screen's background between the column and the outer
+    /// gap. Only less room than the narrowest column takes: more is a column's worth, as columns of other widths can
+    /// leave, and the column keeps its width. `edges` are each column's window edges where the strip has it.
+    func reachingWalls(_ edges: [(left: CGFloat, right: CGFloat)], in area: CGRect) -> (left: Int?, right: Int?) {
+        let inset = gaps.inset(bounds), most = area.width * CGFloat(Self.minimumColumnWidth)
+        let inView = edges.indices.filter { edges[$0].left >= bounds.minX - 1 && edges[$0].right <= bounds.maxX + 1 }
+        let reaches = { (room: CGFloat) in room > 0 && room < most }
+        let left = inView.first.flatMap { i in
+            i > 0 && walls.contains(.left) && reaches(edges[i].left - inset.minX) ? i : nil
+        }
+        let right = inView.last.flatMap { i in
+            i < edges.count - 1 && walls.contains(.right) && reaches(inset.maxX - edges[i].right) ? i : nil
+        }
+        return (left, right)
     }
 
     /// Scrolling: the strip's frames before parking, at the current scroll offset. Gliding these and parking them
@@ -216,11 +246,10 @@ extension Workspace {
     /// on the window's width, so a window that came out narrower than its tile is placed by the width it had.
     ///
     /// At a wall, a window stays wholly on screen instead, and one scrolled out past the wall hides behind the
-    /// column in view nearest the wall, taking the frame of that column's biggest window, so none of it shows in
-    /// the outer gap, between the columns, or between the windows of a column of several. It only grows past that
-    /// frame to its minimum size, away from the wall. With no column in view it stays flush at the wall. While
-    /// fullscreen pushes, the column in view is the fullscreen window's, so a window hiding behind it keeps its own
-    /// size rather than taking the whole screen's.
+    /// column in view nearest the wall, inside that column's biggest window (see `hiddenAtWall`), so neither it nor
+    /// its shadow shows in the outer gap, between the columns, or between the windows of a column of several. With
+    /// no column in view it stays flush at the wall. While fullscreen pushes, the column in view is the fullscreen
+    /// window's, so a window hiding behind it grows no bigger than it is rather than to the whole screen's size.
     func parked(_ frames: [WindowID: CGRect]) -> [WindowID: CGRect] {
         let keepsSize = !pushedColumns.isEmpty
         let columns = root.children.map { $0.windows.filter { frames[$0] != nil } }
@@ -269,16 +298,29 @@ extension Workspace {
         return Dictionary(uniqueKeysWithValues: frames.map { id, frame in
             let offLeft = frame.minX < bounds.minX - 1, offRight = frame.maxX > bounds.maxX + 1
             if offLeft != offRight, walls.contains(offLeft ? .left : .right), let cover = offLeft ? left : right {
-                let minimum = minimumSizes[id] ?? .zero
-                let width = keepsSize ? frame.width : max(cover.width, minimum.width)
-                let height = keepsSize ? frame.height : max(cover.height, minimum.height)
-                return (id, CGRect(x: offLeft ? cover.minX : cover.maxX - width, y: cover.minY, width: width, height: height))
+                return (id, hiddenAtWall(id, frame, behind: cover, wall: offLeft ? .left : .right, keepsSize: keepsSize))
             }
             var x = frame.minX
             x = min(x, walls.contains(.right) ? bounds.maxX - frame.width : rightLimit[id] ?? bounds.maxX - Self.peek)
             x = max(x, walls.contains(.left) ? bounds.minX : leftLimit[id] ?? bounds.minX + Self.peek - frame.width)
             return (id, CGRect(x: x, y: frame.minY, width: frame.width, height: frame.height))
         })
+    }
+
+    /// Where a window scrolled out past `wall` hides behind `cover`, the biggest window of the column in view nearest
+    /// the wall: `shadowReach` inside it all round, so its shadow hides there too and the column shows one window's
+    /// shadow, not one more for each window behind it. Grown to its minimum size, it stays inside the cover as far as
+    /// it fits, and past that hangs out away from the wall and downwards. While fullscreen pushes (`keepsSize`), the
+    /// cover is the fullscreen window, and it grows no bigger than it is, but still keeps `shadowReach` inside: as tall
+    /// as the fullscreen window, it would show its shadow above and below it, one more for each window behind.
+    func hiddenAtWall(_ id: WindowID, _ frame: CGRect, behind cover: CGRect, wall: Direction, keepsSize: Bool) -> CGRect {
+        let minimum = minimumSizes[id] ?? .zero, margins = Self.shadowReach * 2
+        let width = max(min(keepsSize ? frame.width : .infinity, cover.width - margins), minimum.width, 1)
+        let height = max(min(keepsSize ? frame.height : .infinity, cover.height - margins), minimum.height, 1)
+        let x = (cover.midX - width / 2).rounded(), y = (cover.midY - height / 2).rounded()
+        let inside = wall == .left ? max(min(x, cover.maxX - width), cover.minX)
+            : min(max(x, cover.minX), cover.maxX - width)
+        return CGRect(x: inside, y: max(min(y, cover.maxY - height), cover.minY), width: width, height: height)
     }
 
     /// The width `frame` takes on screen: its own, or the width the window last had if it came out a little

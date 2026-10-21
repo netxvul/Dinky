@@ -1046,10 +1046,12 @@ final class Coordinator {
             // The transforms only translate, so a window whose size also changes this pass (restoring from a filled or
             // enlarged state, a column width change) must resize through Accessibility, where its app re-renders, rather
             // than be stretched by a transform; such a pass is left to the window glide below. So is one with a window
-            // staged at its size just now, or held.
+            // staged at its size just now, or held. Its size here is the one the pass gives it, not the strip's: a window
+            // hiding behind a column at a wall is smaller than its tile, and stays so while it hides.
             let saResizing = !special.isEmpty || leftAlone.contains(where: { strip[$0] != nil }) || strip.contains { id, frame in
                 guard let size = frameNow(id)?.size else { return false }
-                return abs(size.width - frame.width) > 1 || abs(size.height - frame.height) > 1
+                let target = layout.frames[id] ?? frame
+                return abs(size.width - target.width) > 1 || abs(size.height - target.height) > 1
             }
             if fullscreen.isEmpty, !saResizing, ScriptingAddition.available {
                 let stripIDs = Array(strip.keys)

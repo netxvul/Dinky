@@ -5,6 +5,9 @@ import Testing
 /// The gutter parked windows show in, either side of the columns.
 private let peek = Workspace.peek
 
+/// How far inside the column in view a window hiding behind it at a wall keeps.
+private let reach = Workspace.shadowReach
+
 /// A scrolling workspace with windows 1...n inserted in order, so n is focused and in view. Its columns go
 /// between 0 and 1000, inside the gutters, when it has no gaps or walls.
 private func strip(_ n: Int, width: Double = 0.5, gaps: Gaps = .zero, walls: Set<Direction> = []) -> Workspace {
@@ -94,8 +97,8 @@ struct ScrollingGeometryTests {
         ws.focus(2)
         let layout = ws.layout()
         #expect(layout.frames[2]!.minX == -peek, "no gutter at a wall")
-        #expect(layout.frames[1]!.minX == -peek)
-        #expect(layout.frames[4]!.minX == 500)
+        #expect(layout.frames[1] == layout.frames[2]!.insetBy(dx: reach, dy: reach))
+        #expect(layout.frames[4] == layout.frames[3]!.insetBy(dx: reach, dy: reach))
         #expect(layout.order == [2, 1, 3, 4])
     }
 
@@ -103,9 +106,9 @@ struct ScrollingGeometryTests {
         var ws = strip(4, gaps: Gaps(all: 10), walls: [.left, .right])
         ws.focus(2)
         var frames = ws.layout().frames
-        #expect(frames[2]!.minX == -10)
-        #expect(frames[1] == frames[2], "none of it in the outer gap")
-        #expect(frames[4] == frames[3])
+        #expect(frames[2]!.minX == -15 && frames[3]!.maxX == 1015, "out to the outer gaps, over the half gaps")
+        #expect(frames[1] == frames[2]!.insetBy(dx: reach, dy: reach), "neither it nor its shadow past the column")
+        #expect(frames[4] == frames[3]!.insetBy(dx: reach, dy: reach))
         ws.minimumSizes[1] = CGSize(width: 600, height: 0)
         frames = ws.layout().frames
         #expect(frames[1]!.minX == frames[2]!.minX && frames[1]!.width == 600, "grows away from the wall")
@@ -117,7 +120,27 @@ struct ScrollingGeometryTests {
         ws.join(.left)
         #expect(shape(ws.root) == "h[1 v[2 3] 4 5]")
         let frames = ws.layout().frames
-        #expect(frames[1] == frames[2], "not between 2 and 3")
+        #expect(frames[1] == frames[2]!.insetBy(dx: reach, dy: reach), "not between 2 and 3")
+    }
+
+    @Test func `At a wall the column in view nearest it reaches out to the outer gap`() {
+        var ws = strip(3, gaps: Gaps(all: 10), walls: [.left])
+        var frames = ws.layout().frames
+        #expect(frames[3]!.maxX == 1015, "the end column reaches into the empty gutter")
+        #expect(frames[2] == rect(-15, 10, 520, 580), "not the gutter and half a gap short of it")
+        #expect(frames[1] == frames[2]!.insetBy(dx: reach, dy: reach))
+        ws = strip(3, gaps: Gaps(all: 10), walls: [.right])
+        ws.focus(1)
+        frames = ws.layout().frames
+        #expect(frames[1]!.minX == -15)
+        #expect(frames[2] == rect(495, 10, 520, 580))
+        #expect(frames[3] == frames[2]!.insetBy(dx: reach, dy: reach))
+    }
+
+    @Test func `At a wall a column in view keeps its width beside a column's worth of room`() {
+        var ws = strip(3, gaps: Gaps(all: 10), walls: [.left])
+        ws.setWidth(ofColumn: 2, 0.8)
+        #expect(ws.layout().frames[3] == rect(212, 10, 803, 580))
     }
 
     @Test func `The focused column stays in view when a column left of it closes`() {
@@ -440,13 +463,13 @@ struct ScrollingFullscreenTests {
         #expect(frames[3]!.minX == ws.stripArea.minX)
     }
 
-    @Test func `At a wall the pushed neighbours keep their size behind it`() {
+    @Test func `At a wall the pushed neighbours keep their width behind it and their shadows inside it`() {
         let ws = fullscreen(walls: [.left, .right])
         let frames = ws.layout().frames
         #expect(frames[2] == ws.bounds)
         for id: WindowID in [1, 3, 4] {
             #expect(frames[id]!.width == 525, "their width without gutters")
-            #expect(ws.bounds.contains(frames[id]!))
+            #expect(frames[2]!.insetBy(dx: reach, dy: reach).contains(frames[id]!), "not as tall as the fullscreen window")
         }
     }
 
