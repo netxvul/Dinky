@@ -146,7 +146,11 @@ final class WorkspaceSwitcher {
     private func fullscreenWindows(on space: UInt64) -> [WindowID] {
         guard let display = AppState.shared.displays.display(containingSpace: space),
               !display.userSpaces.contains(space), let model = AppState.shared.coordinator?.model else { return [] }
-        return windows(on: space).filter { model.windows[$0]?.isMinimized == false }
+        // Not a window of every Space, such as a browser's floating mini player, which the window server lists on
+        // this one too.
+        return windows(on: space).filter { id in
+            model.windows[id].map { $0.isNormal && !$0.isMinimized } == true && dinky_window_space_id(id) == space
+        }
     }
 
     /// Where a native full-screen Space's windows are, back to front: a lone window fills the display; Split View's
@@ -313,7 +317,15 @@ final class WorkspaceSwitcher {
         jumpTo = nil
         guard cards.indices.contains(view.picked) else { return }
         let card = cards[view.picked]
-        if let jump, AppState.shared.coordinator?.model.windows[jump] != nil {
+        if card.number == nil, let display = AppState.shared.displays.displays.first(where: { $0.uuid == card.display.uuid }),
+           !display.userSpaces.contains(card.space) {
+            // Focusing a window on a native full-screen Space does not take macOS there; swipe the display to it,
+            // then focus the window.
+            let known = jump.flatMap { AppState.shared.coordinator?.model.windows[$0] != nil ? $0 : nil }
+            let window = known ?? fullscreenWindows(on: card.space).first
+            let focus = { if let window { AppState.shared.coordinator?.focus(window) } }
+            if !switchSpace(toSpaceID: card.space, on: display, landed: focus) { focus() }
+        } else if let jump, AppState.shared.coordinator?.model.windows[jump] != nil {
             if let number = card.number {
                 let reply = Dispatcher.showWorkspace(number, focusing: jump)
                 if !reply.ok { fputs("workspace-switcher: \(reply.text)\n", stderr) }
@@ -323,10 +335,6 @@ final class WorkspaceSwitcher {
         } else if let number = card.number {
             let reply = Dispatcher.run("workspace \(number)")
             if !reply.ok { fputs("workspace-switcher: \(reply.text)\n", stderr) }
-        } else if let window = fullscreenWindows(on: card.space).first,
-                  let display = AppState.shared.displays.displays.first(where: { $0.uuid == card.display.uuid }) {
-            // Focusing the window takes macOS to its full-screen Space.
-            _ = Dispatcher.focus(display, window: window)
         } else if let display = AppState.shared.displays.displays.first(where: { $0.uuid == card.display.uuid }) {
             _ = Dispatcher.focus(display, window: Dispatcher.windowToFocus(on: display))
         }
