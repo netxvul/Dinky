@@ -24,12 +24,12 @@ extension Dispatcher {
         }
         switch action {
         case .stop, .wrapAroundAllMonitors:
-            return .ok("no window \(direction)")
+            return .nothing("no window \(direction)", ok: true)
         case .fail:
-            return .error("no window \(direction)")
+            return .nothing("no window \(direction)", ok: false)
         case .wrapAroundTheWorkspace:
             guard let id = coordinator.command({ $0.focus(direction, wrapping: true) ? $0.focused : nil }) ?? nil else {
-                return .ok("no window to wrap around to")
+                return .nothing("no window to wrap around to", ok: true)
             }
             return focus(window: id)
         }
@@ -118,7 +118,7 @@ extension Dispatcher {
         }
         guard let next = candidates.min(by: { hypot($0.frame.midX - from.x, $0.frame.midY - from.y)
                                               < hypot($1.frame.midX - from.x, $1.frame.midY - from.y) }) else {
-            return .error("no window \(direction)")
+            return .nothing("no window \(direction)", ok: false)
         }
         focusWindow(pid: next.pid, id: next.id)
         return .ok("focused window \(next.id) \(next.app)")

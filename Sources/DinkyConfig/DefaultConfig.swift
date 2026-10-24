@@ -66,6 +66,10 @@ extension Config {
     inactive-color = '#494d64'
     order = 'below'                 # below | above (a click-through ring over the window)
     exclude-apps = []               # bundle IDs whose windows get no border
+    noop-flash = true               # a binding that does nothing flashes the focused window's border
+    noop-flash-color = '#ed8796'    # '#rrggbb', '#rrggbbaa' or 'accent'
+    noop-flash-count = 2            # flashes, 1 to 5
+    noop-flash-ms = 120             # how long each flash is on, 50 to 1000
 
     [focus-follows-mouse]
     enabled = false
@@ -94,6 +98,7 @@ extension Config {
     on-layout-change = true         # after the layout command
     on-mode-change = true           # when the binding mode changes
     on-workspace-change = true      # the new workspace's layout when a display moves to another workspace
+    on-noop = false                 # why, when a binding does nothing
 
     # What both switchers below share. Each of these keys can go in [window-switcher] or [workspace-switcher] too,
     # for that one alone.

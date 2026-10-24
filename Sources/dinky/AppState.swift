@@ -128,14 +128,22 @@ final class AppState {
     }
 }
 
-/// Runs a key binding's or a gesture's commands in order through the dispatcher.
+/// Runs a key binding's or a gesture's commands in order through the dispatcher. A command that did nothing flashes
+/// the focused window's border, and with `[hud] on-noop` shows why.
 func runBound(_ commands: [String]) {
     // A binding that uses a switcher's modifier is the modifier at work for something else, unless it is the
     // switcher's own command, which steps its pick.
     if !commands.contains("window-switcher") { WindowSwitcher.shared.dismiss() }
     if !commands.contains("workspace-switcher") { WorkspaceSwitcher.shared.dismiss() }
+    var noop: Reply?
     for command in commands {
         let reply = Dispatcher.run(command)
         if !reply.ok { fputs("\(command): \(reply.text)\n", stderr) }
+        if reply.noop, noop == nil { noop = reply }
+    }
+    // Once for the binding, however many of its commands did nothing.
+    if let noop, let coordinator = AppState.shared.coordinator {
+        coordinator.flashBorder(of: coordinator.focusedWindow)
+        Hud.shared.nothingDone(noop.text)
     }
 }

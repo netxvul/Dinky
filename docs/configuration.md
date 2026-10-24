@@ -249,6 +249,10 @@ gaps.outer.top = 44
 | `inactive-color` | `'#494d64'` | |
 | `order` | `'below'` | `'above'` draws a click-through ring over the window. |
 | `exclude-apps` | `[]` | Bundle IDs that get no border. |
+| `noop-flash` | `true` | Flash the focused window's border when a key binding or gesture does nothing: a move at the edge, a resize at its limit, `focus` with no window that way, `fullscreen` on a window that already fills its workspace. Drawn even with `enabled = false`. |
+| `noop-flash-color` | `'#ed8796'` | The flash: `'#rrggbb'`, `'#rrggbbaa'` or `'accent'`. |
+| `noop-flash-count` | `2` | How many times it flashes, from `1` to `5`. |
+| `noop-flash-ms` | `120` | How long each flash is on, from `50` to `1000`, with 80 ms off between them. |
 
 </div>
 
@@ -344,6 +348,7 @@ Liquid Glass; earlier, the HUD material.
 | `on-layout-change` | `true` | Show it after the `layout` command. |
 | `on-mode-change` | `true` | Show it when the binding mode changes. |
 | `on-workspace-change` | `true` | Show the workspace's layout when a display moves to another workspace. |
+| `on-noop` | `false` | Show why when a key binding or gesture does nothing, such as `move left: nothing to do`. |
 
 </div>
 
@@ -823,6 +828,10 @@ width = 4
 inactive-color = '#494d64'
 order = 'below'                 # below | above (a click-through ring over the window)
 exclude-apps = []               # bundle IDs whose windows get no border
+noop-flash = true               # a binding that does nothing flashes the focused window's border
+noop-flash-color = '#ed8796'    # '#rrggbb', '#rrggbbaa' or 'accent'
+noop-flash-count = 2            # flashes, 1 to 5
+noop-flash-ms = 120             # how long each flash is on, 50 to 1000
 
 [focus-follows-mouse]
 enabled = false
@@ -851,6 +860,7 @@ offset = 16                     # points from the Dock or menu bar
 on-layout-change = true         # after the layout command
 on-mode-change = true           # when the binding mode changes
 on-workspace-change = true      # the new workspace's layout when a display moves to another workspace
+on-noop = false                 # why, when a binding does nothing
 
 # What both switchers below share. Each of these keys can go in [window-switcher] or [workspace-switcher] too,
 # for that one alone.

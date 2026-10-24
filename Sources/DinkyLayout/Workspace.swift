@@ -435,6 +435,15 @@ public struct Workspace: Equatable, Sendable {
         if on { fullscreenWindows = [focused] }
     }
 
+    /// Whether turning fullscreen on would change nothing: no window is fullscreen or waiting to be, and the focused
+    /// window's tile is already the frame fullscreen gives it, as a lone tile's or a lone full-width column's is.
+    public var focusedFillsWorkspace: Bool {
+        guard let focused, fullscreenWindows.isEmpty, pendingFullscreen == nil else { return false }
+        var full = self
+        full.fullscreenWindows = [focused]
+        return layout().frames[focused] == full.layout().frames[focused]
+    }
+
     /// Shows the window waiting to go fullscreen, if it is still `id` and focused. False when there is nothing to do:
     /// focus moved on, or fullscreen ended meanwhile.
     public mutating func promotePendingFullscreen(_ id: WindowID) -> Bool {

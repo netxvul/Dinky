@@ -4,13 +4,17 @@ import DinkyConfig
 import DinkyLayout
 import DinkyPrivate
 
-/// What a command answers: a short line for the CLI, and whether it worked.
+/// What a command answers: a short line for the CLI, whether it worked, and whether it did nothing, which a binding
+/// shows by flashing the focused window's border.
 struct Reply {
     var ok: Bool
     var text: String
+    var noop = false
 
     static func ok(_ text: String) -> Reply { Reply(ok: true, text: text) }
     static func error(_ text: String) -> Reply { Reply(ok: false, text: text) }
+    /// A command with nothing to do: `ok` keeps the CLI's exit status what it was before replies said so.
+    static func nothing(_ text: String, ok: Bool) -> Reply { Reply(ok: ok, text: text, noop: true) }
 }
 
 // Runs commands from bindings, the CLI and the menu against what exists today. Main thread only.
@@ -56,7 +60,7 @@ enum Dispatcher {
                 let step = CGFloat(points ?? coordinator.config.floating.moveStep)
                 return coordinator.floating(id) { frame, area in FloatingFrame.moved(frame, direction, by: step, within: area) }
             }) { return reply }
-            if floatingOnly { return .ok("\(name): the focused window does not float") }
+            if floatingOnly { return .nothing("\(name): the focused window does not float", ok: true) }
             return tree(name) { $0.move(direction) }
         case .joinWith(let direction):
             if let reply = floating("join-with \(direction)", window: window, { coordinator, id in
@@ -76,11 +80,18 @@ enum Dispatcher {
                     FloatingFrame.resized(frame, by: CGFloat(delta), along: axis, within: area, anchor: anchor)
                 }
             }) { return reply }
-            if floatingOnly { return .ok("\(name): the focused window does not float") }
+            if floatingOnly { return .nothing("\(name): the focused window does not float", ok: true) }
             return tree(name) { $0.resize(by: CGFloat(delta), along: axis) }
         case .fullscreen:
             if let reply = floating("fullscreen", window: window, { $0.toggleFloatingFullscreen($1) }) { return reply }
-            return tree("fullscreen") { $0.toggleFullscreen(); return true }
+            // A window already filling its workspace, alone there, would not change.
+            var fills = false
+            let reply = tree("fullscreen") { workspace in
+                fills = workspace.focusedFillsWorkspace
+                if !fills { workspace.toggleFullscreen() }
+                return true
+            }
+            return fills ? .nothing("fullscreen: the window already fills the workspace", ok: true) : reply
         case .grid(let placement, let toggle):
             guard let coordinator = AppState.shared.coordinator else { return .error("tiling is not running") }
             let id = window ?? coordinator.focusedWindow
@@ -110,7 +121,7 @@ enum Dispatcher {
                     if workspace.focused != window { workspace.focus(window) }
                     return workspace.cycleWidth(through: shares)
                 }
-                return changed == true ? .ok(name) : .error("\(name): nothing to do")
+                return changed == true ? .ok(name) : .nothing("\(name): nothing to do", ok: false)
             }
             return tree(name) { $0.cycleWidth(through: shares) }
         case .flattenWorkspaceTree:
@@ -288,7 +299,7 @@ enum Dispatcher {
             : coordinator.command(change)
         switch result {
         case nil: return .error("\(name): the focused window is not tiled")
-        case false?: return .error("\(name): nothing to do")
+        case false?: return .nothing("\(name): nothing to do", ok: false)
         case true?: return .ok(name)
         }
     }

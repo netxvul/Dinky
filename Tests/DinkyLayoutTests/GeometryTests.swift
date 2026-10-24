@@ -152,6 +152,24 @@ struct FullscreenTests {
         #expect(ws.layout() == layout)
     }
 
+    @Test func `A lone tile already fills the workspace`() {
+        var ws = workspace(1, bounds: rect(0, 0, 1010, 610), gaps: Gaps(all: 10))
+        #expect(ws.focusedFillsWorkspace)
+        ws.insert(2)
+        #expect(!ws.focusedFillsWorkspace)
+        ws.remove(2)
+        ws.toggleFullscreen()
+        #expect(!ws.focusedFillsWorkspace)
+    }
+
+    @Test func `A lone scrolling column fills the workspace`() {
+        var ws = Workspace(bounds: rect(0, 0, 1000, 600), algorithm: .scrolling)
+        ws.insert(1)
+        #expect(ws.focusedFillsWorkspace)
+        ws.insert(2)
+        #expect(!ws.focusedFillsWorkspace)
+    }
+
     @Test func `Removing fullscreen window clears it`() {
         var ws = workspace(3)
         ws.toggleFullscreen()

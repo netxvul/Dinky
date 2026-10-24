@@ -53,6 +53,12 @@ final class Hud {
         show(name)
     }
 
+    /// Why a binding did nothing: its command's answer.
+    func nothingDone(_ text: String) {
+        guard config.enabled, config.onNoop else { return }
+        show(text)
+    }
+
     func modeChanged(_ mode: String) {
         guard config.enabled, config.onModeChange else { return }
         show(mode)

@@ -715,6 +715,12 @@ public struct Borders: Equatable {
     public var order = BorderOrder.below
     /// Bundle IDs whose windows get no border.
     public var excludeApps: [String] = []
+    /// Whether a binding that does nothing flashes the focused window's border.
+    public var noopFlash = true
+    public var noopFlashColor = Highlight.color(try! Color(hex: "#ed8796"))
+    /// How many times the border flashes, each `noop-flash-ms` on, then 80 ms off.
+    public var noopFlashCount = 2
+    public var noopFlashMs = 120
 
     public init() {}
 
@@ -727,6 +733,12 @@ public struct Borders: Equatable {
         inactiveColor = try t.color("inactive-color") ?? inactiveColor
         order = try t.choice("order") ?? order
         excludeApps = try t.strings("exclude-apps") ?? excludeApps
+        noopFlash = try t.bool("noop-flash") ?? noopFlash
+        noopFlashColor = try t.highlight("noop-flash-color") ?? noopFlashColor
+        noopFlashCount = try t.int("noop-flash-count") ?? noopFlashCount
+        guard (1...5).contains(noopFlashCount) else { throw ConfigError(path: t.path("noop-flash-count"), "must be 1 to 5") }
+        noopFlashMs = try t.int("noop-flash-ms") ?? noopFlashMs
+        guard (50...1000).contains(noopFlashMs) else { throw ConfigError(path: t.path("noop-flash-ms"), "must be 50 to 1000") }
         try t.done()
     }
 
@@ -844,6 +856,8 @@ public struct Hud: Equatable {
     public var onModeChange = true
     /// Shown when a display moves to another workspace, with that workspace's layout.
     public var onWorkspaceChange = true
+    /// Shown, with the command's answer, when a binding does nothing.
+    public var onNoop = false
 
     public init() {}
 
@@ -857,6 +871,7 @@ public struct Hud: Equatable {
         onLayoutChange = try t.bool("on-layout-change") ?? onLayoutChange
         onModeChange = try t.bool("on-mode-change") ?? onModeChange
         onWorkspaceChange = try t.bool("on-workspace-change") ?? onWorkspaceChange
+        onNoop = try t.bool("on-noop") ?? onNoop
         try t.done()
     }
 }

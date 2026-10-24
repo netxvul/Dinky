@@ -33,7 +33,20 @@ final class Coordinator {
     let applier = FrameApplier()
     private lazy var animator = Animator(applier: applier)
     private var borders: BorderManager?
-    func isBorderWindow(_ id: WindowID) -> Bool { borders?.isBorder(id) ?? false }
+    /// The noop flash's own border while borders are off.
+    private let loneFlash = LoneBorderFlash()
+    func isBorderWindow(_ id: WindowID) -> Bool { borders?.isBorder(id) ?? loneFlash.isBorder(id) }
+
+    /// Flashes a window's border, for a binding that did nothing, unless `[borders] noop-flash` is off. With borders
+    /// off it gets a border for the flash alone.
+    func flashBorder(of id: WindowID) {
+        guard config.borders.noopFlash, id != 0 else { return }
+        if let borders {
+            borders.flash(id)
+        } else {
+            loneFlash.flash(id, config: config.borders, model: model)
+        }
+    }
     private(set) var workspaces: [UInt64: Workspace] = [:]
     var placements: [WindowID: Placement] = [:]
     var dirty: Set<UInt64> = []

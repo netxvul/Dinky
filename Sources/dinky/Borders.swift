@@ -18,6 +18,9 @@ final class BorderManager {
     /// What the next flush does: check focus, place every border, or place the borders of these windows.
     private var pending = (refocus: false, all: false, ids: Set<UInt32>())
     private var flushScheduled = false
+    /// The window whose border is flashing, and whether the flash is lit now.
+    private var flashed: (id: UInt32, lit: Bool)?
+    private let flasher = BorderFlash()
     /// Whether dinky is animating the window, when its border only follows moves: redrawing it at every
     /// size of a resize costs more than a frame.
     private let isAnimating: (UInt32) -> Bool
@@ -104,6 +107,20 @@ final class BorderManager {
         for id in ids { if let window = model.windows[id] { sync(window) } }
     }
 
+    /// Flashes a window's border in `noop-flash-color`, for a binding that did nothing. Again while it flashes
+    /// starts it over.
+    func flash(_ id: UInt32) {
+        if let old = flashed?.id, old != id {
+            flashed = nil
+            sync([old])
+        }
+        flasher.start(count: config.noopFlashCount, onMs: config.noopFlashMs) { [weak self] lit, last in
+            guard let self else { return }
+            self.flashed = last ? nil : (id, lit)
+            self.sync([id])
+        }
+    }
+
     /// Mission Control came or went: every border hides or returns.
     func missionControlChanged() { syncAll() }
 
@@ -123,10 +140,11 @@ final class BorderManager {
             return
         }
         let focused = window.id == focusedID
+        let lit = flashed.map { $0.id == window.id && $0.lit } ?? false
+        let color = lit ? config.noopFlashColor.resolved : focused ? config.activeColor.resolved : config.inactiveColor
         let border = borders[window.id] ?? BorderWindow(target: window.id)
         borders[window.id] = border
-        border.update(window, color: focused ? config.activeColor.resolved : config.inactiveColor, config: config,
-                      moveOnly: isAnimating(window.id))
+        border.update(window, color: color, config: config, moveOnly: isAnimating(window.id))
     }
 
     private func refocus() {
@@ -145,5 +163,59 @@ final class BorderManager {
             let current = display.spaces.first { $0.spaceID == display.currentSpaceID }
             return current?.isFullscreen == true ? nil : display.currentSpaceID
         })
+    }
+}
+
+/// The steps of a border flash: lit for `onMs`, then dark for 80 ms, `count` times. Starting again drops the steps
+/// still to come, so pressing a binding again restarts the flash instead of stacking another.
+final class BorderFlash {
+    private static let offMs = 80
+    private var generation = 0
+
+    /// Calls `step` lit at once and at each flash after, dark at the end of each, `last` on the final one.
+    func start(count: Int, onMs: Int, _ step: @escaping (_ lit: Bool, _ last: Bool) -> Void) {
+        generation += 1
+        let shown = generation
+        func at(_ ms: Int, _ lit: Bool, _ last: Bool) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(ms)) { [weak self] in
+                guard self?.generation == shown else { return }
+                step(lit, last)
+            }
+        }
+        step(true, false)
+        for i in 0..<count {
+            let start = i * (onMs + Self.offMs)
+            if i > 0 { at(start, true, false) }
+            at(start + onMs, false, i == count - 1)
+        }
+    }
+}
+
+/// The flash with `[borders] enabled = false`: a border of its own around the window for as long as it flashes.
+final class LoneBorderFlash {
+    private var border: BorderWindow?
+    private var target: UInt32 = 0
+    private let flasher = BorderFlash()
+
+    /// Whether a window id is the flash's border.
+    func isBorder(_ id: UInt32) -> Bool { id != 0 && border?.id == id }
+
+    func flash(_ id: UInt32, config: Borders, model: WindowModel) {
+        if target != id { border = nil }
+        target = id
+        flasher.start(count: config.noopFlashCount, onMs: config.noopFlashMs) { [weak self] lit, last in
+            guard let self else { return }
+            guard !last, let window = model.windows[id] else {
+                self.border = nil
+                return
+            }
+            let border = self.border ?? BorderWindow(target: id)
+            self.border = border
+            if lit {
+                border.update(window, color: config.noopFlashColor.resolved, config: config)
+            } else {
+                border.hide()
+            }
+        }
     }
 }

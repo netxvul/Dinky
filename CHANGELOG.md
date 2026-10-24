@@ -6,6 +6,7 @@
 
 - A capsule of Liquid Glass names the new layout, such as `h_accordion` or `scrolling`, after the `layout` command, and the new binding mode when it changes, for a moment on the focused display. The new `[hud]` table places it above the Dock (`position = 'bottom'`, the default) or below the menu bar (`'top'`), `offset` points away, keeps it up for `duration-ms` (1200 by default), and turns it off for either change with `on-layout-change` or `on-mode-change`, or entirely with `enabled = false`.
 - When a display moves to another workspace, the capsule shows there the workspace's number and layout, such as `2 · v_accordion`. `[hud] on-workspace-change = false` turns it off.
+- A key binding or gesture that does nothing, such as `move left` at the edge, a resize at its limit, `focus` with no window that way or `fullscreen` on a window already filling its workspace, flashes the focused window's border twice, even with borders off. `[borders] noop-flash = false` turns it off; `noop-flash-color` (`'#ed8796'`), `noop-flash-count` and `noop-flash-ms` tune it. `[hud] on-noop = true` also shows why in the capsule. The CLI answers as before.
 
 ### Switcher
 

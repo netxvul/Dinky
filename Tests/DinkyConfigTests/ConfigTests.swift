@@ -490,6 +490,32 @@ struct ConfigTests {
         assertError("[borders]\nexclude-apps = 'com.apple.finder'\n", path: "borders.exclude-apps", line: 2, contains: "list of strings")
     }
 
+    @Test func `Noop flash`() throws {
+        let defaults = Borders()
+        #expect(defaults.noopFlash)
+        #expect(defaults.noopFlashColor == .color(try Color(hex: "#ed8796")))
+        #expect(defaults.noopFlashCount == 2)
+        #expect(defaults.noopFlashMs == 120)
+        let borders = try Config.parse("""
+        [borders]
+        noop-flash = false
+        noop-flash-color = 'accent'
+        noop-flash-count = 5
+        noop-flash-ms = 50
+        """).borders
+        #expect(!borders.noopFlash)
+        #expect(borders.noopFlashColor == .accent)
+        #expect(borders.noopFlashCount == 5)
+        #expect(borders.noopFlashMs == 50)
+        #expect(try Config.parse("[hud]\non-noop = true\n").hud.onNoop)
+
+        assertError("[borders]\nnoop-flash-count = 0\n", path: "borders.noop-flash-count", line: 2, contains: "1 to 5")
+        assertError("[borders]\nnoop-flash-count = 6\n", path: "borders.noop-flash-count", line: 2, contains: "1 to 5")
+        assertError("[borders]\nnoop-flash-ms = 40\n", path: "borders.noop-flash-ms", line: 2, contains: "50 to 1000")
+        assertError("[borders]\nnoop-flash-ms = 1001\n", path: "borders.noop-flash-ms", line: 2, contains: "50 to 1000")
+        assertError("[borders]\nnoop-flash-color = 'pink'\n", path: "borders.noop-flash-color", line: 2, contains: "'pink' is not a colour")
+    }
+
     @Test func `Binding values`() throws {
         let config = try Config.parse("""
         [mode.main]
@@ -704,6 +730,7 @@ struct ConfigTests {
         #expect(defaults.durationMs == 1200)
         #expect(defaults.offset == 16)
         #expect(defaults.onLayoutChange && defaults.onModeChange && defaults.onWorkspaceChange)
+        #expect(!defaults.onNoop)
         #expect(try !Config.parse("[hud]\non-workspace-change = false\n").hud.onWorkspaceChange)
         let hud = try Config.parse("[hud]\nposition = 'top'\nduration-ms = 3000\noffset = 4.5\non-mode-change = false\n").hud
         #expect(hud.position == .top)
