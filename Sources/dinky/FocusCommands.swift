@@ -60,7 +60,7 @@ extension Dispatcher {
     static func focusMonitor(number n: Int) -> Reply {
         let model = AppState.shared.displays
         model.reconcile()
-        guard model.displays.indices.contains(n - 1) else { return .error("no display \(n), there are \(model.displays.count)") }
+        guard model.displays.indices.contains(n - 1) else { return .nothing("no display \(n), there are \(model.displays.count)", ok: false) }
         let display = model.displays[n - 1]
         return focus(display, window: AppState.shared.coordinator?.workspace(on: display)?.focused)
     }

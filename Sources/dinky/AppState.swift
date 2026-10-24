@@ -135,15 +135,20 @@ func runBound(_ commands: [String]) {
     // switcher's own command, which steps its pick.
     if !commands.contains("window-switcher") { WindowSwitcher.shared.dismiss() }
     if !commands.contains("workspace-switcher") { WorkspaceSwitcher.shared.dismiss() }
-    var noop: Reply?
+    var noop = false
     for command in commands {
         let reply = Dispatcher.run(command)
         if !reply.ok { fputs("\(command): \(reply.text)\n", stderr) }
-        if reply.noop, noop == nil { noop = reply }
+        guard reply.noop, !noop else { continue }
+        noop = true
+        // Shown now, so the capsule of a later command in the binding, as `mode main`'s, takes its place.
+        Hud.shared.nothingDone(reply.text)
     }
     // Once for the binding, however many of its commands did nothing.
-    if let noop, let coordinator = AppState.shared.coordinator {
-        coordinator.flashBorder(of: coordinator.focusedWindow)
-        Hud.shared.nothingDone(noop.text)
-    }
+    guard noop, let coordinator = AppState.shared.coordinator else { return }
+    let id = coordinator.focusedWindow
+    let displays = AppState.shared.displays
+    // Focusing an empty display can leave the keyboard with a window on another, which the binding was not about.
+    guard displays.focusOverride == nil || displays.display(ofWindow: id)?.uuid == displays.focusedDisplay()?.uuid else { return }
+    coordinator.flashBorder(of: id)
 }

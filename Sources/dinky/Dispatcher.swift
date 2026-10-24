@@ -207,7 +207,7 @@ enum Dispatcher {
         model.reconcile()
         switch target {
         case .number(let n):
-            guard (1...numbers.count).contains(n) else { throw Refusal("no workspace \(n), there are \(numbers.count)") }
+            guard (1...numbers.count).contains(n) else { throw Refusal("no workspace \(n), there are \(numbers.count)", noop: true) }
             return n
         case .recent:
             guard let n = model.recentSpace.flatMap(numbers.number(of:)) else { throw Refusal("no recent workspace", noop: true) }
@@ -242,7 +242,7 @@ enum Dispatcher {
         // On screen and staying there; a switch still on its way is not, and takes `arrive` for when it lands.
         let showing = display.currentSpaceID == space && targetSpaceID(on: display) == space
         let elsewhere = model.focusedDisplay()?.uuid != display.uuid
-        if showing, !elsewhere, landed == nil { return .nothing("already on workspace \(n)", ok: true) }
+        if showing, !elsewhere, landed == nil { return .ok("already on workspace \(n)") }
         // Arriving on a Space, macOS activates an app, which can be one whose window is on another Space when the
         // workspace has no window of the app that had focus. Focus moves to this Space.
         let arrive = landed ?? {
@@ -304,12 +304,20 @@ enum Dispatcher {
     private static func tree(_ name: String, wholeSpace: Bool = false, _ change: (inout Workspace) -> Bool) -> Reply {
         guard let coordinator = AppState.shared.coordinator else { return .error("tiling is not running") }
         let id = coordinator.focusedWindow
+        // A command can change the layout before finding nothing to do, as move ends fullscreen first: that is no noop.
+        var moved = false
+        func watched(_ workspace: inout Workspace) -> Bool {
+            let before = workspace.layout()
+            let done = change(&workspace)
+            moved = !done && workspace.layout() != before
+            return done
+        }
         let result = wholeSpace && coordinator.isFloating(id) == true
-            ? coordinator.spaceKey(of: id).flatMap { coordinator.command(onSpace: $0, change) }
-            : coordinator.command(change)
+            ? coordinator.spaceKey(of: id).flatMap { coordinator.command(onSpace: $0, watched) }
+            : coordinator.command(watched)
         switch result {
         case nil: return .error("\(name): the focused window is not tiled")
-        case false?: return .nothing("\(name): nothing to do", ok: false)
+        case false?: return moved ? .error("\(name): nothing to do") : .nothing("\(name): nothing to do", ok: false)
         case true?: return .ok(name)
         }
     }

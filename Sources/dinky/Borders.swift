@@ -144,7 +144,8 @@ final class BorderManager {
         let color = lit ? config.noopFlashColor.resolved : focused ? config.activeColor.resolved : config.inactiveColor
         let border = borders[window.id] ?? BorderWindow(target: window.id)
         borders[window.id] = border
-        border.update(window, color: color, config: config, moveOnly: isAnimating(window.id))
+        // Lit, it is redrawn at every size of a glide too, or a flash asked for mid-glide would not show.
+        border.update(window, color: color, config: config, moveOnly: isAnimating(window.id) && !lit)
     }
 
     private func refocus() {
@@ -191,10 +192,14 @@ final class BorderFlash {
     }
 }
 
-/// The flash with `[borders] enabled = false`: a border of its own around the window for as long as it flashes.
+/// The flash for a window the border manager leaves bare: every window with `[borders] enabled = false`, and
+/// `exclude-apps`' windows. A border of its own around the window for as long as it flashes, kept on the window as
+/// it moves and hidden where a border would be.
 final class LoneBorderFlash {
     private var border: BorderWindow?
     private var target: UInt32 = 0
+    private var lit = false
+    private var config = Borders()
     private let flasher = BorderFlash()
 
     /// Whether a window id is the flash's border.
@@ -203,19 +208,40 @@ final class LoneBorderFlash {
     func flash(_ id: UInt32, config: Borders, model: WindowModel) {
         if target != id { border = nil }
         target = id
+        self.config = config
         flasher.start(count: config.noopFlashCount, onMs: config.noopFlashMs) { [weak self] lit, last in
-            guard let self else { return }
-            guard !last, let window = model.windows[id] else {
-                self.border = nil
-                return
-            }
-            let border = self.border ?? BorderWindow(target: id)
-            self.border = border
-            if lit {
-                border.update(window, color: config.noopFlashColor.resolved, config: config)
-            } else {
-                border.hide()
-            }
+            guard let self, self.target == id else { return }
+            guard !last, let window = model.windows[id] else { return self.end() }
+            self.lit = lit
+            self.draw(window)
         }
+    }
+
+    /// The flashed window's events: the ring follows its moves and goes with it.
+    func handle(_ event: WindowEvent) {
+        guard border != nil, let window = event.window, window.id == target else { return }
+        if event.change == .removed { return end() }
+        if [.windowMove, .windowResize].contains(event.kind) { draw(window) }
+    }
+
+    /// Mission Control came or went.
+    func missionControlChanged() {
+        if MissionControl.shared.active { border?.hide() }
+    }
+
+    private func draw(_ window: Window) {
+        guard lit, window.isOrderedIn, window.isVisible, !window.isMinimized, !MissionControl.shared.active else {
+            border?.hide()
+            return
+        }
+        let border = self.border ?? BorderWindow(target: window.id)
+        self.border = border
+        border.update(window, color: config.noopFlashColor.resolved, config: config)
+    }
+
+    private func end() {
+        border = nil
+        target = 0
+        lit = false
     }
 }

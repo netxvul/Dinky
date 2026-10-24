@@ -162,6 +162,14 @@ struct FullscreenTests {
         #expect(!ws.focusedFillsWorkspace)
     }
 
+    @Test func `A lone tile still goes fullscreen when follow or keep would hand it on`() {
+        for focus in [FullscreenFocus.follow, .keep] {
+            var ws = workspace(1, bounds: rect(0, 0, 1010, 610), gaps: Gaps(all: 10))
+            ws.fullscreenFocus = focus
+            #expect(!ws.focusedFillsWorkspace)
+        }
+    }
+
     @Test func `A lone scrolling column fills the workspace`() {
         var ws = Workspace(bounds: rect(0, 0, 1000, 600), algorithm: .scrolling)
         ws.insert(1)
