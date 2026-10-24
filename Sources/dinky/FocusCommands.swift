@@ -41,7 +41,7 @@ extension Dispatcher {
         model.reconcile()
         guard let from = model.focusedDisplay() else { return .error("no display") }
         if target == .recent {
-            guard let recent = model.recentDisplay, recent != from else { return .error("no recent display") }
+            guard let recent = model.recentDisplay, recent != from else { return .nothing("no recent display", ok: false) }
             return focus(recent, window: AppState.shared.coordinator?.workspace(on: recent)?.focused)
         }
         let line = target.direction.map { displays(inLineWith: from, $0.orientation, model.displays) }
@@ -49,7 +49,8 @@ extension Dispatcher {
         let forward = target.direction?.isForward ?? (target == .next)
         let index = line.firstIndex(of: from)! + (forward ? 1 : -1)
         guard line.indices.contains(index) else {
-            return .error(target.direction == nil ? "no \(target.rawValue) display" : "no display \(target.rawValue) of the focused one")
+            return .nothing(target.direction == nil ? "no \(target.rawValue) display" : "no display \(target.rawValue) of the focused one",
+                            ok: false)
         }
         return focus(line[index], window: AppState.shared.coordinator?.workspace(on: line[index])?.focused)
     }

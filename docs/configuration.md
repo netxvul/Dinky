@@ -249,7 +249,7 @@ gaps.outer.top = 44
 | `inactive-color` | `'#494d64'` | |
 | `order` | `'below'` | `'above'` draws a click-through ring over the window. |
 | `exclude-apps` | `[]` | Bundle IDs that get no border. |
-| `noop-flash` | `true` | Flash the focused window's border when a key binding or gesture does nothing: a move at the edge, a resize at its limit, `focus` with no window that way, `fullscreen` on a window that already fills its workspace. Drawn even with `enabled = false`. |
+| `noop-flash` | `true` | Flash the focused window's border when a key binding or gesture does nothing: a move at the edge, a resize at its limit, `focus` or `focus-monitor` with nothing that way, `workspace next` on the last workspace, `workspace N` on the one already shown, moving a window to where it already is, `fullscreen` on a window that already fills its workspace. Drawn even with `enabled = false`. |
 | `noop-flash-color` | `'#ed8796'` | The flash: `'#rrggbb'`, `'#rrggbbaa'` or `'accent'`. |
 | `noop-flash-count` | `2` | How many times it flashes, from `1` to `5`. |
 | `noop-flash-ms` | `120` | How long each flash is on, from `50` to `1000`, with 80 ms off between them. |
