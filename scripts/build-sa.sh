@@ -11,7 +11,7 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 O="$REPO/Sources/DinkyPrivate/osax"
 OSAX="$REPO/build/dinky.osax"
 INSTALLED="/Library/ScriptingAdditions/dinky.osax"
-VER="0.1.0"
+VER="0.3.0"
 
 if [ ! -f "$O/loader.m" ]; then
     echo "missing $O/loader.m — copy yabai's src/osax/loader.m here and change yabai.osax -> dinky.osax" >&2
@@ -57,14 +57,24 @@ chmod +x "$OSAX/Contents/MacOS/loader" "$OSAX/Contents/Resources/payload.bundle/
 codesign -f -s - "$OSAX/Contents/MacOS/loader"
 codesign -f -s - "$OSAX/Contents/Resources/payload.bundle/Contents/MacOS/payload"
 
+SOCKET="/tmp/dinky-sa_$USER.socket"
 echo "installing to $INSTALLED and injecting Dock (needs root)..."
 sudo rm -rf "$INSTALLED"
 sudo cp -R "$OSAX" "$INSTALLED"
+# A payload Dock has loaded stays loaded whatever is installed, until Dock restarts: restart it, so the new one loads.
+if [ -S "$SOCKET" ]; then
+    echo "restarting Dock to replace the payload it has loaded..."
+    rm -f "$SOCKET"
+    killall Dock
+    sleep 1
+    until pgrep -xq Dock; do sleep 0.2; done
+    sleep 1
+fi
 sudo "$INSTALLED/Contents/MacOS/loader"
 
 sleep 1
-if [ -S "/tmp/dinky-sa_$USER.socket" ]; then
-    echo "OK: scripting addition loaded (/tmp/dinky-sa_$USER.socket)"
+if [ -S "$SOCKET" ]; then
+    echo "OK: scripting addition loaded ($SOCKET)"
 else
     echo "socket missing — injection may have failed; check Console for [dinky-sa]" >&2
     exit 1

@@ -70,12 +70,15 @@ extension Workspace {
         for id in root.children[index].windows { columnWidths[id] = share }
     }
 
-    /// Where the columns go: inside the outer gaps, and with more than one column also clear of the parked
-    /// windows' gutter on each side without a wall, by half an inner gap, which with a column's own half makes
-    /// a whole one. Column widths are shares of its width.
+    /// Where the columns go: inside the outer gaps, and when some have to park, also clear of the parked windows'
+    /// gutter on each side without a wall, by half an inner gap, which with a column's own half makes a whole one.
+    /// Columns that all fit inside the outer gaps at their shares of it park nowhere, so they keep no gutters; nor
+    /// does a lone column. A fullscreen column pushing the others off parks them, so it keeps them. Column widths
+    /// are shares of its width.
     var stripArea: CGRect {
         let area = gaps.inset(bounds)
         guard root.children.count > 1 else { return area }
+        if pushedColumns.isEmpty, let end = columnSpans(in: area).last, end.start + end.width <= area.width { return area }
         let clear = Self.peek + gaps.horizontal / 2
         let left = walls.contains(.left) ? 0 : max(clear - gaps.left, 0)
         let right = walls.contains(.right) ? 0 : max(clear - gaps.right, 0)
@@ -112,13 +115,26 @@ extension Workspace {
     /// reaches into the gutter there, which nothing is parked in, out to the outer gap. A strip that fits
     /// between the outer gaps is centred. The focused column always shows whole, scrolled to as little as
     /// that takes, even when what scrolled it away left focus alone: a column closing or growing to its
-    /// windows' minimum width left of it, or the display or gaps changing.
-    func offset(for spans: [(start: CGFloat, width: CGFloat)], in area: CGRect) -> CGFloat {
+    /// windows' minimum width left of it, or the display or gaps changing; not `showingFocus`, nor while a click
+    /// holds the strip still (`holdsScroll`), the offset is only kept within the ends. With `columnCentring` `always`
+    /// or `onOverflow`, the ends are as far as centres the column there, the screen bare beyond it; `alwaysFill`
+    /// keeps them, so the column there goes to the screen's edge and the columns beside it fill the rest.
+    func offset(for spans: [(start: CGFloat, width: CGFloat)], in area: CGRect, showingFocus: Bool = true) -> CGFloat {
         let total = spans.last.map { $0.start + $0.width } ?? 0, inset = gaps.inset(bounds)
         let first = area.minX - inset.minX, last = total - area.width - (inset.maxX - area.maxX)
+        let wanted = showingFocus && !holdsScroll
+            ? focused.flatMap { root.path(of: $0)?.first }.map { showing(spans[$0], from: scrollOffset, in: area) } : nil
+        if keepsScroll { return wanted ?? scrollOffset }
         guard first < last else { return (first + (total - inset.width) / 2).rounded() }
-        let wanted = focused.flatMap { root.path(of: $0)?.first }.map { showing(spans[$0], from: scrollOffset, in: area) }
-        return min(max(wanted ?? scrollOffset, first), last)
+        guard columnCentring.centresEnds, let start = spans.first, let end = spans.last else {
+            return min(max(wanted ?? scrollOffset, first), last)
+        }
+        return min(max(wanted ?? scrollOffset, min(first, centred(start, in: area))), max(last, centred(end, in: area)))
+    }
+
+    /// The offset that puts `column` in the middle of the area.
+    func centred(_ column: (start: CGFloat, width: CGFloat), in area: CGRect) -> CGFloat {
+        (column.start - (area.width - column.width) / 2).rounded()
     }
 
     /// The offset nearest `offset` that shows `column` whole, as Hyprland's `fit` does. A column wider than the
@@ -129,11 +145,43 @@ extension Workspace {
             : min(max(offset, column.start + column.width - area.width), column.start)
     }
 
-    /// Scroll as little as shows the window's column whole.
+    /// Scroll to the window's column as `columnCentring` says: as little as shows it whole, to the middle of the
+    /// screen, to the middle as near as the strip's ends allow, or to the middle only when it did not all show.
+    /// Columns that all fit stay centred as a whole. A strip a click held still (`holdsScroll`) is held no more.
     mutating func reveal(_ id: WindowID) {
+        holdsScroll = false
         guard isScrolling, let index = root.path(of: id)?.first else { return }
-        let area = stripArea, spans = columnSpans(in: area)
-        scrollOffset = showing(spans[index], from: offset(for: spans, in: area), in: area)
+        let area = stripArea, spans = columnSpans(in: area), column = spans[index]
+        let shown = showing(column, from: offset(for: spans, in: area), in: area)
+        switch columnCentring {
+        case .never: scrollOffset = shown
+        case .always, .alwaysFill: scrollOffset = centred(column, in: area)
+        case .onOverflow:
+            let before = offset(for: spans, in: area, showingFocus: false)
+            scrollOffset = showing(column, from: before, in: area) == before ? shown : centred(column, in: area)
+        }
+    }
+
+    /// Scrolls to the focused column as focusing it would have, now that the click that focused it with
+    /// `holdingScroll` is done. Nothing while the strip holds no scroll: the focused column has been scrolled to.
+    public mutating func revealFocus() {
+        guard holdsScroll else { return }
+        holdsScroll = false
+        if let focused { reveal(focused) }
+    }
+
+    /// Whether focusing with `holdingScroll` holds the strip still: only where focusing can scroll a column to the
+    /// middle, which takes the window from under the pointer that pressed it. Scrolling as little as shows the column
+    /// whole leaves the pointer over the window, the part of it that showed staying on screen, so that scrolls at once as
+    /// it always has. Not while a window is fullscreen: focusing ends fullscreen or hands it on, laying the strip out
+    /// afresh anyway.
+    var canHoldScroll: Bool { isScrolling && columnCentring != .never && fullscreenWindows.isEmpty }
+
+    /// The scroll offset the strip shows at: `scrollOffset` as the layout takes it, within the ends, the focused
+    /// column whole.
+    var shownOffset: CGFloat {
+        let area = stripArea
+        return offset(for: columnSpans(in: area), in: area)
     }
 
     /// The strip laid out at the current scroll offset, windows anywhere along it, on screen or not. The focused

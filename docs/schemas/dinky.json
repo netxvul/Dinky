@@ -95,6 +95,12 @@
           "maximum": 1,
           "default": 0.49,
           "description": "A new column's width as a share of the display. A lone column fills the display."
+        },
+        "center-focused-column": {
+          "type": "string",
+          "enum": ["never", "always", "always-fill", "on-overflow"],
+          "default": "never",
+          "description": "Where focusing a column scrolls it, as niri's center-focused-column: never just far enough to show it whole, always to the middle of the display, end columns too, always-fill to the middle but never past the strip's ends, so end columns go only to the display's edge and it stays filled, on-overflow to the middle only when it did not all show. Columns that all fit stay centred as a whole."
         }
       }
     },

@@ -78,20 +78,20 @@ struct MenuBarBlocks: Equatable {
         (text as NSString).draw(in: line, withAttributes: attributes)
     }
 
-    /// └ at the top left and ┘ at the bottom right, for a full-screen Space.
+    /// ┌ at the top left and ┘ at the bottom right, for a full-screen Space, with rounded elbows.
     private static func drawCornerMarks(in rect: NSRect) {
-        let margin = 3.0, length = 4.0
+        let margin = 3.5, length = 6.0, bend = 3.0
         let path = NSBezierPath()
-        path.lineWidth = 1.2
+        path.lineWidth = 2
         path.lineCapStyle = .round
         path.lineJoinStyle = .round
         let top = rect.maxY - margin, left = rect.minX + margin
         path.move(to: NSPoint(x: left, y: top - length))
-        path.line(to: NSPoint(x: left, y: top))
+        path.appendArc(from: NSPoint(x: left, y: top), to: NSPoint(x: left + length, y: top), radius: bend)
         path.line(to: NSPoint(x: left + length, y: top))
         let bottom = rect.minY + margin, right = rect.maxX - margin
         path.move(to: NSPoint(x: right - length, y: bottom))
-        path.line(to: NSPoint(x: right, y: bottom))
+        path.appendArc(from: NSPoint(x: right, y: bottom), to: NSPoint(x: right, y: bottom + length), radius: bend)
         path.line(to: NSPoint(x: right, y: bottom + length))
         path.stroke()
     }

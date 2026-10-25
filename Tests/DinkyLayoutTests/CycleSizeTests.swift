@@ -89,8 +89,8 @@ struct CycleSizeTests {
         var ws = Workspace(bounds: rect(-Workspace.peek, 0, 1000 + 2 * Workspace.peek, 600), gaps: .zero, algorithm: .scrolling)
         for id in 1...2 { ws.insert(WindowID(id)) }
         #expect(ws.cycleWidth(through: sizes) == true)
-        #expect(ws.tiledLayout().frames[2]!.width == 300)
-        #expect(ws.tiledLayout().frames[1]!.width == 500)
+        #expect(ws.tiledLayout().frames[2]!.width == 315, "with the other, it fits the screen, so no gutters")
+        #expect(ws.tiledLayout().frames[1]!.width == 525)
         #expect(ws.cycleWidth(through: sizes) == true)
         #expect(ws.tiledLayout().frames[2]!.width == 600)
     }

@@ -8,12 +8,14 @@
 
 #define DINKY_SA_SOCKET_PATH_FMT "/tmp/dinky-sa_%s.socket"
 #define DINKY_SA_SOCKET_BUFF_LEN 0x4000
-#define DINKY_SA_VERSION "0.1.0"
+#define DINKY_SA_VERSION "0.3.0"
 
-// Capabilities the payload reports in its handshake, so the client can fall back when one is missing.
-#define DINKY_SA_ATTRIB_MOVE      0x01
-#define DINKY_SA_ATTRIB_TRANSFORM 0x02
-#define DINKY_SA_ATTRIB_ALL       (DINKY_SA_ATTRIB_MOVE | DINKY_SA_ATTRIB_TRANSFORM)
+// Capabilities the payload reports in its handshake, so the client can fall back when one is missing. Attribute 0x04
+// and opcode 0x07 went to a move-and-transform message in payloads before 0.3.0, and are left unused.
+#define DINKY_SA_ATTRIB_MOVE       0x01
+#define DINKY_SA_ATTRIB_TRANSFORM  0x02
+#define DINKY_SA_ATTRIB_MOVE_BATCH 0x08
+#define DINKY_SA_ATTRIB_ALL        (DINKY_SA_ATTRIB_MOVE | DINKY_SA_ATTRIB_TRANSFORM | DINKY_SA_ATTRIB_MOVE_BATCH)
 
 enum dinky_sa_opcode {
     DINKY_SA_OP_HANDSHAKE        = 0x01,
@@ -27,6 +29,8 @@ enum dinky_sa_opcode {
     DINKY_SA_OP_TRANSFORM_RESET  = 0x05,
     // Clear many windows' transforms at once: (int32 count) then count * (uint32 wid).
     DINKY_SA_OP_RESET_BATCH      = 0x06,
+    // Move many windows' real positions at once: (int32 count) then count * (uint32 wid, float x, float y).
+    DINKY_SA_OP_MOVE_BATCH       = 0x08,
 };
 
 #endif

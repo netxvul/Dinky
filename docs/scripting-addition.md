@@ -70,6 +70,8 @@ OK: scripting addition loaded (/tmp/dinky-sa_<你的用户名>.socket)
 
 就表示注入成功、载荷已在 Dock 里监听。
 
+更新载荷（例如升级 dinky 后）也是重跑这一步：已经载入 Dock 的旧载荷在 Dock 重启前不会被换掉，所以脚本发现旧载荷在运行时会先重启一次 Dock，再注入新的。
+
 ---
 
 ## 五、开机 / Dock 重启后自动重注入（推荐）
@@ -129,7 +131,7 @@ scripting-addition = true
 
 ## 九、工作原理（简述）
 
-dinky 自己的 WindowServer 连接无权移动别的 App 的窗口；Dock 的连接有。所以把一段载荷（`Sources/DinkyPrivate/osax/payload.m`）注入 Dock，dinky 通过 unix socket 指挥它逐帧移动/变换窗口。注入器 `loader.m` 派生自 yabai 的 `src/osax/loader.m`（MIT）。
+dinky 自己的 WindowServer 连接无权移动别的 App 的窗口；Dock 的连接有。所以把一段载荷（`Sources/DinkyPrivate/osax/payload.m`）注入 Dock，dinky 通过 unix socket 指挥它逐帧移动/变换窗口。滚动时载荷每帧通过 Dock 的连接直接移动真实窗口，不经过 app，所以不会有哪个 app 慢了落在后面，窗口也能滑出 Accessibility 会限制的屏幕边缘；滚动结束后才通过 Accessibility 写入窗口位置，app 发现窗口已经在那里，不会再移动它。旧版载荷不能批量移动窗口，仍用变换显示滑动。注入器 `loader.m` 派生自 yabai 的 `src/osax/loader.m`（MIT）。
 
 ---
 

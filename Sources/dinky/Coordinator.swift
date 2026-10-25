@@ -59,16 +59,14 @@ final class Coordinator {
     /// New windows on their way to the focused display, kept out of the trees until they arrive.
     var adopting: Set<WindowID> = []
     /// The tiled window being dragged with the mouse, until the button is released. See Drag.swift.
-    var dragging: WindowID?
-    /// Whether that drag shows where it will drop and drops there on release: any drag, unless `[drag]
-    /// mouse-modifier` is set, and then only one with it held. Any other drag puts the window back.
-    var dragDrops = false
-    /// Where a window grabbed with `[drag] mouse-modifier` was last sent, and the pointer that sent it there; nil
-    /// while the system drags one. The pointer is the drag's own: the session never sees the swallowed drag, so asking
-    /// it for the pointer can answer with where the button went down.
-    var held: (frame: CGRect, pointer: CGPoint)?
-    /// What the drag's feedback last showed, for the log.
-    var shownDrop: String?
+    var drag: DragSession?
+    var dragging: WindowID? { drag?.id }
+    /// The tiled window the mouse button is down on, from the first frame change the press brings till the window has
+    /// gone from where it was pressed, which makes the press a drag, or the button comes up. See Drag.swift.
+    var windowPress: WindowPress?
+    /// Windows a drop took to another Space's tree, by that Space, until they are on it: macOS can report one on the
+    /// Space it left for a moment, which must not take it out of its new tree.
+    var arriving: [WindowID: UInt64] = [:]
     lazy var placeholders = DragPlaceholders()
     /// Grabs windows pressed anywhere with `[drag] mouse-modifier` held.
     private lazy var modifierDrag = ModifierDrag(coordinator: self)
@@ -154,6 +152,14 @@ final class Coordinator {
                 flush()
             }
         }
+        // Focus read on a window while it was being raised into order was passed over (see `syncFocus`): once the raise
+        // has settled, read it again, in case the user did bring that window forward meanwhile.
+        applier.onRaised = { [weak self] in
+            DispatchQueue.main.async { [weak self] in
+                self?.syncFocus()
+                self?.flush()
+            }
+        }
         animator.onArrive = { [weak self] ids in self?.borders?.arrived(ids) }
         var known = Set(displays.displays.map(\.uuid))
         var arrangement = Self.arrangement(of: displays)
@@ -216,8 +222,13 @@ final class Coordinator {
         }
         borders?.handle(event)
         if let window = event.window {
+            // A drag first, then the Space: macOS moves a window dragged over another display to its Space, often in
+            // the first move dinky hears of, and the drag keeps it in its tree (Drag.swift) only once it is one.
+            let moved = event.change != .removed && [.windowMove, .windowResize].contains(event.kind)
+            if moved { noteFrameChange(of: window.id, from: event.frameBefore) }
             event.change == .removed ? forget(window.id) : track(window)
-            if [.windowMove, .windowResize].contains(event.kind) { noteFrameChange(of: window.id) }
+            if moved, dragging != window.id { noteFrameChange(of: window.id, from: event.frameBefore) }
+            if moved { noteSize(of: window.id) }
         }
         if [.frontApp, .windowReorder, .windowCreate].contains(event.kind) { syncFocus() }
         if [.frontApp, .windowReorder].contains(event.kind) {
@@ -327,6 +338,7 @@ final class Coordinator {
             workspaces[key]!.accordionPadding = CGFloat(config.accordion.padding)
             workspaces[key]!.autoOrientAccordions = config.accordion.orientation == .auto
             workspaces[key]!.columnWidth = config.scrolling.columnWidth
+            workspaces[key]!.columnCentring = columnCentring
             workspaces[key]!.fullscreenFocus = fullscreenFocus
             workspaces[key]!.fullscreenFollowsLater = config.fullscreen.followDelayMs > 0
             workspaces[key]!.fullscreenPushesStrip = config.fullscreen.scrolling == .push
@@ -371,6 +383,10 @@ final class Coordinator {
             placements[window.id] = Placement(floating: classification.floating, space: nil)
             if !classification.runsRules, adopt(window) { return }
         }
+        // A dragged window keeps its tree till the drop, which decides where it goes (Drag.swift): macOS moves one
+        // dragged over another display to its Space on the way, which can be a free workspace's. One the drop took to
+        // another Space's tree keeps that tree till it is on its Space.
+        guard window.id != dragging, arriving[window.id] == nil else { return }
         // Off a user Space (an inactive tab, a hidden app's window, a native full-screen Space) a window keeps what it
         // has: that is no workspace whose layout it could take.
         let shown = !window.isMinimized && window.isOrderedIn
@@ -392,6 +408,13 @@ final class Coordinator {
         }
         let new = window.isMinimized ? nil : key(of: window)
         guard old != new, heldTabs[window.id] == nil else { return }
+        // Taken to a tiled Space on another display with the mouse button down, as macOS takes a window dragged over
+        // one: a drag, from the tree it is in, which the drop takes it out of, if no frame change started it yet. Taken
+        // to another Space on the same display, as switching Spaces holding it does, it goes along.
+        if let old, let new, displays.display(containingSpace: old)?.id != displays.display(containingSpace: new)?.id {
+            noteDisplayChange(of: window.id, to: new)
+            if window.id == dragging { return }
+        }
         if let old {
             let why = window.isMinimized ? "minimized, or its app hidden" : !window.isOrderedIn ? "ordered out"
                 : new.map { "moved to Space \($0)" } ?? "on Space \(window.spaceID), which dinky does not tile"
@@ -484,7 +507,9 @@ final class Coordinator {
     /// main thread, and a command run right after the focus acts on the window it chose.
     var focusedWindow: WindowID {
         if let focusing, Date() < focusing.until { return focusing.id }
-        return dinky_border_focused_window()
+        let id = dinky_border_focused_window()
+        // One only in front while it is raised into order behind another is not focused, as `syncFocus` has it.
+        return applier.echoesRaise(id) ? lastFocused : id
     }
 
     /// Focuses a window, raising it and activating its app. For a moment after, focus events that still
@@ -511,6 +536,14 @@ final class Coordinator {
     /// Follows focus into the trees, so new windows land beside the focused one and accordions show it.
     private func syncFocus() {
         let id = dinky_border_focused_window()
+        // A window being raised into its place in the stacking comes in front of its app's other windows on the way,
+        // which reads as focus moving to it. That is dinky's doing, not the user's, so nothing follows it: not the tree,
+        // whose strip would scroll to it and call for more raises, nor the switchers' recency, the hooks or the click
+        // hold. Focus is read again once the raise has settled (`FrameApplier.onRaised`).
+        if applier.echoesRaise(id) {
+            if let key = placements[id]?.space, let workspace = workspaces[key] { telemetry.passedOver(key, workspace, id) }
+            return
+        }
         if id != lastFocused {
             // Before the override goes: a new window can take focus before it shows. See Adoption.swift.
             displayBeforeFocus = displays.focusedDisplay(window: lastFocused)?.uuid
@@ -528,7 +561,10 @@ final class Coordinator {
         focusing = nil
         guard let key = placements[id]?.space, let workspace = workspaces[key], workspace.focused != id else { return }
         telemetry.focus(key, workspace, to: id, from: workspace.focused, click: clickUnderWay(within: 0.3))
-        edit(key) { $0.focus(id) }
+        // While a click holds the pass, a strip that would scroll the window to the middle stays where it shows till
+        // the hold lets go (`revealClickedFocus`), so a drag the press starts is measured against the windows where
+        // they are.
+        edit(key) { $0.focus(id, holdingScroll: clickHold) }
     }
 
     /// The tree of a user Space, numbered workspace or not, created on first use. Nil for full-screen Spaces.
@@ -538,18 +574,38 @@ final class Coordinator {
         let settings = settings(for: window.spaceID)
         guard settings.tiling, !settings.isFree else { return nil }
         let key = window.spaceID
-        if workspaces[key] == nil {
-            workspaces[key] = Workspace(bounds: display.visibleArea, gaps: gaps(on: display),
-                                        accordionPadding: CGFloat(config.accordion.padding),
-                                        autoOrientAccordions: config.accordion.orientation == .auto,
-                                        algorithm: algorithm(settings))
-            workspaces[key]!.columnWidth = config.scrolling.columnWidth
-            workspaces[key]!.fullscreenFocus = fullscreenFocus
-            workspaces[key]!.fullscreenFollowsLater = config.fullscreen.followDelayMs > 0
-            workspaces[key]!.fullscreenPushesStrip = config.fullscreen.scrolling == .push
-            workspaces[key]!.walls = walls(of: display)
-        }
+        makeWorkspace(key, on: display)
         return key
+    }
+
+    /// Has the next pass on the Space place its windows without gliding.
+    func placeAtOnce(_ key: UInt64) {
+        snap.insert(key)
+    }
+
+    /// Makes the empty tree of a Space of `display` if it has none yet, as on first use.
+    func makeWorkspace(_ space: UInt64, on display: Display) {
+        if workspaces[space] == nil { workspaces[space] = newWorkspace(on: display, settings(for: space)) }
+    }
+
+    /// An empty tree for a Space of `display` with `settings`, as one is made on first use.
+    func newWorkspace(on display: Display, _ settings: WorkspaceSettings) -> Workspace {
+        var workspace = Workspace(bounds: display.visibleArea, gaps: gaps(on: display),
+                                  accordionPadding: CGFloat(config.accordion.padding),
+                                  autoOrientAccordions: config.accordion.orientation == .auto,
+                                  algorithm: algorithm(settings))
+        workspace.columnWidth = config.scrolling.columnWidth
+        workspace.columnCentring = columnCentring
+        workspace.fullscreenFocus = fullscreenFocus
+        workspace.fullscreenFollowsLater = config.fullscreen.followDelayMs > 0
+        workspace.fullscreenPushesStrip = config.fullscreen.scrolling == .push
+        workspace.walls = walls(of: display)
+        return workspace
+    }
+
+    /// Where focusing a scrolling column scrolls it, from `[scrolling] center-focused-column`.
+    private var columnCentring: ColumnCentring {
+        ColumnCentring(rawValue: config.scrolling.centerFocusedColumn.rawValue) ?? .never
     }
 
     /// What focusing another window does to fullscreen, from `[fullscreen] focus-change`.
@@ -581,9 +637,14 @@ final class Coordinator {
 
     /// A click that moves focus is left to land where it was pressed: after a focus change a click made, the trees
     /// follow focus at once, but nothing is laid out while the button is down and for `clickQuiet` after it comes
-    /// up; then the held pass runs. A strip scrolled under the pressed button would turn the click into a drag in
-    /// the app, and dinky's writes, raises and captures would reach the app while it is still taking the click. A drag, which drops on its own when the button comes up, lets it
-    /// run as soon as the button is up, and a button held past ten seconds stops holding.
+    /// up; then the held pass runs. A strip that would scroll the clicked column to the middle holds its scroll till
+    /// then as well (`Workspace.holdsScroll`): a drag the press starts is measured against the tree, and one scrolled
+    /// ahead of the screen would have the window far off its tile and the pointer over the next column, and drop it
+    /// there. A strip scrolled under the pressed button would turn the click into a drag in the app, and dinky's
+    /// writes, raises and captures would reach the app while it is still taking the click. A drag, which drops on its
+    /// own when the button comes up, lets the pass run as soon as it has ended, or once it shows a drop: a pass while it
+    /// is still open would leave out the window it has, the focused one, and raise others of its app over it. A button
+    /// held past ten seconds stops holding.
     private func holdForClick() {
         guard !clickHold else { return }
         clickHold = true
@@ -598,15 +659,30 @@ final class Coordinator {
             } else if up == nil {
                 up = now
             }
-            let quiet = up.map { now - $0 >= (dragged ? 0 : Self.clickQuiet) } ?? false
+            // A drop shown lets the pass run at once, the button still down: the windows make room for it (Drag.swift).
+            // A drag that shows nothing holds it till it has ended, as it does within 50 ms of the button coming up: a
+            // pass meanwhile could neither write nor raise the window it has (`dragFrozen`), the one the click focused.
+            let quiet = drag?.shown != nil
+                || (dragging == nil && (up.map { now - $0 >= (dragged ? 0 : Self.clickQuiet) } ?? false))
             guard quiet || now - began > 10 else {
                 DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { check() }
                 return
             }
             clickHold = false
+            // A drag still under way, as one showing a drop with the button down, keeps the strip still till it ends
+            // (Drag.swift): it is measured against the windows where they are.
+            if dragging == nil { revealClickedFocus() }
             flush()
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { check() }
+    }
+
+    /// Scrolls each strip a click held still to the window the click focused, now that nothing is under the button.
+    /// Nothing while a click still holds the passes: its release does it then. See `holdForClick()` and
+    /// `Workspace.holdsScroll`.
+    func revealClickedFocus() {
+        guard !clickHold else { return }
+        for (key, tree) in workspaces where tree.holdsScroll { edit(key) { $0.revealFocus() } }
     }
 
     // MARK: Applying
@@ -685,9 +761,13 @@ final class Coordinator {
     /// overlapping windows (accordion, fullscreen) into the tree's stacking, with its focused window on top.
     /// Nothing is activated: the tree follows macOS's focus (`syncFocus`) and commands that choose a window
     /// focus it themselves, so a pass, which may have started before the latest focus change, must not.
-    /// Minimum sizes found in a pass are laid out around all at once, when that moves anything.
+    /// Minimum sizes found in a pass are laid out around all at once, when that moves anything. While a drag makes
+    /// room on the Space, its tree is laid out as the drop shown leaves it, and the windows the drag has are not
+    /// written, but for one it takes from here to another display, which waits in its tile here (Drag.swift).
     private func apply(_ key: UInt64) {
-        guard var workspace = workspaces[key] else { return }
+        let shownByDrag = dragShows(key), frozen = dragFrozen
+        let waiting = shownByDrag == nil ? [:] : dragWaiting(on: key)
+        guard var workspace = shownByDrag ?? workspaces[key] else { return }
         workspace.minimumSizes = minimumSizes(in: workspace)
         workspace.observedWidths = observedWidths(in: workspace)
         // Pushing, a fullscreen window fills where macOS's own Fill puts it, over its neighbours' peeks, when that is
@@ -696,15 +776,19 @@ final class Coordinator {
             workspace.pushedFullscreenFills = animates
                 && SystemTiling.fillFrame(on: display).isClose(to: workspace.gaps.inset(workspace.bounds), within: 1)
         }
-        workspaces[key] = workspace
+        if shownByDrag == nil { workspaces[key] = workspace }
         // A window the system is still filling or putting back shows as where it is going, whatever the tree says by
         // now: the others are laid out around that, so none runs off the other way, and the pass after it lands takes
         // it on to what the tree says (see SystemTiling).
         for (id, tiling) in systemTiling where workspace.contains(id) {
             workspace = workspace.showing(id, fullscreen: tiling.filling)
         }
-        let layout = workspace.layout()
-        if workspace.isScrolling {
+        var layout = workspace.layout()
+        for (id, frame) in waiting {
+            layout.frames[id] = frame
+            layout.order.append(id)
+        }
+        if workspace.isScrolling, shownByDrag == nil {
             telemetry.pass(key, workspace, layout)
             checkStrip(key)
         }
@@ -730,7 +814,10 @@ final class Coordinator {
             if push.layout == layout { return settleGlide() }
             pushes[key] = nil
         }
-        let pids = Dictionary(uniqueKeysWithValues: layout.order.compactMap { id in model.windows[id].map { (id, $0.pid) } })
+        // Not the windows a drag has: written, they would be taken from the user, or from the display they wait on.
+        let pids = Dictionary(uniqueKeysWithValues: layout.order.compactMap { id in
+            frozen.contains(id) && waiting[id] == nil ? nil : model.windows[id].map { (id, $0.pid) }
+        })
         // Windows shown fullscreen over the strip. A strip that pushes has none: its fullscreen windows are part of it.
         let fullscreen = workspace.pushesFullscreen ? [] : Set(workspace.fullscreenWindows)
         // Windows filling their widened columns, pushing their neighbours off.
@@ -782,7 +869,7 @@ final class Coordinator {
         let leftAlone = Set(systemTiling.keys).intersection(layout.order).union(systemTiles.keys)
         enum Change { case once, whole, none }
         let change = { [self] (id: WindowID, pushing: Bool) -> Change in
-            guard id != dragging, !leftAlone.contains(id), display != nil, let target = layout.frames[id],
+            guard !frozen.contains(id), !leftAlone.contains(id), display != nil, let target = layout.frames[id],
                   let window = model.windows[id],
                   let frame = frameOf(id), !applier.isBusy(window.pid), !animator.rests(id, at: frame, askedFor: target),
                   ResizeOnce.resizes(frame, target) else { return .none }
@@ -922,7 +1009,7 @@ final class Coordinator {
         func glideTree() {
             settleGlide()
             let starts = Dictionary(uniqueKeysWithValues: layout.order.compactMap { id in
-                id == dragging || leftAlone.contains(id) ? nil : frameNow(id).map { (id, $0) }
+                frozen.contains(id) || leftAlone.contains(id) ? nil : frameNow(id).map { (id, $0) }
             })
             var targets = layout.frames.filter { !leftAlone.contains($0.key) }
             hold(&targets, from: starts)
@@ -934,7 +1021,7 @@ final class Coordinator {
         /// Glides the strip to `layout`.
         func glideStrip() {
             var starts = Dictionary(uniqueKeysWithValues: layout.order.compactMap { id in
-                id == dragging || leftAlone.contains(id) ? nil : frameNow(id).map { (id, $0) }
+                frozen.contains(id) || leftAlone.contains(id) ? nil : frameNow(id).map { (id, $0) }
             })
             // A strip glides as a whole, in strip coordinates, parked on every frame. A window resting where the last pass
             // put it starts where the strip had it then, even an app's that snapped to a grid or kept a minimum size a few
@@ -963,7 +1050,7 @@ final class Coordinator {
             var restart: Set<WindowID> = []
             // A long scroll glides about a screen's width, past none of the columns between (see ScrollShortcut.swift);
             // not with a window changing size, dragged, shown over the strip or left to the system.
-            if special.isEmpty, fullscreen.isEmpty, dragging.map({ strip[$0] == nil }) ?? true,
+            if special.isEmpty, fullscreen.isEmpty, frozen.allSatisfy({ strip[$0] == nil }),
                !leftAlone.contains(where: { strip[$0] != nil }),
                let shortcut = workspace.scrollShortcut(from: starts, to: targets) {
                 restart = Set(shortcut.starts.filter { starts[$0.key] != $0.value }.keys)
@@ -992,12 +1079,12 @@ final class Coordinator {
             let stretch = AnimationCurve.stripStretch(base: Double(config.animations.durationMs) / 1000,
                                                       columns: Double(moved / column))
             applier.assume(Dictionary(uniqueKeysWithValues: strip.keys.compactMap { id in
-                id == dragging ? nil : frameNow(id).map { (id, $0.size) }
+                frozen.contains(id) ? nil : frameNow(id).map { (id, $0.size) }
             }), pids: pids)
             // Where the strip's windows that are not gliding are now: where the last pass put them. Parking follows the
             // columns in front, so one of them can still have to move while the others glide.
             let resting = (previous?.placed ?? [:]).filter { id, _ in
-                strip[id] != nil && id != dragging && !fullscreen.contains(id) && !leftAlone.contains(id)
+                strip[id] != nil && !frozen.contains(id) && !fullscreen.contains(id) && !leftAlone.contains(id)
             }
             // A window not resizing as it glides and the columns beside it move together, and each move of theirs is a
             // move only, which apps keep up with; but one can take a frame or two longer over a move now and then, just
@@ -1040,14 +1127,18 @@ final class Coordinator {
                 return placed
             }
             // With the scripting addition, the strip glides by moving the real windows through Dock's connection each
-            // frame: no snapshots, no Screen Recording, and windows slide past the screen edges that Accessibility clamps.
-            // The real frames go to their places underneath at once; the transforms clear once the glide ends and those
-            // frames have landed. Every strip window is placed every frame, the moving ones over the resting ones.
-            // The transforms only translate, so a window whose size also changes this pass (restoring from a filled or
-            // enlarged state, a column width change) must resize through Accessibility, where its app re-renders, rather
-            // than be stretched by a transform; such a pass is left to the window glide below. So is one with a window
-            // staged at its size just now, or held. Its size here is the one the pass gives it, not the strip's: a window
-            // hiding behind a column at a wall is smaller than its tile, and stays so while it hides.
+            // frame: no snapshots, no Screen Recording, no app falling behind the others, and windows slide past the
+            // screen edges that Accessibility clamps. Their apps are not told, so the frames go through Accessibility
+            // once the glide ends, and find the windows where they put them. Every strip window is placed every frame,
+            // the moving ones over the resting ones. With a payload from before Dock could move them, they are shown
+            // through Dock transforms instead, the real frames going to their places underneath at once and the
+            // transforms clearing once the glide ends and those frames have landed.
+            // Dock only moves windows, and its transforms only translate, so a window whose size also changes this pass
+            // (restoring from a filled or enlarged state, a column width change) must resize through Accessibility,
+            // where its app re-renders, rather than be stretched by a transform; such a pass is left to the window
+            // glide below. So is one with a window staged at its size just now, or held. Its size here is the one the
+            // pass gives it, not the strip's: a window hiding behind a column at a wall is smaller than its tile, and
+            // stays so while it hides.
             let saResizing = !special.isEmpty || leftAlone.contains(where: { strip[$0] != nil }) || strip.contains { id, frame in
                 guard let size = frameNow(id)?.size else { return false }
                 let target = layout.frames[id] ?? frame
@@ -1055,8 +1146,9 @@ final class Coordinator {
             }
             if fullscreen.isEmpty, !saResizing, ScriptingAddition.available {
                 let stripIDs = Array(strip.keys)
-                // The glide this pass takes over carries on into it: its windows keep their transforms and steps and head
-                // for the new targets from there. One it moved that is no longer in the strip goes back to its real frame.
+                // The glide this pass takes over carries on into it: its windows keep their steps, and their transforms if
+                // they have them, and head for the new targets from there. One it moved that is no longer in the strip
+                // goes back to its real frame.
                 if let ids = supersededGlide {
                     supersededGlide = nil
                     ScriptingAddition.reset(ids.filter { strip[$0] == nil })
@@ -1067,13 +1159,27 @@ final class Coordinator {
                 let saGlide = SAGlide { [weak self] in self?.endSAGlide(key, token) }
                 // Parked on every frame, as the window glide below is: a column scrolled out stays at the edge with its
                 // sliver showing rather than leaving the screen, and one coming in slides out from there, in view all the
-                // way. The last frame is where the real frames are written, so clearing the transforms moves nothing.
+                // way. The last frame is where the real frames are written, so writing them, or clearing the transforms,
+                // moves nothing.
                 var initial: [WindowID: CGRect] = [:]
                 for id in stripIDs { initial[id] = starts[id] ?? strip[id] }
-                ScriptingAddition.transform(place(initial))
-                writeThen { saGlide.framesLanded() }
+                // Not the windows a drag has, which are the user's to move, or wait on another display.
+                let unfrozen = { (frames: [WindowID: CGRect]) in frames.filter { !frozen.contains($0.key) } }
+                guard ScriptingAddition.moves else {
+                    ScriptingAddition.transform(unfrozen(place(initial)))
+                    writeThen { saGlide.framesLanded() }
+                    return animator.animate(key, from: starts, to: targets, pids: pids, stretch: stretch, restart: restart,
+                                            sink: { ScriptingAddition.transform(unfrozen(place($0))) }) { saGlide.glideEnded() }
+                }
+                let slide = { (frames: [WindowID: CGRect]) in ScriptingAddition.move(unfrozen(place(frames))) }
+                slide(initial)
                 return animator.animate(key, from: starts, to: targets, pids: pids, stretch: stretch, restart: restart,
-                                        sink: { ScriptingAddition.transform(place($0)) }) { saGlide.glideEnded() }
+                                        sink: slide) { [weak self] in
+                    // Taken over by a newer pass, which writes its own frames.
+                    guard self?.saGlides[key]?.token == token else { return }
+                    writeThen { saGlide.framesLanded() }
+                    saGlide.glideEnded()
+                }
             }
             settleGlide()
             // A window moving away from the columns beside it, as one coming back from fullscreen does, takes a little
@@ -1182,7 +1288,7 @@ final class Coordinator {
 
     /// Each window's width as it came out the last time it was written at the width its tile has now, for the windows
     /// of a strip. A width seen at another tile width says nothing about this one.
-    private func observedWidths(in workspace: Workspace) -> [WindowID: CGFloat] {
+    func observedWidths(in workspace: Workspace) -> [WindowID: CGFloat] {
         guard workspace.isScrolling else { return [:] }
         let strip = workspace.stripFrames
         return Dictionary(uniqueKeysWithValues: strip.compactMap { id, frame in
@@ -1362,9 +1468,22 @@ final class Coordinator {
     /// The windows dinky is gliding to their tiles right now.
     var animatingWindows: [WindowID] { animator.animating }
 
-    private func minimumSizes(in workspace: Workspace) -> [WindowID: CGSize] {
+    func minimumSizes(in workspace: Workspace) -> [WindowID: CGSize] {
         var sizes: [WindowID: CGSize] = [:]
         for id in workspace.windows { sizes[id] = applier.minimumSize(of: id, app: model.windows[id]?.bundleID) }
         return sizes
+    }
+
+    /// A tiled window seen smaller than the minimum it is laid out around, wholly on one display, shows that minimum
+    /// was wrong: it is lowered to what the window went to. Laid out around it, the window is never asked for less, so
+    /// only a size it went to some other way, as making room for a drag, shows it.
+    private func noteSize(of id: WindowID) {
+        guard placements[id]?.floating == false, let window = model.windows[id], !window.isMinimized,
+              FrameApplier.isOnScreen(window.frame),
+              let minimum = applier.minimumSize(of: id, app: window.bundleID),
+              window.frame.width < minimum.width - 2 || window.frame.height < minimum.height - 2,
+              applier.saw(window.frame.size, of: id, app: window.bundleID) else { return }
+        print("\(stamp()) \(id) \(window.appName ?? "?") at \(window.frame.size), under the minimum \(minimum) it was laid out around: lowered")
+        dirty.formUnion(placements[id]?.space.map { [$0] } ?? [])
     }
 }

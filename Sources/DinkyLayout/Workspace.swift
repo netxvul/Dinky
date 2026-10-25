@@ -18,6 +18,18 @@ public enum FullscreenFocus: String, Equatable, Sendable {
     case exit, follow, keep
 }
 
+/// Where focusing a scrolling column scrolls it: just far enough to show it whole, to the middle of the screen, to
+/// the middle but never past the strip's ends, or to the middle only when it was not all in view, as niri's
+/// `center-focused-column`.
+public enum ColumnCentring: String, Equatable, Sendable {
+    case never, always
+    case alwaysFill = "always-fill"
+    case onOverflow = "on-overflow"
+
+    /// Whether the strip scrolls past its ends to centre the first or last column, the screen bare beyond it.
+    var centresEnds: Bool { self == .always || self == .onOverflow }
+}
+
 /// One Space's tiling state: the tree, focus, fullscreen and the geometry settings used to lay it out.
 public struct Workspace: Equatable, Sendable {
     /// The Space's visible rect, top-left origin.
@@ -60,10 +72,18 @@ public struct Workspace: Equatable, Sendable {
     public var untuckable: Set<WindowID> = []
     /// Scrolling: the width of a new column, as a share of the width inside the outer gaps.
     public var columnWidth = 0.5
+    /// Scrolling: where focusing a column scrolls it. See `reveal(_:)`.
+    public var columnCentring = ColumnCentring.never
     /// Scrolling: each window's column width, as a share. Every window of a column has its column's width.
     var columnWidths: [WindowID: Double] = [:]
     /// Scrolling: how far the strip is scrolled, in points from its start. The layout clamps it.
     var scrollOffset: CGFloat = 0
+    /// Scrolling: the layout keeps `scrollOffset` past the strip's ends, as `scroll(columnOf:to:pastEnds:)` leaves it.
+    public var keepsScroll = false
+    /// Scrolling: the strip stays where it showed as focus moved, the focused column not scrolled to, till
+    /// `revealFocus()`: a click focused it, and a strip scrolled under the pressed button would take the window from
+    /// under the pointer. See `focus(_:holdingScroll:)`.
+    public internal(set) var holdsScroll = false
     /// Scrolling: the edges of `bounds` with another display beyond them, where a window cannot hang over.
     public var walls: Set<Direction> = []
     /// The algorithm a `layout` command switched to, kept over the config's. Nil follows the config.
@@ -298,8 +318,13 @@ public struct Workspace: Equatable, Sendable {
 
     /// Focus a window and mark it most recent along its path, so accordions show it on top. While a window is
     /// fullscreen, focusing another ends fullscreen, hands it over or adds the window, as `fullscreenFocus` says.
-    public mutating func focus(_ id: WindowID) {
+    /// With `holdingScroll`, as for a click whose button may still be down, a strip that would scroll the window's
+    /// column to the middle stays where it shows till `revealFocus()` (see `canHoldScroll`).
+    public mutating func focus(_ id: WindowID, holdingScroll: Bool = false) {
         guard let path = root.path(of: id) else { return }
+        // Pinned where the strip shows before focus moves, which can be past `scrollOffset`: the layout scrolls on from
+        // there to show the focused column whole.
+        let held: CGFloat? = holdingScroll && canHoldScroll ? shownOffset : nil
         if focused != id, !fullscreenWindows.isEmpty || pendingFullscreen != nil {
             pendingFullscreen = nil
             switch fullscreenFocus {
@@ -315,7 +340,12 @@ public struct Workspace: Equatable, Sendable {
         for depth in path.indices {
             root.modify(at: Array(path.prefix(depth))) { $0.active = path[depth] }
         }
-        reveal(id)
+        if let held {
+            scrollOffset = held
+            holdsScroll = true
+        } else {
+            reveal(id)
+        }
     }
 
     /// Focus the neighbour in `direction`. At the edge, `wrapping` focuses the window at the opposite edge

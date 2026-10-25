@@ -210,6 +210,22 @@ public final class FrameScheduler: @unchecked Sendable {
         }
     }
 
+    /// Lowers a window's minimum size to `size` in each dimension it is more than 2 pt bigger in: the window has been
+    /// seen at that size, which it would not go to were its minimum right. False when it has none bigger.
+    @discardableResult
+    public func lowerMinimum(of id: WindowID, to size: CGSize) -> Bool {
+        lock.withLock { lower(id, to: size) }
+    }
+
+    /// `lowerMinimum`, under the lock.
+    private func lower(_ id: WindowID, to size: CGSize) -> Bool {
+        guard let minimum = minimums[id] else { return false }
+        let lowered = minimum.lowered(to: size)
+        guard lowered != minimum else { return false }
+        minimums[id] = lowered == .zero ? nil : lowered
+        return true
+    }
+
     /// Forgets every minimum size and refusal, so windows are asked for their tiles again.
     public func forgetMinimums() {
         lock.withLock { minimums = [:]; candidates = [:] }
@@ -435,7 +451,9 @@ public final class FrameScheduler: @unchecked Sendable {
     /// counts once a later pass sees the same refusal: an app still resizing to an earlier size (Ghostty reflowing,
     /// an Electron app, or a size an animation step asked for) has caught up by then. A window somewhere else has
     /// left (native full screen, another Space) and says nothing about how small it can be; nor does one asked for a
-    /// frame partly off the screen, which AppKit sizes as it keeps a window on screen and clear of an edge.
+    /// frame partly off the screen, which AppKit sizes as it keeps a window on screen and clear of an edge. One that
+    /// came back smaller than its minimum, where it was put, shows the minimum was too big, as one learned from an app
+    /// that had not caught up after all: it is lowered to what the window came out at.
     private func recordMinimum(_ result: FrameResult, stepSizes: Set<CGSize>) {
         let id = result.job.id
         guard let got = result.got else { return }
@@ -445,6 +463,7 @@ public final class FrameScheduler: @unchecked Sendable {
         let refused = CGSize(width: got.width > wanted.width + 2 ? got.width : 0,
                              height: got.height > wanted.height + 2 ? got.height : 0)
         lock.withLock {
+            _ = lower(id, to: got.size)
             let seen = candidates[id]?.size ?? .zero
             candidates[id] = refused == .zero ? nil : (refused, result.job.pid)
             let confirmed = CGSize(width: refused.width > 0 && abs(refused.width - seen.width) <= 2 ? refused.width : 0,
@@ -518,6 +537,12 @@ extension CGSize {
     /// The larger of the two sizes in each dimension.
     public func grown(to other: CGSize) -> CGSize {
         CGSize(width: max(width, other.width), height: max(height, other.height))
+    }
+
+    /// A minimum size taken down to `other` in each dimension where that is more than 2 pt smaller: to a size a window
+    /// was seen at.
+    public func lowered(to other: CGSize) -> CGSize {
+        CGSize(width: other.width < width - 2 ? other.width : width, height: other.height < height - 2 ? other.height : height)
     }
 }
 

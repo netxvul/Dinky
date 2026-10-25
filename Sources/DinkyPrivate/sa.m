@@ -54,6 +54,35 @@ bool dinky_sa_available(void)
     return true;
 }
 
+bool dinky_sa_moves_windows(void)
+{
+    int fd = sa_connect();
+    if (fd < 0) return false;
+
+    char bytes[sizeof(int16_t) + 1];
+    int16_t body = 1;
+    memcpy(bytes, &body, sizeof(body));
+    bytes[sizeof(int16_t)] = DINKY_SA_OP_HANDSHAKE;
+    uint32_t attrib = 0;
+    if (send(fd, bytes, sizeof(bytes), 0) == (ssize_t) sizeof(bytes)) {
+        // The payload's version, a zero, its attributes and a newline, then the ack.
+        char reply[64];
+        int got = 0;
+        while (got < (int) sizeof(reply)) {
+            ssize_t n = recv(fd, reply + got, sizeof(reply) - got, 0);
+            if (n <= 0) break;
+            got += (int) n;
+            char *zero = memchr(reply, '\0', got);
+            if (zero && reply + got >= zero + 1 + sizeof(uint32_t)) {
+                memcpy(&attrib, zero + 1, sizeof(uint32_t));
+                break;
+            }
+        }
+    }
+    close(fd);
+    return (attrib & DINKY_SA_ATTRIB_MOVE_BATCH) != 0;
+}
+
 void dinky_sa_transform_batch(const uint32_t *wids, const CGPoint *points, int count)
 {
     if (count <= 0) return;
@@ -63,6 +92,30 @@ void dinky_sa_transform_batch(const uint32_t *wids, const CGPoint *points, int c
     char bytes[DINKY_SA_SOCKET_BUFF_LEN];
     int pos = sizeof(int16_t);
     bytes[pos++] = DINKY_SA_OP_TRANSFORM_BATCH;
+    int count_at = pos; pos += sizeof(int32_t);
+    int32_t n = 0;
+    for (int i = 0; i < count; ++i) {
+        if (pos + (int)(sizeof(uint32_t) + 2 * sizeof(float)) > DINKY_SA_SOCKET_BUFF_LEN) break;
+        uint32_t wid = wids[i];
+        float x = (float) points[i].x, y = (float) points[i].y;
+        memcpy(bytes + pos, &wid, sizeof(wid)); pos += sizeof(wid);
+        memcpy(bytes + pos, &x, sizeof(x)); pos += sizeof(x);
+        memcpy(bytes + pos, &y, sizeof(y)); pos += sizeof(y);
+        ++n;
+    }
+    memcpy(bytes + count_at, &n, sizeof(n));
+    sa_finish(fd, bytes, pos);
+}
+
+void dinky_sa_move_batch(const uint32_t *wids, const CGPoint *points, int count)
+{
+    if (count <= 0) return;
+    int fd = sa_connect();
+    if (fd < 0) return;
+
+    char bytes[DINKY_SA_SOCKET_BUFF_LEN];
+    int pos = sizeof(int16_t);
+    bytes[pos++] = DINKY_SA_OP_MOVE_BATCH;
     int count_at = pos; pos += sizeof(int32_t);
     int32_t n = 0;
     for (int i = 0; i < count; ++i) {

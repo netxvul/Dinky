@@ -36,6 +36,7 @@ extension Config {
 
     [scrolling]
     column-width = 0.49             # a new column's share of the display; a lone column fills it
+    center-focused-column = 'never' # focusing a column scrolls it: never (just into view) | always (to the middle) | always-fill | on-overflow
 
     [floating]
     move-step = 50                  # points `move` shifts a floating window by, unless the binding gives a number
@@ -78,11 +79,11 @@ extension Config {
     curve = 'spring'                # spring | linear | ease-out-cubic and the other easings.net curves
 
     [drag]
-    placeholders = true             # outline where a dragged tile came from and show where it will go
+    placeholders = true             # windows make room for a dragged tile and a preview shows where it will go
     # preview-border-color = '#7aa2f7'  # where a drop will land; unset follows the system accent colour
     # preview-fill-color = '#7aa2f74d'  # unset is the border colour at 30%
     preview-border-width = 3        # points, for the preview and the outlines
-    home-outline = true             # outline where a dragged tile came from; false shows only where it will go
+    home-outline = true             # outline where a dragged tile goes back to while it would
     mouse-modifier = 'none'         # held, drag a window from anywhere in it; set, only such drags drop on tiles: none (off) | alt | ctrl | cmd | shift, or joined, 'ctrl-cmd'
 
     # A glass capsule naming the new layout or mode for a moment.

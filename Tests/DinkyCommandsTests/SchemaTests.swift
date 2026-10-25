@@ -58,6 +58,14 @@ struct SchemaTests {
         #expect(fullscreen["scrolling"]!["enum"] as! [String] == FullscreenScrolling.allCases.map(\.rawValue))
     }
 
+    @Test func `Column centrings agree`() {
+        let configured = CenterFocusedColumn.allCases.map(\.rawValue)
+        #expect(configured.allSatisfy { ColumnCentring(rawValue: $0) != nil })
+        let properties = Self.schema["properties"] as! [String: [String: Any]]
+        let scrolling = properties["scrolling"]!["properties"] as! [String: [String: Any]]
+        #expect(scrolling["center-focused-column"]!["enum"] as! [String] == configured)
+    }
+
     @Test func `HUD positions agree`() {
         let properties = Self.schema["properties"] as! [String: [String: Any]]
         let hud = properties["hud"]!["properties"] as! [String: [String: Any]]
@@ -150,6 +158,7 @@ struct SchemaTests {
 
         [scrolling]
         column-width = 0.5
+        center-focused-column = 'on-overflow'
 
         [switcher]
         enabled = true

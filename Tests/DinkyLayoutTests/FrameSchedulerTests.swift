@@ -333,6 +333,36 @@ struct FrameSchedulerTests {
         #expect(scheduler.minimumSizes == [10: CGSize(width: 574, height: 300)])
     }
 
+    @Test func `A window that comes out smaller than its minimum has it lowered`() {
+        var minimum = CGSize(width: 574, height: 0), largest = CGSize(width: 10_000, height: 10_000)
+        var frame = CGRect.zero
+        let scheduler = FrameScheduler(settle: 0, read: { _ in .frame(frame) }, write: { job in
+            let size = job.frame.size.grown(to: minimum)
+            frame = CGRect(origin: job.frame.origin, size: CGSize(width: min(size.width, largest.width), height: min(size.height, largest.height)))
+            return true
+        })
+        for _ in 0..<2 { _ = submitAndWait(scheduler, [job(1, 10, 0)]) }
+        #expect(scheduler.minimumSizes == [10: CGSize(width: 574, height: 0)])
+        // As an app does that no longer keeps to the size it refused to go below, or never did: asked for the minimum,
+        // it comes out narrower.
+        (minimum, largest) = (.zero, CGSize(width: 500, height: 10_000))
+        let results = submitAndWait(scheduler, [FrameJob(pid: 1, id: 10, frame: CGRect(x: 50, y: 0, width: 574, height: 100))])
+        #expect(results.map(\.retried) == [true])
+        #expect(scheduler.minimumSizes == [10: CGSize(width: 500, height: 0)])
+    }
+
+    @Test func `A minimum is lowered to a size the window was seen at, where that is smaller`() {
+        let fake = FakeWindows(minWidths: [10: 574])
+        let scheduler = fake.scheduler()
+        for _ in 0..<2 { _ = submitAndWait(scheduler, [job(1, 10, 0)]) }
+        #expect(!scheduler.lowerMinimum(of: 10, to: CGSize(width: 600, height: 50)), "no smaller where it has a minimum")
+        #expect(scheduler.lowerMinimum(of: 10, to: CGSize(width: 400, height: 50)))
+        #expect(scheduler.minimumSizes == [10: CGSize(width: 400, height: 0)])
+        #expect(!scheduler.lowerMinimum(of: 20, to: .zero), "none to lower")
+        #expect(CGSize(width: 300, height: 200).lowered(to: CGSize(width: 299, height: 100)) == CGSize(width: 300, height: 100),
+                "within 2 pt is the same size")
+    }
+
     @Test func `A window at its recorded minimum is matched without a write`() {
         let fake = FakeWindows(minWidths: [10: 574])
         let scheduler = fake.scheduler()

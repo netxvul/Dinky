@@ -15,6 +15,7 @@ enum ScriptingAddition {
     private static let loaderPath = "/Library/ScriptingAdditions/dinky.osax/Contents/MacOS/loader"
     private static var cachedAt: CFTimeInterval = -1
     private static var cached = false
+    private static var cachedMoves = false
     // The payload dies whenever Dock restarts, so dinky re-injects it on its own. These bound that: never more than
     // one attempt in flight, never before `nextAttemptAt`, and the interval doubles (to 5 min) whenever a freshly
     // injected payload dies again within 15 s, so a payload that somehow destabilised Dock cannot drive a restart loop.
@@ -31,6 +32,8 @@ enum ScriptingAddition {
         let now = CACurrentMediaTime()
         if now - cachedAt > 1 {
             cached = dinky_sa_available()
+            // Asked each time too, as the payload Dock has can be replaced by a newer one without dinky restarting.
+            cachedMoves = cached && dinky_sa_moves_windows()
             cachedAt = now
             if cached { lastAliveAt = now }
         }
@@ -82,6 +85,21 @@ enum ScriptingAddition {
             points.append(frame.origin)
         }
         dinky_sa_transform_batch(wids, points, Int32(wids.count))
+    }
+
+    /// Whether the payload Dock has can move windows (see `move`), as of `available`; one installed before it could
+    /// only shows them through transforms.
+    static var moves: Bool { cached && cachedMoves }
+
+    /// Move each window's real frame so its top-left is at its frame's origin, in global top-left-origin coordinates,
+    /// all in one message. Dock's connection is not clamped as Accessibility is, and no app falls behind the others;
+    /// nor are the apps told, so their frames are written through Accessibility once a glide ends, which then finds
+    /// the windows where they put them. A no-op with a payload that cannot.
+    static func move(_ frames: [WindowID: CGRect]) {
+        guard cachedMoves, !frames.isEmpty else { return }
+        let wids = Array(frames.keys)
+        let points = wids.map { frames[$0]!.origin }
+        dinky_sa_move_batch(wids, points, Int32(wids.count))
     }
 
     /// Clear the transforms, returning the windows to their real Accessibility positions.

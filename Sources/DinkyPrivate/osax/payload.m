@@ -85,6 +85,22 @@ static void do_reset_batch(char *message)
     }
 }
 
+// Moves each window's real position, all in one message. Not reassociated with the Spaces by its new place, as the
+// window move is: these are a strip's windows, staying on their Space wherever the strip parks them.
+static void do_move_batch(char *message)
+{
+    unpack(int32_t, count);
+    int cid = SLSMainConnectionID();
+    for (int i = 0; i < count; ++i) {
+        unpack(uint32_t, wid);
+        unpack(float, x);
+        unpack(float, y);
+        if (!wid) continue;
+        CGPoint point = CGPointMake(x, y);
+        SLSMoveWindowWithGroup(cid, wid, &point);
+    }
+}
+
 static void do_handshake(int sockfd)
 {
     uint32_t attrib = DINKY_SA_ATTRIB_ALL;
@@ -108,6 +124,7 @@ static void handle_message(int sockfd, char *message)
     case DINKY_SA_OP_TRANSFORM_BATCH:  do_transform_batch(message); break;
     case DINKY_SA_OP_TRANSFORM_RESET:  do_transform_reset(message); break;
     case DINKY_SA_OP_RESET_BATCH:      do_reset_batch(message);     break;
+    case DINKY_SA_OP_MOVE_BATCH:       do_move_batch(message);      break;
     }
 }
 
@@ -169,7 +186,7 @@ static bool start_daemon(const char *socket_path)
 __attribute__((constructor))
 void dinky_sa_load(void)
 {
-    NSLog(@"[dinky-sa] payload loaded");
+    NSLog(@"[dinky-sa] payload %s loaded", DINKY_SA_VERSION);
     // From the uid, not $USER: Dock's environment may not carry USER, but the socket name must match the client's.
     struct passwd *pw = getpwuid(getuid());
     const char *user = pw ? pw->pw_name : NULL;

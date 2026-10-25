@@ -5,6 +5,8 @@ import DinkyPrivate
 // Telemetry for windows that drop out of sight in a scrolling strip, all on lines starting `strip`:
 // - `strip N: view` each time the columns in view change, with the focused window and what went to the edges;
 // - `strip N: focus` when macOS's focus moves the strip to a window that was parked, and from which window;
+// - `strip N: focus … passed over` when macOS reports focus on a window only because dinky is raising it into order,
+//   which nothing follows;
 // - `strip N: + / -` when a window joins or leaves the strip, and why;
 // - `strip N: landed` when a write left a window short of where the strip put it;
 // - `strip N: check` a moment after the strip settles, for a window not where the strip has it, or one on the
@@ -26,6 +28,8 @@ final class StripTelemetry {
     private var checkTokens = 0
     /// By strip, the last event that could move it, for the next `view` line.
     private var causes: [UInt64: String] = [:]
+    /// By strip, the windows logged as passed over since its last pass, so a raise read twice is logged once.
+    private var passed: [UInt64: Set<WindowID>] = [:]
 
     var name: (WindowID) -> String = { "\($0)" }
 
@@ -49,6 +53,7 @@ final class StripTelemetry {
     /// when that differs from the last pass's.
     func pass(_ key: UInt64, _ workspace: Workspace, _ layout: Layout) {
         guard workspace.isScrolling, let screen = layout.screen else { return }
+        passed[key] = nil
         let columns = workspace.stripColumns
         var view: [WindowID] = [], left: [WindowID] = [], right: [WindowID] = []
         for id in columns.joined() {
@@ -78,6 +83,13 @@ final class StripTelemetry {
 
     /// dinky moved focus in a strip itself: a command, the window switcher, a peek clicked.
     func command(_ key: UInt64, _ what: String) { causes[key] = what }
+
+    /// macOS reported focus on `id` only because dinky was raising it into order behind another window, and
+    /// `syncFocus` did not follow it. Logged once for each window until the strip's next pass.
+    func passedOver(_ key: UInt64, _ workspace: Workspace, _ id: WindowID) {
+        guard workspace.isScrolling, passed[key, default: []].insert(id).inserted else { return }
+        log(key, "focus \(name(id)) passed over, raised into order; focus stays \(workspace.focused.map(name) ?? "none")")
+    }
 
     /// A window joined the strip (`joined`) or left it, and why.
     func member(_ key: UInt64, _ workspace: Workspace?, _ id: WindowID, joined: Bool, _ why: String) {

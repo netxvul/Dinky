@@ -31,14 +31,31 @@ struct ScrollingGeometryTests {
 
     @Test func `Columns that fit are centred`() {
         let ws = strip(2, width: 0.49)
-        #expect(ws.layout().frames[1] == rect(10, 0, 490, 600))
-        #expect(ws.layout().frames[2] == rect(500, 0, 490, 600))
+        #expect(ws.layout().frames[1] == rect(-15, 0, 515, 600))
+        #expect(ws.layout().frames[2] == rect(500, 0, 515, 600))
     }
 
     @Test func `Inner and outer gaps match on both sides`() {
         let ws = strip(2, width: 0.49, gaps: Gaps(all: 10))
-        #expect(ws.layout().frames[1] == rect(15, 10, 480, 580))
-        #expect(ws.layout().frames[2] == rect(505, 10, 480, 580))
+        #expect(ws.layout().frames[1] == rect(-5, 10, 500, 580))
+        #expect(ws.layout().frames[2] == rect(505, 10, 500, 580))
+    }
+
+    @Test func `Columns that fit keep no gutters, only the outer gaps`() {
+        let ws = strip(2, gaps: Gaps(all: 10))
+        #expect(ws.stripArea == rect(-peek + 10, 10, 1030, 580))
+        #expect(ws.layout().frames[1] == rect(-peek + 10, 10, 510, 580))
+        #expect(ws.layout().frames[2] == rect(505, 10, 510, 580), "an inner gap between, the outer gap at the edge")
+    }
+
+    @Test func `Columns that do not fit keep the gutters they park in`() {
+        let ws = strip(3, gaps: Gaps(all: 10))
+        #expect(ws.stripArea == rect(5, 10, 990, 580), "half an inner gap clear of each gutter")
+    }
+
+    @Test func `A wall leaves no gutter whether the columns fit or not`() {
+        #expect(strip(2, gaps: Gaps(all: 10), walls: [.left]).layout().frames == strip(2, gaps: Gaps(all: 10)).layout().frames)
+        #expect(strip(3, gaps: Gaps(all: 10), walls: [.left]).stripArea == rect(-peek + 10, 10, 1010, 580))
     }
 
     @Test func `A new column opens right of the focused one and scrolls into view`() {
@@ -185,7 +202,7 @@ struct ScrollingGeometryTests {
         var ws = strip(3)
         ws.remove(3)
         #expect(ws.focused == 2)
-        #expect(lefts(ws) == [0, 500])
+        #expect(lefts(ws) == [-peek, 500], "the two left fit, so out to the screen edges")
     }
 
     @Test func `The strip stays the root with one column left`() {
@@ -193,6 +210,200 @@ struct ScrollingGeometryTests {
         ws.join(.left)
         #expect(shape(ws.root) == "h[v[1 2]]")
         #expect(ws.layout().frames[1] == rect(-peek, 0, 1000 + 2 * peek, 300))
+    }
+}
+
+struct ScrollingCentringTests {
+    /// The middle of the focused window as the strip lays it out: 500 is the middle of the screen.
+    private func middle(_ ws: Workspace) -> CGFloat { ws.tiledLayout().frames[ws.focused!]!.midX }
+
+    @Test func `Always centres the focused column, end columns too`() {
+        var ws = strip(4)
+        ws.columnCentring = .always
+        ws.focus(4)
+        #expect(lefts(ws) == [-1250, -750, -250, 250], "the screen bare right of the last column")
+        ws.focus(.left)
+        #expect(lefts(ws) == [-750, -250, 250, 750], "in view, but centred all the same")
+        ws.focus(1)
+        #expect(lefts(ws) == [250, 750, 1250, 1750], "the screen bare left of the first column")
+    }
+
+    @Test func `Always leaves columns that all fit centred as a whole`() {
+        var ws = strip(2, width: 0.49)
+        ws.columnCentring = .always
+        ws.focus(1)
+        #expect(ws.layout().frames[1] == rect(-15, 0, 515, 600))
+        #expect(ws.layout().frames[2] == rect(500, 0, 515, 600))
+    }
+
+    @Test func `Always fill centres the focused column, but takes an end column only to the edge`() {
+        var ws = strip(4)
+        ws.columnCentring = .alwaysFill
+        ws.focus(4)
+        #expect(lefts(ws) == [-975, -475, 25, 525], "out to the right edge, the column before it filling the rest")
+        ws.focus(.left)
+        #expect(lefts(ws) == [-750, -250, 250, 750])
+        ws.focus(.left)
+        #expect(lefts(ws) == [-250, 250, 750, 1250], "centred, half the first column showing")
+        ws.focus(.left)
+        #expect(lefts(ws) == [-25, 475, 975, 1475], "out to the left edge, as never leaves it")
+    }
+
+    @Test func `Always fill shows the first and last columns as never does`() {
+        for gaps in [Gaps.zero, Gaps(all: 10)] {
+            var fill = strip(4, gaps: gaps), never = strip(4, gaps: gaps)
+            fill.columnCentring = .alwaysFill
+            for id: WindowID in [1, 4] {
+                fill.focus(id)
+                never.focus(id)
+                #expect(fill.layout().frames == never.layout().frames)
+            }
+        }
+    }
+
+    @Test func `Always fill keeps the display filled next to the ends too`() {
+        var ws = strip(5, width: 0.3)
+        ws.columnCentring = .alwaysFill
+        ws.focus(2)
+        #expect(lefts(ws) == [-25, 275, 575, 875, 1175], "centring the second column would bare the left edge")
+        ws.focus(3)
+        #expect(middle(ws) == 500)
+        ws.focus(4)
+        #expect(lefts(ws) == [-475, -175, 125, 425, 725], "nor the right")
+    }
+
+    @Test func `Always fill fills the display again when the last column closes`() {
+        var ws = strip(4)
+        ws.columnCentring = .alwaysFill
+        ws.focus(3)
+        #expect(lefts(ws) == [-750, -250, 250, 750])
+        ws.remove(4)
+        #expect(ws.focused == 3)
+        #expect(lefts(ws) == [-475, 25, 525], "out to the right edge, where always would leave it bare")
+    }
+
+    @Test func `On overflow centres a column only when it did not all show`() {
+        var ws = strip(5, width: 0.3)
+        ws.columnCentring = .onOverflow
+        let start = lefts(ws)
+        ws.focus(.left)
+        #expect(lefts(ws) == start, "already in view")
+        ws.focus(1)
+        #expect(middle(ws) == 500, "out of view, so to the middle")
+        #expect(lefts(ws) == [350, 650, 950, 1250, 1550])
+        ws.focus(.right)
+        #expect(lefts(ws) == [350, 650, 950, 1250, 1550], "already in view")
+        ws.focus(5)
+        #expect(middle(ws) == 500)
+    }
+
+    @Test func `Never scrolls as little as before`() {
+        var ws = strip(4)
+        ws.focus(1)
+        #expect(lefts(ws) == [-25, 475, 975, 1475], "the first column reaches into the empty gutter")
+    }
+}
+
+struct ScrollingClickHoldTests {
+    /// The middle of the focused window as the strip lays it out: 500 is the middle of the screen.
+    private func middle(_ ws: Workspace) -> CGFloat { ws.tiledLayout().frames[ws.focused!]!.midX }
+
+    /// Four columns, the last focused and centred, so the third shows half of itself at the left edge, to 250.
+    private func centredStrip() -> Workspace {
+        var ws = strip(4)
+        ws.columnCentring = .always
+        ws.focus(4)
+        return ws
+    }
+
+    @Test func `A click holds the strip still, then centres the window it focused`() {
+        var ws = centredStrip()
+        ws.focus(3, holdingScroll: true)
+        #expect(ws.focused == 3)
+        #expect(ws.holdsScroll)
+        #expect(lefts(ws) == [-1250, -750, -250, 250], "where it was pressed")
+        #expect(ws.layout().frames[3] == rect(-250, 0, 500, 600))
+        ws.revealFocus()
+        #expect(!ws.holdsScroll)
+        #expect(lefts(ws) == [-750, -250, 250, 750])
+    }
+
+    @Test func `A press on a half-shown column held still is over its own tile`() {
+        let press = CGPoint(x: 100, y: 300)
+        var held = centredStrip(), scrolled = centredStrip()
+        held.focus(3, holdingScroll: true)
+        scrolled.focus(3)
+        #expect(held.dropHit(at: press, in: held.layout(), excluding: 3) == .own)
+        #expect(scrolled.dropHit(at: press, in: scrolled.layout(), excluding: 3) != .own, "centred from under the press")
+    }
+
+    @Test func `A click holds the strip where it shows, not where it last scrolled to`() {
+        var ws = centredStrip()
+        ws.minimumSizes[1] = CGSize(width: 900, height: 0)
+        let shown = lefts(ws)
+        ws.focus(3, holdingScroll: true)
+        #expect(lefts(ws) == shown, "the first column grew, which scrolled the focused one on")
+    }
+
+    @Test func `On overflow, a held click centres only a column that did not all show`() {
+        var ws = strip(5, width: 0.3)
+        ws.columnCentring = .onOverflow
+        let start = lefts(ws)
+        ws.focus(4, holdingScroll: true)
+        ws.revealFocus()
+        #expect(lefts(ws) == start, "in view, so left where it is")
+        ws.focus(1, holdingScroll: true)
+        #expect(lefts(ws) == start, "held where it was pressed")
+        ws.revealFocus()
+        #expect(middle(ws) == 500)
+    }
+
+    @Test func `Always fill holds a click still too, then takes an end column to the edge`() {
+        var ws = strip(4)
+        ws.columnCentring = .alwaysFill
+        ws.focus(2)
+        ws.focus(1, holdingScroll: true)
+        #expect(ws.holdsScroll)
+        #expect(lefts(ws) == [-250, 250, 750, 1250], "where it was pressed")
+        ws.revealFocus()
+        #expect(lefts(ws) == [-25, 475, 975, 1475])
+    }
+
+    @Test func `Focus moved another way scrolls as ever and lets the hold go`() {
+        var ws = centredStrip()
+        ws.focus(3, holdingScroll: true)
+        ws.focus(2)
+        #expect(!ws.holdsScroll)
+        #expect(middle(ws) == 500)
+    }
+
+    @Test func `A drop back beside where a held click left it leaves it where it is, once revealed`() {
+        var held = centredStrip()
+        held.focus(3, holdingScroll: true)
+        var dropped = held
+        let moved = dropped.drop(3, onto: 4, .split(.left))
+        #expect(moved)
+        #expect(lefts(dropped) == [-750, -250, 250, 750], "the drop focuses it, and so centres it")
+        #expect(held.layout().frames != dropped.layout().frames, "held, the strip has not scrolled yet")
+        var asIs = held
+        asIs.revealFocus()
+        #expect(asIs.layout().frames == dropped.layout().frames)
+    }
+
+    @Test func `Never scrolls to a clicked column at once, as before`() {
+        var held = strip(4), plain = strip(4)
+        held.focus(2, holdingScroll: true)
+        plain.focus(2)
+        #expect(held == plain)
+        #expect(!held.holdsScroll)
+    }
+
+    @Test func `Revealing with no click held changes nothing`() {
+        var ws = strip(4)
+        ws.minimumSizes[1] = CGSize(width: 900, height: 0)
+        let before = ws
+        ws.revealFocus()
+        #expect(ws == before, "a reveal would have taken the scroll the layout shows")
     }
 }
 
@@ -244,7 +455,7 @@ struct ScrollingCommandTests {
     @Test func `Resizing width changes the column, height the stack`() {
         var ws = strip(2)
         #expect(ws.resize(by: 100, along: .horizontal) == true)
-        #expect(ws.tiledLayout().frames[2]!.width == 600)
+        #expect(ws.tiledLayout().frames[2]!.width == 595, "a share of the screen it fitted, then of the gutters' less")
         #expect(ws.resize(by: 100, along: .vertical) == false, "a lone window has no stack")
         ws.join(.left)
         #expect(ws.resize(by: 60, along: .vertical) == true)
@@ -255,7 +466,7 @@ struct ScrollingCommandTests {
         var ws = strip(1)
         #expect(ws.resize(by: 100) == false)
         ws.insert(2)
-        #expect(ws.tiledLayout().frames[1]!.width == 500)
+        #expect(ws.tiledLayout().frames[1]!.width == 525)
     }
 
     @Test func `Dragging an edge sets the column width`() {
@@ -268,7 +479,7 @@ struct ScrollingCommandTests {
         var ws = strip(2)
         ws.resize(by: 200)
         ws.balanceSizes()
-        #expect(lefts(ws) == [0, 500])
+        #expect(lefts(ws) == [-peek, 500])
     }
 
     @Test func `Flatten gives every window a column of its own`() {

@@ -261,6 +261,8 @@ public struct Scrolling: Equatable {
     /// A new column's width, as a share of the display's width inside the outer gaps. Omarchy's 0.49 fits two
     /// columns side by side with a sliver of margin; a lone column always fills the display.
     public var columnWidth = 0.49
+    /// Where focusing a column scrolls it, as niri's `center-focused-column`.
+    public var centerFocusedColumn = CenterFocusedColumn.never
     /// Whether the file still sets `glide`, which no longer does anything: the strip scrolls through the Dock
     /// scripting addition when top-level `scripting-addition` allows it and the addition answers, and moves its windows
     /// frame by frame otherwise. `dinky doctor` says the key can go.
@@ -271,6 +273,7 @@ public struct Scrolling: Equatable {
     init(_ t: Table) throws {
         columnWidth = try t.double("column-width") ?? columnWidth
         guard (0.1...1).contains(columnWidth) else { throw ConfigError(path: t.path("column-width"), "must be 0.1 to 1") }
+        centerFocusedColumn = try t.choice("center-focused-column") ?? centerFocusedColumn
         retiredGlide = t.retired("glide")
         try t.done()
     }
@@ -659,6 +662,19 @@ public enum FullscreenFocusChange: String, CaseIterable {
     case keep
 }
 
+/// Where focusing a scrolling column scrolls it. The names match `DinkyLayout.ColumnCentring`.
+public enum CenterFocusedColumn: String, CaseIterable {
+    /// Just far enough to show it whole.
+    case never
+    /// To the middle of the display, an end column too, the display bare beyond it.
+    case always
+    /// To the middle of the display, but never past the strip's ends: an end column, and with narrow columns the one
+    /// next to it, only to the display's edge, the columns beside it filling the rest.
+    case alwaysFill = "always-fill"
+    /// To the middle when it did not all show; one already in view stays where it is.
+    case onOverflow = "on-overflow"
+}
+
 /// What fullscreen does to the other columns of a scrolling workspace.
 public enum FullscreenScrolling: String, CaseIterable {
     /// The window's column widens to the screen and its neighbours slide off it.
@@ -788,17 +804,16 @@ public struct Animations: Equatable {
 
 /// `[drag]`: dragging a tiled window with the mouse.
 public struct Drag: Equatable {
-    /// Outline the tile a dragged window came from and the one it will swap with.
+    /// Have the other windows make room for a dragged window and show a preview where it will go.
     public var placeholders = true
-    /// The border of the part of a tile a drop will take: the top-level `highlight-color` when the table leaves it
-    /// out. Nil follows the system accent colour.
+    /// The preview's border: the top-level `highlight-color` when the table leaves it out. Nil follows the system
+    /// accent colour.
     public var previewBorderColor: Highlight?
     /// Its fill. Nil is the border colour at 30%.
     public var previewFillColor: Color?
     /// Points, for the preview and the outlines around it.
     public var previewBorderWidth = 3.0
-    /// Whether the tile a dragged window came from is outlined. Off, only the feedback over the tile under the
-    /// pointer shows.
+    /// Whether the tile a dragged window goes back to is outlined while the drag would put it back.
     public var homeOutline = true
     /// Held, exactly these, a press anywhere in a window drags it, not only on its title bar. Empty is off.
     public var mouseModifier: KeyCombo.Modifiers = []

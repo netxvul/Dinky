@@ -94,7 +94,9 @@ numbering starts at 1.
 the edges of the display, as niri and Hyprland's scrolling layout do. Each new
 window opens as a column right of the focused one, `column-width` wide whatever
 the number of columns. A lone column fills the display; columns that fit are
-centred; focusing a column scrolls just far enough to show it whole.
+centred; focusing a column scrolls just far enough to show it whole, or with
+`center-focused-column` to the middle of the display, as niri's option of that
+name does.
 
 macOS can't hide part of another app's window, so a column scrolled out of view
 is parked: the one nearest each edge hangs off it with a sliver of 25 points
@@ -134,7 +136,8 @@ ctrl-alt-cmd-s = 'layout tiles accordion scrolling'
 
 | Key | Default | |
 |---|---|---|
-| `column-width` | `0.49` | A new column's width, as a share of the display inside the outer gaps, from `0.1` to `1`. Omarchy's `0.49` fits two columns side by side. |
+| `column-width` | `0.49` | A new column's width, as a share of the display inside the outer gaps, from `0.1` to `1`. Omarchy's `0.49` fits two columns side by side. Once the columns no longer all fit and some park at the edges, it is a share of that width less the gutters they peek out in, 25 points and half an inner gap on each side with no other display beyond it. |
+| `center-focused-column` | `'never'` | Where focusing a column scrolls it. `'never'` scrolls just far enough to show it whole; `'always'` puts it in the middle of the display, the first and last columns too, leaving the display bare beyond them; `'always-fill'` puts it in the middle too, but never scrolls past the strip's ends: the first and last columns, and with narrow columns the ones next to them, go only as far as the display's edge, the columns beside them filling the rest; `'on-overflow'` puts it in the middle only when it did not all show, and leaves one already in view where it is. Columns that all fit stay centred as a whole. |
 
 </div>
 
@@ -298,27 +301,33 @@ curve = 'ease-out-quart'
 ## `[drag]`
 
 Drag a tiled window's edge to resize it; the other tiles make room, and in the
-scrolling layout its column takes the new width. Drag the window itself and
-drop it on another tile, and the tile under the pointer shows where it will go,
-as yabai's insert feedback does: in the middle of the tile the two swap, and
-towards an edge the tile splits in two, side by side or one above the other,
-with the window in the half on that side. A swap is filled more strongly, with
-the same border, and the dragged window's own tile lights up too, where the
-other window will go. In the
-scrolling layout, dropping left
-or right of a tile makes the window a column of its own there. A fixed layout's
-grid only swaps. Dropped anywhere else, the window goes back.
+scrolling layout its column takes the new width. Drag the window itself over
+another tile and, once the pointer rests there a moment, the other windows make
+room for it as the drop will leave them, and a preview the shape of the window
+fills the place it will take: what shows is where it lands. In the middle of a
+tile the two swap, and towards an edge the tile splits in two, side by side or
+one above the other, with the window in the half on that side. A swap is filled
+more strongly, with the same border. In the scrolling layout, dropping left or
+right of a tile makes the window a column of its own there, at the width its
+column had, and the strip scrolls as it will after the drop; over the top or
+bottom of a column the window stacks into it. A fixed layout's grid only swaps.
+Over a gap the nearest tile counts, and over the menu bar, the Dock or an outer
+gap the tile along that edge. Dragged onto another display, the window drops
+into the tree of the workspace shown there the same way, or comes in as a new
+window does where that has no window yet; one it swaps with goes back to the
+display it came from. Dropped on its own place, or over a workspace dinky does
+not tile, the window goes back.
 
 <div class="wide-table" markdown="1">
 
 | Key | Default | |
 |---|---|---|
-| `placeholders` | `true` | While you drag a tiled window, outline the tile it came from, and show over the tile under the pointer the part the window will take. |
-| `preview-border-color` | [`highlight-color`](#top-level), else the accent colour | The border of the part of the tile the window will take: `'#rrggbb'`, `'#rrggbbaa'`, or `'accent'` for the accent colour in System Settings. The faint outline of the whole tile around a half is this colour at 40%. |
-| `preview-fill-color` | border at 30% | The fill of that part, `'#rrggbbaa'` for a translucent one such as `'#7aa2f74d'`. |
-| `preview-border-width` | `3` | Points, from `0` to `20`, for every border while you drag: the preview, a swap's, and the outlines of the tiles. |
-| `home-outline` | `true` | Outline the tile the window came from in grey while you drag. `false` shows only the feedback over the tile under the pointer. |
-| `mouse-modifier` | `'none'` | Hold it to drag a window from anywhere in it, not only by its title bar: `'alt'`, `'ctrl'`, `'cmd'` or `'shift'`, or several joined by `-` such as `'ctrl-cmd'`, held exactly. A tiled window drops as above; a floating one just moves. Once it is set, only a drag with it held drops onto a tile and shows where it will go: a tiled window dragged by its title bar alone goes back to its tile, and dragging its edges still resizes it. The press goes to dinky, not the app, so pick modifiers your apps don't click with: `cmd` opens links, `ctrl` is a right click. Each key's side follows [`[modifiers]`](#modifiers), and it can't be a switcher's `modifier`. `'none'` turns it off. |
+| `placeholders` | `true` | While you drag a tiled window, have the other windows make room for it and show the preview where it will go. `false` shows nothing: the windows move only once you drop. |
+| `preview-border-color` | [`highlight-color`](#top-level), else the accent colour | The preview's border: `'#rrggbb'`, `'#rrggbbaa'`, or `'accent'` for the accent colour in System Settings. |
+| `preview-fill-color` | border at 30% | The preview's fill, `'#rrggbbaa'` for a translucent one such as `'#7aa2f74d'`. |
+| `preview-border-width` | `3` | Points, from `0` to `20`, for every border while you drag: the preview, a swap's, and the outline of where the window goes back to. |
+| `home-outline` | `true` | While a drag would put the window back, outline in grey the tile it goes back to. `false` shows nothing then. |
+| `mouse-modifier` | `'none'` | Hold it to drag a window from anywhere in it, not only by its title bar: `'alt'`, `'ctrl'`, `'cmd'` or `'shift'`, or several joined by `-` such as `'ctrl-cmd'`, held exactly. A tiled window drops as above; a floating one just moves. Once it is set, only a drag with it held drops onto a tile on the window's own display and shows where it will go: a tiled window dragged by its title bar alone goes back to its tile there, though it still drops onto another display, and dragging its edges still resizes it. The press goes to dinky, not the app, so pick modifiers your apps don't click with: `cmd` opens links, `ctrl` is a right click. Each key's side follows [`[modifiers]`](#modifiers), and it can't be a switcher's `modifier`. `'none'` turns it off. |
 
 </div>
 
@@ -793,6 +802,7 @@ orientation = 'auto'            # auto: run along the container's longer side | 
 
 [scrolling]
 column-width = 0.49             # a new column's share of the display; a lone column fills it
+center-focused-column = 'never' # focusing a column scrolls it: never (just into view) | always (to the middle) | always-fill | on-overflow
 
 [floating]
 move-step = 50                  # points `move` shifts a floating window by, unless the binding gives a number
@@ -835,11 +845,11 @@ duration-ms = 150               # roughly how long a window takes to arrive
 curve = 'spring'                # spring | linear | ease-out-cubic and the other easings.net curves
 
 [drag]
-placeholders = true             # outline where a dragged tile came from and show where it will go
+placeholders = true             # windows make room for a dragged tile and a preview shows where it will go
 # preview-border-color = '#7aa2f7'  # where a drop will land; unset follows the system accent colour
 # preview-fill-color = '#7aa2f74d'  # unset is the border colour at 30%
 preview-border-width = 3        # points, for the preview and the outlines
-home-outline = true             # outline where a dragged tile came from; false shows only where it will go
+home-outline = true             # outline where a dragged tile goes back to while it would
 mouse-modifier = 'none'         # held, drag a window from anywhere in it; set, only such drags drop on tiles: none (off) | alt | ctrl | cmd | shift, or joined, 'ctrl-cmd'
 
 # A glass capsule naming the new layout or mode for a moment.

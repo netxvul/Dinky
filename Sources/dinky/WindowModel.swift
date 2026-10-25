@@ -39,6 +39,8 @@ struct WindowEvent {
     let pid: pid_t       // window owner, or the new front app for .frontApp
     let spaceID: UInt64  // from the payload, when it carries one
     let time: Date
+    /// For an update, the window's frame as the model had it before: where a move or resize took it from.
+    var frameBefore: CGRect? = nil
 }
 
 // The window table, seeded from WindowServer and kept current by its notifications.
@@ -142,10 +144,11 @@ final class WindowModel {
         guard var window = windows[id] else { return }
         let info = dinky_window_info(id)
         guard info.exists else { return remove(id, kind: kind) }
+        let before = window.frame
         apply(info, to: &window)
         window.spaceID = dinky_window_space_id(id)
         windows[id] = window
-        publish(kind, .updated, window, pid: window.pid)
+        publish(kind, .updated, window, pid: window.pid, frameBefore: before)
     }
 
     // nil for dinky's own windows, windows that are already gone and child windows.
@@ -178,8 +181,10 @@ final class WindowModel {
         dinky_events_watch_windows(ids, Int32(ids.count))
     }
 
-    private func publish(_ kind: DinkyEventKind, _ change: WindowEvent.Change, _ window: Window?, pid: pid_t, spaceID: UInt64 = 0) {
-        let event = WindowEvent(kind: kind, change: change, window: window, pid: pid, spaceID: spaceID, time: Date())
+    private func publish(_ kind: DinkyEventKind, _ change: WindowEvent.Change, _ window: Window?, pid: pid_t,
+                         spaceID: UInt64 = 0, frameBefore: CGRect? = nil) {
+        let event = WindowEvent(kind: kind, change: change, window: window, pid: pid, spaceID: spaceID, time: Date(),
+                                frameBefore: frameBefore)
         observers.forEach { $0(event) }
     }
 }
