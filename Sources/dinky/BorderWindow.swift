@@ -2,7 +2,7 @@ import AppKit
 import DinkyConfig
 import DinkyPrivate
 
-// The border of one window: a dinky-owned SkyLight window kept directly below or above its target.
+// The border of one window, or its noop glow: a dinky-owned SkyLight window kept directly below or above its target.
 // Redraws only when the look or size changes; a plain move just re-places it.
 final class BorderWindow {
     struct Look: Equatable {
@@ -10,6 +10,8 @@ final class BorderWindow {
         var cornerRadius: Int
         var color: DinkyConfig.Color
         var width: Double
+        /// The noop glow, `width` its spread, rather than a ring.
+        var glow = false
 
         /// The same shape in another colour.
         func with(color: DinkyConfig.Color) -> Look {
@@ -26,6 +28,8 @@ final class BorderWindow {
     private var spaceID: UInt64 = 0
     private var drawn: Look?
     private var isShown = false
+    /// The whole window's opacity, kept across a new window for another display.
+    private var alpha = 1.0
 
     init(target: UInt32) {
         self.target = target
@@ -41,6 +45,25 @@ final class BorderWindow {
         let look = Look(size: window.frame.size, cornerRadius: window.cornerRadius,
                         color: color, width: config.width)
         if moveOnly, drawn?.with(color: color) != look { return hide() }
+        place(window, look: look, order: config.order == .above ? .above : .below)
+    }
+
+    /// Place and draw the noop glow around `window`, over it: `color` at its edge, fading out over `spread` points
+    /// outside it and half that inside.
+    func glow(_ window: Window, color: DinkyConfig.Color, spread: Double) {
+        let look = Look(size: window.frame.size, cornerRadius: window.cornerRadius,
+                        color: color, width: spread, glow: true)
+        place(window, look: look, order: .above)
+    }
+
+    /// The whole border's opacity, 0...1, without a redraw.
+    func setAlpha(_ alpha: Double) {
+        guard alpha != self.alpha else { return }
+        self.alpha = alpha
+        if id != 0 { dinky_border_set_alpha(id, alpha) }
+    }
+
+    private func place(_ window: Window, look: Look, order: DinkyBorderOrder) {
         let scale = backingScale(of: window.frame)
         if scale != self.scale { recreate(scale: scale) }
         guard id != 0 else { return }
@@ -49,12 +72,16 @@ final class BorderWindow {
             dinky_border_move_to_space(id, window.spaceID)
             spaceID = window.spaceID
         }
-        let order: DinkyBorderOrder = config.order == .above ? .above : .below
         if look == drawn {
-            dinky_border_move(id, target, window.frame, config.width, order)
+            dinky_border_move(id, target, window.frame, look.width, order)
         } else {
+            let color = look.color
             let rgba = DinkyBorderColor(red: color.red, green: color.green, blue: color.blue, alpha: color.alpha)
-            dinky_border_update(id, target, window.frame, Int32(window.cornerRadius), rgba, config.width, order)
+            if look.glow {
+                dinky_glow_update(id, target, window.frame, Int32(window.cornerRadius), rgba, look.width)
+            } else {
+                dinky_border_update(id, target, window.frame, Int32(window.cornerRadius), rgba, look.width, order)
+            }
             drawn = look
         }
         isShown = true
@@ -71,6 +98,7 @@ final class BorderWindow {
     private func recreate(scale: Double) {
         if id != 0 { dinky_border_destroy(id) }
         id = dinky_border_create(scale)
+        if id != 0, alpha != 1 { dinky_border_set_alpha(id, alpha) }
         self.scale = scale
         spaceID = 0
         drawn = nil

@@ -249,10 +249,11 @@ gaps.outer.top = 44
 | `inactive-color` | `'#494d64'` | |
 | `order` | `'below'` | `'above'` draws a click-through ring over the window. |
 | `exclude-apps` | `[]` | Bundle IDs that get no border. |
-| `noop-flash` | `true` | Flash the focused window's border when a key binding or gesture does nothing: a move at the edge, a resize at its limit, `focus` or `focus-monitor` with nothing that way, `workspace next` on the last workspace or a workspace number past `[workspaces]`, moving a window to where it already is, `fullscreen` on a lone window that already fills its workspace. Drawn even with `enabled = false`, and for windows of `exclude-apps`. |
-| `noop-flash-color` | `'#ed8796'` | The flash: `'#rrggbb'`, `'#rrggbbaa'` or `'accent'`. |
-| `noop-flash-count` | `2` | How many times it flashes, from `1` to `5`. |
-| `noop-flash-ms` | `120` | How long each flash is on, from `50` to `1000`, with 80 ms off between them. |
+| `noop-flash` | `true` | Glow around the focused window when a key binding or gesture does nothing: a move at the edge, a resize at its limit, `focus` or `focus-monitor` with nothing that way, `workspace next` on the last workspace or a workspace number past `[workspaces]`, moving a window to where it already is, `fullscreen` on a lone window that already fills its workspace. The glow fades out from the window's edge, over the window and its border, and breathes in and out. Drawn even with `enabled = false`, and for windows of `exclude-apps`. |
+| `noop-flash-color` | `'#ed8796'` | The glow at its brightest, at the window's edge: `'#rrggbb'`, `'#rrggbbaa'` or `'accent'`. |
+| `noop-flash-count` | `2` | How many times it breathes in and out, from `1` to `5`. |
+| `noop-flash-ms` | `80` | How long each breath holds at full, from `50` to `1000`, between a 90 ms rise and a 200 ms fall. |
+| `noop-flash-spread` | `24` | How far the glow reaches out from the window's edge, in points, from `4` to `64`; it reaches half as far in. |
 
 </div>
 
@@ -828,10 +829,11 @@ width = 4
 inactive-color = '#494d64'
 order = 'below'                 # below | above (a click-through ring over the window)
 exclude-apps = []               # bundle IDs whose windows get no border
-noop-flash = true               # a binding that does nothing flashes the focused window's border
+noop-flash = true               # a binding that does nothing glows around the focused window
 noop-flash-color = '#ed8796'    # '#rrggbb', '#rrggbbaa' or 'accent'
-noop-flash-count = 2            # flashes, 1 to 5
-noop-flash-ms = 120             # how long each flash is on, 50 to 1000
+noop-flash-count = 2            # breaths, 1 to 5
+noop-flash-ms = 80              # how long each holds at full, 50 to 1000
+noop-flash-spread = 24          # points the glow reaches out, 4 to 64; half as far in
 
 [focus-follows-mouse]
 enabled = false

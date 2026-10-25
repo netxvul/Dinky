@@ -33,19 +33,14 @@ final class Coordinator {
     let applier = FrameApplier()
     private lazy var animator = Animator(applier: applier)
     private var borders: BorderManager?
-    /// The noop flash's own border, for a window without one: borders are off, or its app is excluded.
-    private let loneFlash = LoneBorderFlash()
-    func isBorderWindow(_ id: WindowID) -> Bool { borders?.isBorder(id) == true || loneFlash.isBorder(id) }
+    /// The noop flash's glow, over any window: borders on or off, its app excluded or not.
+    private let noopGlow = NoopGlow()
+    func isBorderWindow(_ id: WindowID) -> Bool { borders?.isBorder(id) == true || noopGlow.isBorder(id) }
 
-    /// Flashes a window's border, for a binding that did nothing, unless `[borders] noop-flash` is off. A window
-    /// without a border, as with borders off or in `exclude-apps`, gets one for the flash alone.
+    /// Glows around a window, for a binding that did nothing, unless `[borders] noop-flash` is off.
     func flashBorder(of id: WindowID) {
         guard config.borders.noopFlash, let window = model.windows[id], window.isDocument else { return }
-        if let borders, config.borders.decorates(bundleID: window.bundleID) {
-            borders.flash(id)
-        } else {
-            loneFlash.flash(id, config: config.borders, model: model)
-        }
+        noopGlow.flash(id, config: config.borders, model: model)
     }
     private(set) var workspaces: [UInt64: Workspace] = [:]
     var placements: [WindowID: Placement] = [:]
@@ -225,11 +220,11 @@ final class Coordinator {
         // Detected here, not in the border manager, so hover focus stands down even with borders off.
         if MissionControl.shared.update(from: model) {
             borders?.missionControlChanged()
-            loneFlash.missionControlChanged()
+            noopGlow.missionControlChanged()
             if !MissionControl.shared.active { missionControlClosed() }
         }
         borders?.handle(event)
-        loneFlash.handle(event)
+        noopGlow.handle(event)
         if let window = event.window {
             event.change == .removed ? forget(window.id) : track(window)
             if [.windowMove, .windowResize].contains(event.kind) { noteFrameChange(of: window.id) }

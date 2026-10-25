@@ -257,6 +257,7 @@ struct SchemaTests {
         noop-flash-color = 'accent'
         noop-flash-count = 3
         noop-flash-ms = 150
+        noop-flash-spread = 12.5
 
         [focus-follows-mouse]
         enabled = true

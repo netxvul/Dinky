@@ -150,3 +150,30 @@ struct StripStretchTests {
         #expect(AnimationCurve.spring(spring).stretched(1) == .spring(spring))
     }
 }
+
+struct PulseTests {
+    let pulse = Pulse(count: 2, hold: 0.1)
+
+    @Test func `Rises, holds and falls once for each pulse`() {
+        let period = Pulse.rise + 0.1 + Pulse.fall
+        #expect(pulse.duration == 2 * period)
+        #expect(pulse.strength(at: 0)! < 1e-9)
+        #expect(pulse.strength(at: Pulse.rise / 2)! > 0.5)
+        #expect(pulse.strength(at: Pulse.rise + 0.05) == 1)
+        #expect(abs(pulse.strength(at: Pulse.rise + 0.1 + Pulse.fall / 2)! - 0.5) < 1e-9)
+        #expect(pulse.strength(at: period - 1e-9)! < 1e-6)
+        #expect(abs(pulse.strength(at: period + Pulse.rise / 2)! - pulse.strength(at: Pulse.rise / 2)!) < 1e-9)
+    }
+
+    @Test func `Starting over rises on from the strength it had`() {
+        for strength in [0, 0.3, 0.7, 1.0] {
+            #expect(abs(pulse.strength(at: Pulse.rising(to: strength))! - strength) < 1e-9)
+        }
+        #expect(Pulse.rising(to: 1) == Pulse.rise)
+    }
+
+    @Test func `Is over after the last pulse`() {
+        #expect(pulse.strength(at: pulse.duration) == nil)
+        #expect(Pulse(count: 1, hold: 0.05).strength(at: 0.5) == nil)
+    }
+}

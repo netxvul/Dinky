@@ -166,3 +166,35 @@ public struct FrameAnimation: Equatable, Sendable {
         [Double(r.minX), Double(r.minY), Double(r.width), Double(r.height)]
     }
 }
+
+/// The noop glow's strength over time, a breath per pulse: `count` of them, each rising for `rise`, holding at full
+/// for `hold` and falling for `fall` seconds.
+public struct Pulse: Equatable, Sendable {
+    public static let rise = 0.09
+    public static let fall = 0.2
+    public var count: Int
+    public var hold: Double
+
+    public init(count: Int, hold: Double) {
+        self.count = count
+        self.hold = hold
+    }
+
+    public var duration: Double { Double(count) * period }
+    private var period: Double { Self.rise + hold + Self.fall }
+
+    /// From 0 to 1 at `t` seconds in, nil once the last pulse has fallen.
+    public func strength(at t: Double) -> Double? {
+        guard t < duration else { return nil }
+        let t = max(t, 0).truncatingRemainder(dividingBy: period)
+        if t < Self.rise { return Easing.easeOutSine(t / Self.rise) }
+        if t < Self.rise + hold { return 1 }
+        return 1 - Easing.easeInOutSine((t - Self.rise - hold) / Self.fall)
+    }
+
+    /// How far into the first rise the strength is `strength`: where a pulse started over picks up, so a glow pressed
+    /// again rises on from where it is instead of dropping to nothing.
+    public static func rising(to strength: Double) -> Double {
+        rise * asin(min(max(strength, 0), 1)) * 2 / .pi
+    }
+}

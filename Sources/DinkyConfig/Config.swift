@@ -715,12 +715,14 @@ public struct Borders: Equatable {
     public var order = BorderOrder.below
     /// Bundle IDs whose windows get no border.
     public var excludeApps: [String] = []
-    /// Whether a binding that does nothing flashes the focused window's border.
+    /// Whether a binding that does nothing glows around the focused window.
     public var noopFlash = true
     public var noopFlashColor = Highlight.color(try! Color(hex: "#ed8796"))
-    /// How many times the border flashes, each `noop-flash-ms` on, then 80 ms off.
+    /// How many times the glow breathes in and out, each holding at full for `noop-flash-ms`.
     public var noopFlashCount = 2
-    public var noopFlashMs = 120
+    public var noopFlashMs = 80
+    /// How far the glow reaches out from the window's edge, in points; it reaches half as far in.
+    public var noopFlashSpread = 24.0
 
     public init() {}
 
@@ -739,6 +741,8 @@ public struct Borders: Equatable {
         guard (1...5).contains(noopFlashCount) else { throw ConfigError(path: t.path("noop-flash-count"), "must be 1 to 5") }
         noopFlashMs = try t.int("noop-flash-ms") ?? noopFlashMs
         guard (50...1000).contains(noopFlashMs) else { throw ConfigError(path: t.path("noop-flash-ms"), "must be 50 to 1000") }
+        noopFlashSpread = try t.double("noop-flash-spread") ?? noopFlashSpread
+        guard (4...64).contains(noopFlashSpread) else { throw ConfigError(path: t.path("noop-flash-spread"), "must be 4 to 64") }
         try t.done()
     }
 

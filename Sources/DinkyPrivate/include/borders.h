@@ -30,6 +30,15 @@ uint32_t dinky_border_create(double scale);
 void dinky_border_update(uint32_t border, uint32_t target, CGRect frame, int cornerRadius,
                          DinkyBorderColor color, double width, DinkyBorderOrder order);
 
+// The noop glow: reshapes and redraws the border as `color` at the edge of `frame`, fading out over `spread`
+// points outside it and half that inside, then places it directly above `target` as dinky_border_update does.
+// It covers the target's edge, so it is drawn over the window; the window still takes every click.
+void dinky_glow_update(uint32_t border, uint32_t target, CGRect frame, int cornerRadius,
+                       DinkyBorderColor color, double spread);
+
+// The whole border window's opacity, 0...1, applied by WindowServer without a redraw.
+void dinky_border_set_alpha(uint32_t border, double alpha);
+
 // Moves and re-orders without redrawing: the cheap path for drags and re-tiles that keep the size.
 void dinky_border_move(uint32_t border, uint32_t target, CGRect frame, double width,
                        DinkyBorderOrder order);

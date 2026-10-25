@@ -495,24 +495,29 @@ struct ConfigTests {
         #expect(defaults.noopFlash)
         #expect(defaults.noopFlashColor == .color(try Color(hex: "#ed8796")))
         #expect(defaults.noopFlashCount == 2)
-        #expect(defaults.noopFlashMs == 120)
+        #expect(defaults.noopFlashMs == 80)
+        #expect(defaults.noopFlashSpread == 24)
         let borders = try Config.parse("""
         [borders]
         noop-flash = false
         noop-flash-color = 'accent'
         noop-flash-count = 5
         noop-flash-ms = 50
+        noop-flash-spread = 4
         """).borders
         #expect(!borders.noopFlash)
         #expect(borders.noopFlashColor == .accent)
         #expect(borders.noopFlashCount == 5)
         #expect(borders.noopFlashMs == 50)
+        #expect(borders.noopFlashSpread == 4)
         #expect(try Config.parse("[hud]\non-noop = true\n").hud.onNoop)
 
         assertError("[borders]\nnoop-flash-count = 0\n", path: "borders.noop-flash-count", line: 2, contains: "1 to 5")
         assertError("[borders]\nnoop-flash-count = 6\n", path: "borders.noop-flash-count", line: 2, contains: "1 to 5")
         assertError("[borders]\nnoop-flash-ms = 40\n", path: "borders.noop-flash-ms", line: 2, contains: "50 to 1000")
         assertError("[borders]\nnoop-flash-ms = 1001\n", path: "borders.noop-flash-ms", line: 2, contains: "50 to 1000")
+        assertError("[borders]\nnoop-flash-spread = 3\n", path: "borders.noop-flash-spread", line: 2, contains: "4 to 64")
+        assertError("[borders]\nnoop-flash-spread = 64.5\n", path: "borders.noop-flash-spread", line: 2, contains: "4 to 64")
         assertError("[borders]\nnoop-flash-color = 'pink'\n", path: "borders.noop-flash-color", line: 2, contains: "'pink' is not a colour")
     }
 
