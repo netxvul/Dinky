@@ -651,8 +651,8 @@ let go of. It waits for the glide, which its glass would cost frames.
 It shows where the switcher shows when held, as `[window-switcher]` sets it,
 and not with the switcher off or `'scrolling'` left out of its `layouts`.
 Fingers taking hold again, a key binding or swipe, either switcher shown, a
-Space changing or Mission Control close it sooner; `switcher-ms = 0` turns it
-off.
+Space changing or Mission Control close it sooner; `show-switcher = false`
+turns it off.
 
 The fingers may rest before they move. With the same fingers as
 `[gestures.trackpad]`, they still swipe up and down soon after they land, but
@@ -677,7 +677,8 @@ off.
 | `enabled` | `false` | `true` scrolls strips with the fingers. |
 | `fingers` | `4` | How many fingers scroll, `3` to `5`; not `[gestures.trackpad]`'s while it binds `swipe-left` or `swipe-right`. |
 | `speed` | `1.5` | How many screens the strip moves as the fingers cross the whole trackpad, `0.25` to `5`. |
-| `switcher-ms` | `1000` | How long the window switcher shows the strip once it rests after the fingers let go, the window taking focus picked; `0` to `5000`, `0` turning it off. |
+| `show-switcher` | `true` | `false` keeps the window switcher from showing the strip once it rests after the fingers let go. |
+| `switcher-ms` | `1000` | How long it shows, the window taking focus picked, `100` to `5000`. |
 
 </div>
 
@@ -989,7 +990,8 @@ thumbnails = 'windows'          # windows (pictures, need Screen Recording) | ic
 # enabled = true
 # fingers = 4                   # 3 to 5; not [gestures.trackpad]'s while it binds swipe-left or swipe-right
 # speed = 1.5                   # screens the strip moves as the fingers cross the trackpad, 0.25 to 5
-# switcher-ms = 1000            # how long the window switcher shows the strip once it rests; 0 never
+# show-switcher = true          # the window switcher shows the strip once it rests
+# switcher-ms = 1000            # for this long, 100 to 5000
 
 # Which key of each pair bindings answer to: both | left | right. With alt = 'left',
 # right Option still types special characters.

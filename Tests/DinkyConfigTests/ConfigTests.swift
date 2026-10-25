@@ -469,6 +469,7 @@ struct ConfigTests {
         #expect(!defaults.enabled)
         #expect(defaults.fingers == 4)
         #expect(defaults.speed == 1.5)
+        #expect(defaults.showSwitcher)
         #expect(defaults.switcherMs == 1000)
         let config = try Config.parse("""
             [gestures.trackpad]
@@ -477,15 +478,17 @@ struct ConfigTests {
             [gestures.scroll]
             enabled = true
             speed = 2
-            switcher-ms = 0
+            show-switcher = false
+            switcher-ms = 600
             """)
         #expect(config.gestures.scroll.enabled)
         #expect(config.gestures.scroll.fingers == 4)
         #expect(config.gestures.scroll.speed == 2)
-        #expect(config.gestures.scroll.switcherMs == 0)
+        #expect(!config.gestures.scroll.showSwitcher)
+        #expect(config.gestures.scroll.switcherMs == 600)
         assertError("[gestures.scroll]\nfingers = 2\n", path: "gestures.scroll.fingers", line: 2, contains: "3 to 5")
         assertError("[gestures.scroll]\nspeed = 0\n", path: "gestures.scroll.speed", line: 2, contains: "0.25 to 5")
-        assertError("[gestures.scroll]\nswitcher-ms = -1\n", path: "gestures.scroll.switcher-ms", line: 2, contains: "0 to 5000")
+        assertError("[gestures.scroll]\nswitcher-ms = 0\n", path: "gestures.scroll.switcher-ms", line: 2, contains: "100 to 5000")
         assertError("[gestures.scroll]\nnatural = false\n", path: "gestures.scroll.natural", line: 2, contains: "unknown key")
         assertError("[gestures.trackpad]\nfingers = 4\nswipe-left = 'focus left'\n[gestures.scroll]\nenabled = true\n",
                     path: "gestures.scroll.fingers", line: 4, contains: "'swipe-left'")

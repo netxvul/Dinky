@@ -141,7 +141,7 @@ final class WindowSwitcher {
         self.config = config.windowSwitcher
         let modifier = self.config.enabled ? self.config.modifier : .none
         let byHand = modifier != .none || config.binds("window-switcher")
-        let glances = config.gestures.scroll.enabled && config.gestures.scroll.switcherMs > 0
+        let glances = config.gestures.scroll.enabled && config.gestures.scroll.showSwitcher
             && self.config.layouts.contains(.scrolling)
         enabled = self.config.enabled && (byHand || glances)
         glancesOnly = !byHand
@@ -155,7 +155,7 @@ final class WindowSwitcher {
         endGlance()
     }
 
-    /// `[gestures.scroll] switcher-ms`: the fingers let go of the strip of Space `space` on display `uuid`, settling
+    /// `[gestures.scroll] show-switcher`: the fingers let go of the strip of Space `space` on display `uuid`, settling
     /// with `pick` in view, and the capsule shows that workspace for `duration` seconds with `pick` picked, then closes
     /// by itself: a glance at where the strip went, with nothing to hold, pick or let go of. It goes where it would
     /// held, and for what it would held: not with the switcher off or `layouts` without the workspace's. Not over a

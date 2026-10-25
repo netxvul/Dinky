@@ -155,7 +155,8 @@ extension Config {
     # enabled = true
     # fingers = 4                   # 3 to 5; not [gestures.trackpad]'s while it binds swipe-left or swipe-right
     # speed = 1.5                   # screens the strip moves as the fingers cross the trackpad, 0.25 to 5
-    # switcher-ms = 1000            # how long the window switcher shows the strip once it rests; 0 never
+    # show-switcher = true          # the window switcher shows the strip once it rests
+    # switcher-ms = 1000            # for this long, 100 to 5000
 
     # Which key of each pair bindings answer to: both | left | right. With alt = 'left',
     # right Option still types special characters.

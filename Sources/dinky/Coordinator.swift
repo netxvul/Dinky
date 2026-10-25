@@ -830,9 +830,9 @@ final class Coordinator {
 
     /// The fingers let go, moving across at `velocity` trackpad widths a second: the strip coasts on as far as that
     /// takes it, then settles with the column showing nearest the middle in view, which takes focus once it rests, and
-    /// its pass glides the windows there from where they are, at their speed; once they rest, the window switcher shows
-    /// the strip for `[gestures.scroll] switcher-ms`, that column's window picked, unless not `glance`. A Space gone
-    /// from under the fingers puts the strip back instead.
+    /// its pass glides the windows there from where they are, at their speed; once they rest, with `[gestures.scroll]
+    /// show-switcher` and `glance`, the window switcher shows the strip for `switcher-ms`, that column's window picked.
+    /// A Space gone from under the fingers puts the strip back instead.
     private func endStripScroll(velocity: Double, glance: Bool = true) {
         guard let scroll = stripScroll else { return }
         guard stripScrollShows(scroll) else { return abortStripScroll() }
@@ -998,12 +998,13 @@ final class Coordinator {
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { check() }
     }
 
-    /// Once the strip on `key` the fingers let go of rests, its glide over, the window switcher shows it for
-    /// `[gestures.scroll] switcher-ms`, `id` picked: its glass over the glide would cost the glide frames. Nothing if
-    /// fingers let go again first, or take hold, or focus goes to another window, or the Space no longer shows.
+    /// With `[gestures.scroll] show-switcher`, once the strip on `key` the fingers let go of rests, its glide over, the
+    /// window switcher shows it for `switcher-ms`, `id` picked: its glass over the glide would cost the glide frames.
+    /// Nothing if fingers let go again first, or take hold, or focus goes to another window, or the Space no longer
+    /// shows.
     private func glanceOnceStill(_ id: WindowID, in key: UInt64, display: String) {
         stripGlance += 1
-        guard config.gestures.scroll.switcherMs > 0 else { return }
+        guard config.gestures.scroll.showSwitcher else { return }
         let began = CACurrentMediaTime(), glance = stripGlance
         func check() {
             guard glance == stripGlance, stripScroll == nil, enabled, isVisible(key),

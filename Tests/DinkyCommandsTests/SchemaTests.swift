@@ -230,6 +230,7 @@ struct SchemaTests {
         enabled = true
         fingers = 3
         speed = 2
+        show-switcher = false
         switcher-ms = 800
 
         [floating]

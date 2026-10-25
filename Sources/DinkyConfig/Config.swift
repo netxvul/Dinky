@@ -546,14 +546,16 @@ public struct MouseSwipes: Equatable {
 
 /// `[gestures.scroll]`: `fingers` fingers moved across the trackpad scroll a strip with them, as SlideScroll's do: let
 /// go, it coasts on at their speed and settles with the column nearest the middle in view, and once it rests the
-/// window switcher shows it for `switcher-ms`, that column's window picked. Off until `enabled`. Never on a mouse.
+/// window switcher shows it for `switcher-ms`, that column's window picked, unless not `show-switcher`. Off until
+/// `enabled`. Never on a mouse.
 public struct ScrollGesture: Equatable {
     public var enabled = false
     /// How many fingers scroll, 3 to 5.
     public var fingers = 4
     /// How many screens the strip moves as the fingers cross the whole trackpad.
     public var speed = 1.5
-    /// How long the window switcher shows the strip once it rests after the fingers let go, 0 not at all.
+    /// Whether the window switcher shows the strip once it rests after the fingers let go, and for how long.
+    public var showSwitcher = true
     public var switcherMs = 1000
 
     public init() {}
@@ -564,8 +566,11 @@ public struct ScrollGesture: Equatable {
         guard (3...5).contains(fingers) else { throw ConfigError(path: t.path("fingers"), "must be 3 to 5") }
         speed = try t.double("speed") ?? speed
         guard (0.25...5).contains(speed) else { throw ConfigError(path: t.path("speed"), "must be 0.25 to 5") }
+        showSwitcher = try t.bool("show-switcher") ?? showSwitcher
         switcherMs = try t.int("switcher-ms") ?? switcherMs
-        guard (0...5000).contains(switcherMs) else { throw ConfigError(path: t.path("switcher-ms"), "must be 0 to 5000") }
+        guard (100...5000).contains(switcherMs) else {
+            throw ConfigError(path: t.path("switcher-ms"), "must be 100 to 5000")
+        }
         try t.done()
     }
 
