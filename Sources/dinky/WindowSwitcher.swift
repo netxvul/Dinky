@@ -120,6 +120,8 @@ final class WindowSwitcher {
     /// Whether a modifier, a key binding or a strip let go of (a glance) can show the capsule, so thumbnails are worth
     /// keeping.
     private var enabled = false
+    /// Whether only a glance can, which shows nothing but a scrolling strip: thumbnails for no other workspace.
+    private var glancesOnly = false
 
     /// The `window-switcher` command: the capsule in the middle of the display under the pointer, picked with the
     /// keys. False if the workspace there has nothing to pick from.
@@ -134,8 +136,11 @@ final class WindowSwitcher {
         }
         self.config = config.windowSwitcher
         let modifier = self.config.enabled ? self.config.modifier : .none
+        let byHand = modifier != .none || config.binds("window-switcher")
         let glances = config.gestures.scroll.enabled && config.gestures.scroll.switcherMs > 0
-        enabled = self.config.enabled && (modifier != .none || config.binds("window-switcher") || glances)
+            && self.config.layouts.contains(.scrolling)
+        enabled = self.config.enabled && (byHand || glances)
+        glancesOnly = !byHand
         hold.update(modifier: modifier, sides: config.modifiers, delayMs: self.config.delayMs,
                     trigger: self.config.trigger, doubleTapMs: self.config.doubleTapMs)
     }
@@ -192,9 +197,9 @@ final class WindowSwitcher {
         guard enabled, id != 0, Thumbnails.shared.permitted,
               let coordinator = AppState.shared.coordinator, let placement = coordinator.placements[id] else { return }
         if let workspace = placement.space.flatMap({ coordinator.workspaces[$0] }) {
-            guard shows(for: workspace) else { return }
+            guard shows(for: workspace), !glancesOnly || kind(of: workspace) == .scrolling else { return }
         } else {
-            guard config.layouts.contains(.free), let window = coordinator.model.windows[id],
+            guard !glancesOnly, config.layouts.contains(.free), let window = coordinator.model.windows[id],
                   isFreeUserSpace(window.spaceID, coordinator) else { return }
         }
         Thumbnails.shared.refreshSoon(id, scale: NSScreen.main?.backingScaleFactor ?? 2)

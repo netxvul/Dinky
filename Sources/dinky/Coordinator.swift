@@ -732,8 +732,8 @@ final class Coordinator {
     func fingersScrolled(_ scroll: FingerScroll) {
         switch scroll {
         case .began(let dx):
-            // Fingers landing again before the last of them were heard to lift.
-            if stripScroll != nil { endStripScroll(velocity: 0) }
+            // Fingers landing again before the last of them were heard to lift: no glance, the stroke goes on.
+            if stripScroll != nil { endStripScroll(velocity: 0, glance: false) }
             if beginStripScroll() { scrollStrip(by: dx) }
         case .moved(let dx):
             scrollStrip(by: dx)
@@ -800,7 +800,7 @@ final class Coordinator {
         guard let scroll = stripScroll else { return }
         stripScroll?.heard = CACurrentMediaTime()
         // A drag, which is the user's to move, ends the scroll where it is.
-        guard drag == nil, windowPress == nil else { return endStripScroll(velocity: 0) }
+        guard drag == nil, windowPress == nil else { return endStripScroll(velocity: 0, glance: false) }
         guard var workspace = workspaces[scroll.key], workspace.isScrollingFreely else {
             takeOver(scroll.key)
             return flush()
@@ -829,9 +829,9 @@ final class Coordinator {
     /// The fingers let go, moving across at `velocity` trackpad widths a second: the strip coasts on as far as that
     /// takes it, then settles with the column showing nearest the middle in view, which takes focus once it rests, and
     /// its pass glides the windows there from where they are, at their speed, as the window switcher shows the strip
-    /// for `[gestures.scroll] switcher-ms`, that column's window picked. A Space gone from under the fingers puts the
-    /// strip back instead.
-    private func endStripScroll(velocity: Double) {
+    /// for `[gestures.scroll] switcher-ms`, that column's window picked, unless not `glance`. A Space gone from under
+    /// the fingers puts the strip back instead.
+    private func endStripScroll(velocity: Double, glance: Bool = true) {
         guard let scroll = stripScroll else { return }
         guard stripScrollShows(scroll) else { return abortStripScroll() }
         let key = scroll.key
@@ -846,17 +846,18 @@ final class Coordinator {
         handBack(key)
         dirty.insert(key)
         guard let target else { return flush() }
-        // As SlideScroll does, the window is focused when it is another than before, or focus was on another Space.
-        if target != before || placements[lastFocused]?.space != key {
-            focusing = (target, Date() + 3)
-            flush()
-            focusOnceStill(target, in: key)
-        } else {
-            flush()
+        defer {
+            // Over the glide the pass has set off.
+            if glance {
+                WindowSwitcher.shared.glance(space: key, display: scroll.display, pick: target,
+                                             for: Double(config.gestures.scroll.switcherMs) / 1000)
+            }
         }
-        // Over the glide the pass has set off.
-        WindowSwitcher.shared.glance(space: key, display: scroll.display, pick: target,
-                                     for: Double(config.gestures.scroll.switcherMs) / 1000)
+        // As SlideScroll does, the window is focused when it is another than before, or focus was on another Space.
+        guard target != before || placements[lastFocused]?.space != key else { return flush() }
+        focusing = (target, Date() + 3)
+        flush()
+        focusOnceStill(target, in: key)
     }
 
     /// The strip's Space went from under the fingers, or Mission Control opened: it goes back to where it showed as
