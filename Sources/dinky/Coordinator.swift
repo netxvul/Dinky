@@ -1000,18 +1000,22 @@ final class Coordinator {
 
     /// With `[gestures.scroll] show-switcher`, once the strip on `key` the fingers let go of rests, its glide over, the
     /// window switcher shows it for `switcher-ms`, `id` picked: its glass over the glide would cost the glide frames.
-    /// Nothing if fingers let go again first, or take hold, or focus goes to another window, or the Space no longer
-    /// shows.
+    /// Nothing if, before then, fingers let go again or take hold, a click, a drag or anything that would close a
+    /// glance shown comes, focus goes to another window, or the Space no longer shows.
     private func glanceOnceStill(_ id: WindowID, in key: UInt64, display: String) {
         stripGlance += 1
         guard config.gestures.scroll.showSwitcher else { return }
-        let began = CACurrentMediaTime(), glance = stripGlance
+        let began = CACurrentMediaTime(), glance = stripGlance, calledOff = WindowSwitcher.shared.calledOff
+        // Longer than the release glide can last, the animator's own limit for it, and Dock's frames landing after.
+        let longest = max(1.5, 4 * Double(config.animations.durationMs) / 1000 + 0.5)
         func check() {
-            guard glance == stripGlance, stripScroll == nil, enabled, isVisible(key),
-                  workspaces[key]?.focused == id else { return }
+            guard glance == stripGlance, calledOff == WindowSwitcher.shared.calledOff, stripScroll == nil, enabled,
+                  isVisible(key), drag == nil, windowPress == nil, !clickHold,
+                  !CGEventSource.buttonState(.combinedSessionState, button: .left),
+                  workspaces[key]?.focused == id, focusedWindow == id else { return }
             let moving = saGlides[key] != nil || pushes[key] != nil
                 || workspaces[key]?.windows.contains(where: isAnimating) == true
-            guard !moving || CACurrentMediaTime() - began > 1.5 else {
+            guard !moving || CACurrentMediaTime() - began > longest else {
                 DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { check() }
                 return
             }

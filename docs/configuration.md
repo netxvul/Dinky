@@ -651,8 +651,9 @@ let go of. It waits for the glide, which its glass would cost frames.
 It shows where the switcher shows when held, as `[window-switcher]` sets it,
 and not with the switcher off or `'scrolling'` left out of its `layouts`.
 Fingers taking hold again, a key binding or swipe, either switcher shown, a
-Space changing or Mission Control close it sooner; `show-switcher = false`
-turns it off.
+Space changing or Mission Control close it sooner, or keep it away while the
+strip still glides, as a click, a drag or focus going elsewhere do then too;
+`show-switcher = false` turns it off.
 
 The fingers may rest before they move. With the same fingers as
 `[gestures.trackpad]`, they still swipe up and down soon after they land, but

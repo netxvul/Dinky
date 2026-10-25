@@ -83,6 +83,8 @@ final class WindowSwitcher {
     private var generation = 0
     /// Closes a glance, the capsule shown by itself as fingers let go of a strip, set while one is up. See `glance`.
     private var glanceEnd: Timer?
+    /// Bumped by whatever closes a glance, so one still waiting for its strip to rest does not show after it.
+    private(set) var calledOff = 0
     /// From a showing for the hold until its hide: the hold lets go before the commit that hides it, as a click's
     /// release or Return's next turn of the run loop, and a glance meanwhile would put its pick in its place.
     private var heldUp = false
@@ -169,7 +171,9 @@ final class WindowSwitcher {
               app.enabled, !MissionControl.shared.active, !SpaceSwitcher.shared.switching,
               !WorkspaceSwitcher.shared.isShowing, let coordinator = app.coordinator,
               let display = app.displays.displays.first(where: { $0.uuid == uuid }),
-              display.currentSpaceID == space else {
+              display.currentSpaceID == space,
+              // Read afresh: the display model learns of a Space swipe only once it lands.
+              !dinky_display_is_animating(uuid as CFString), dinky_current_space_id(uuid as CFString) == space else {
             if glanced { hide() }
             return
         }
@@ -197,8 +201,9 @@ final class WindowSwitcher {
         return (apps[pid]!.name, apps[pid]!.icon)
     }
 
-    /// Closes a glance up, sooner than it would by itself; nothing else.
+    /// Closes a glance up, sooner than it would by itself, or keeps one waiting from showing; nothing else.
     func endGlance() {
+        calledOff += 1
         guard glanceEnd != nil else { return }
         hide()
     }
@@ -290,7 +295,8 @@ final class WindowSwitcher {
     /// a free workspace, any window), or two with `show-single` off. While the display under the pointer is still moving between Spaces, as in a trackpad swipe, it waits and
     /// shows the workspace it lands on.
     private func show() -> Bool {
-        // A glance up is this showing's now: it stays up for it, filled afresh, or goes.
+        // A glance up is this showing's now: it stays up for it, filled afresh, or goes; one waiting stays away.
+        calledOff += 1
         let glanced = glanceEnd != nil
         glanceEnd?.invalidate()
         glanceEnd = nil
