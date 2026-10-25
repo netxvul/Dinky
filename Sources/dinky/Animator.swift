@@ -395,8 +395,11 @@ final class Animator: NSObject {
         // ahead.
         let gap = lastTarget.map { link.targetTimestamp - $0 } ?? link.duration
         lastTarget = link.targetTimestamp
-        pace?.frames += 1
-        pace?.longest = max(pace?.longest ?? 0, gap)
+        if var counted = pace {
+            counted.frames += 1
+            counted.longest = max(counted.longest, gap)
+            pace = counted
+        }
         step(dt: min(max(gap, 0), 1.0 / 30))
     }
 
