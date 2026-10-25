@@ -87,6 +87,10 @@ final class WindowSwitcher {
     /// release or Return's next turn of the run loop, and a glance meanwhile would put its pick in its place.
     private var heldUp = false
 
+    /// Each app's name and icon by its process, as the capsule last showed them: looking them up afresh for every
+    /// window took several milliseconds a showing, frames a glance stole from the glide under it.
+    private var apps: [pid_t: (running: NSRunningApplication?, name: String, icon: NSImage?)] = [:]
+
     private lazy var view = SwitcherView(frame: .zero)
     private lazy var glass = GlassPanel(content: view, cornerRadius: SwitcherLayout.thumbHeight)
 
@@ -183,6 +187,14 @@ final class WindowSwitcher {
         }
         glanceEnd = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in self?.hide() }
         startWatching()
+    }
+
+    /// The name and icon of the app of process `pid`, kept while it runs.
+    private func app(_ pid: pid_t) -> (name: String, icon: NSImage?) {
+        if let known = apps[pid], known.running?.isTerminated == false { return (known.name, known.icon) }
+        let running = NSRunningApplication(processIdentifier: pid)
+        apps[pid] = (running, running?.localizedName ?? "", running?.icon)
+        return (apps[pid]!.name, apps[pid]!.icon)
     }
 
     /// Closes a glance up, sooner than it would by itself; nothing else.
@@ -335,9 +347,8 @@ final class WindowSwitcher {
         let titles = config.showTitles ? WindowTitles.known(ids) : [:]
         items = ids.map { id in
             let window = coordinator.model.windows[id]!
-            let running = NSRunningApplication(processIdentifier: window.pid)
-            let app = window.appName ?? running?.localizedName ?? ""
-            return SwitcherItem(id: id, app: app, icon: running?.icon, title: titles[id] ?? "")
+            let running = app(window.pid)
+            return SwitcherItem(id: id, app: window.appName ?? running.name, icon: running.icon, title: titles[id] ?? "")
         }
         let visible = display.visibleArea, maxWidth = (visible.width * 0.8).rounded()
         // On a free workspace, the focused window, else the frontmost one there.
