@@ -161,6 +161,8 @@ final class Coordinator {
     private static let stripScrollQuiet: CFTimeInterval = 1
     /// How far a strip coasts once the fingers lift: as far as their speed would take it in this many seconds.
     private static let stripScrollFling = 0.15
+    /// Bumped as fingers let go of a strip, so only the last let-go's glance waits for its strip to rest.
+    private var stripGlance = 0
 
     init(displays: DisplayModel, config: Config) {
         self.displays = displays
@@ -828,9 +830,9 @@ final class Coordinator {
 
     /// The fingers let go, moving across at `velocity` trackpad widths a second: the strip coasts on as far as that
     /// takes it, then settles with the column showing nearest the middle in view, which takes focus once it rests, and
-    /// its pass glides the windows there from where they are, at their speed, as the window switcher shows the strip
-    /// for `[gestures.scroll] switcher-ms`, that column's window picked, unless not `glance`. A Space gone from under
-    /// the fingers puts the strip back instead.
+    /// its pass glides the windows there from where they are, at their speed; once they rest, the window switcher shows
+    /// the strip for `[gestures.scroll] switcher-ms`, that column's window picked, unless not `glance`. A Space gone
+    /// from under the fingers puts the strip back instead.
     private func endStripScroll(velocity: Double, glance: Bool = true) {
         guard let scroll = stripScroll else { return }
         guard stripScrollShows(scroll) else { return abortStripScroll() }
@@ -846,13 +848,7 @@ final class Coordinator {
         handBack(key)
         dirty.insert(key)
         guard let target else { return flush() }
-        defer {
-            // Over the glide the pass has set off.
-            if glance {
-                WindowSwitcher.shared.glance(space: key, display: scroll.display, pick: target,
-                                             for: Double(config.gestures.scroll.switcherMs) / 1000)
-            }
-        }
+        if glance { glanceOnceStill(target, in: key, display: scroll.display) }
         // As SlideScroll does, the window is focused when it is another than before, or focus was on another Space.
         guard target != before || placements[lastFocused]?.space != key else { return flush() }
         focusing = (target, Date() + 3)
@@ -998,6 +994,28 @@ final class Coordinator {
                 return
             }
             focus(id)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { check() }
+    }
+
+    /// Once the strip on `key` the fingers let go of rests, its glide over, the window switcher shows it for
+    /// `[gestures.scroll] switcher-ms`, `id` picked: its glass over the glide would cost the glide frames. Nothing if
+    /// fingers let go again first, or take hold, or focus goes to another window, or the Space no longer shows.
+    private func glanceOnceStill(_ id: WindowID, in key: UInt64, display: String) {
+        stripGlance += 1
+        guard config.gestures.scroll.switcherMs > 0 else { return }
+        let began = CACurrentMediaTime(), glance = stripGlance
+        func check() {
+            guard glance == stripGlance, stripScroll == nil, enabled, isVisible(key),
+                  workspaces[key]?.focused == id else { return }
+            let moving = saGlides[key] != nil || pushes[key] != nil
+                || workspaces[key]?.windows.contains(where: isAnimating) == true
+            guard !moving || CACurrentMediaTime() - began > 1.5 else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { check() }
+                return
+            }
+            WindowSwitcher.shared.glance(space: key, display: display, pick: id,
+                                         for: Double(config.gestures.scroll.switcherMs) / 1000)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { check() }
     }

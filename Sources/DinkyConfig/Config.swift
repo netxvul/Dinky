@@ -545,15 +545,15 @@ public struct MouseSwipes: Equatable {
 }
 
 /// `[gestures.scroll]`: `fingers` fingers moved across the trackpad scroll a strip with them, as SlideScroll's do: let
-/// go, it coasts on at their speed and settles with the column nearest the middle in view, and the window switcher
-/// shows the strip for `switcher-ms`, that column's window picked. Off until `enabled`. Never on a mouse.
+/// go, it coasts on at their speed and settles with the column nearest the middle in view, and once it rests the
+/// window switcher shows it for `switcher-ms`, that column's window picked. Off until `enabled`. Never on a mouse.
 public struct ScrollGesture: Equatable {
     public var enabled = false
     /// How many fingers scroll, 3 to 5.
     public var fingers = 4
     /// How many screens the strip moves as the fingers cross the whole trackpad.
     public var speed = 1.5
-    /// How long the window switcher shows the strip as the fingers let go, 0 not at all.
+    /// How long the window switcher shows the strip once it rests after the fingers let go, 0 not at all.
     public var switcherMs = 1000
 
     public init() {}
