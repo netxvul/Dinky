@@ -262,6 +262,11 @@ struct SchemaTests {
         inactive-color = '#00ff0080'
         order = 'above'
         exclude-apps = ['com.apple.finder']
+        noop-flash = true
+        noop-flash-color = 'accent'
+        noop-flash-width = 3.5
+        noop-flash-spread = 20
+        noop-flash-opacity = 0.5
 
         [focus-follows-mouse]
         enabled = true
@@ -289,6 +294,7 @@ struct SchemaTests {
         on-layout-change = true
         on-mode-change = false
         on-workspace-change = false
+        on-noop = true
 
         [modifiers]
         alt = 'left'

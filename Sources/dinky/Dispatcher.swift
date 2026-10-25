@@ -4,13 +4,17 @@ import DinkyConfig
 import DinkyLayout
 import DinkyPrivate
 
-/// What a command answers: a short line for the CLI, and whether it worked.
+/// What a command answers: a short line for the CLI, whether it worked, and whether it did nothing, which a binding
+/// shows by making the focused window's edge glow.
 struct Reply {
     var ok: Bool
     var text: String
+    var noop = false
 
     static func ok(_ text: String) -> Reply { Reply(ok: true, text: text) }
     static func error(_ text: String) -> Reply { Reply(ok: false, text: text) }
+    /// A command with nothing to do: `ok` keeps the CLI's exit status what it was before replies said so.
+    static func nothing(_ text: String, ok: Bool) -> Reply { Reply(ok: ok, text: text, noop: true) }
 }
 
 // Runs commands from bindings, the CLI and the menu against what exists today. Main thread only.
@@ -35,7 +39,7 @@ enum Dispatcher {
             let model = AppState.shared.displays
             guard let display = model.focusedDisplay(), let previous = model.previousSpace(on: display),
                   let n = AppState.shared.numbers.number(of: previous) else {
-                return .error("no previous workspace")
+                return .nothing("no previous workspace", ok: false)
             }
             return switchWorkspace(.number(n))
         case .moveWindowToWorkspace(let target, let follow):
@@ -52,16 +56,22 @@ enum Dispatcher {
             return layout(names, window: window)
         case .move(let direction, let points, let floatingOnly):
             let name = "move \(direction)" + (points.map { " \($0)" } ?? "")
+            // A floating window already against the edge stays where it is.
+            var still = false
             if let reply = floating(name, window: window, { coordinator, id in
                 let step = CGFloat(points ?? coordinator.config.floating.moveStep)
-                return coordinator.floating(id) { frame, area in FloatingFrame.moved(frame, direction, by: step, within: area) }
-            }) { return reply }
-            if floatingOnly { return .ok("\(name): the focused window does not float") }
+                return coordinator.floating(id) { frame, area in
+                    let moved = FloatingFrame.moved(frame, direction, by: step, within: area)
+                    still = moved == frame
+                    return moved
+                }
+            }) { return still && reply.ok ? .nothing("\(name): nothing to do", ok: true) : reply }
+            if floatingOnly { return .nothing("\(name): the focused window does not float", ok: true) }
             return tree(name) { $0.move(direction) }
         case .joinWith(let direction):
             if let reply = floating("join-with \(direction)", window: window, { coordinator, id in
                 coordinator.isOnFreeWorkspace(id) ? freeRefusal : "the focused window floats; tile it first"
-            }) { return reply }
+            }) { return .nothing(reply.text, ok: false) }
             return tree("join-with \(direction)") { $0.join(direction) }
         case .resize(let dimension, let delta, let floatingOnly):
             let axis: Orientation? = switch dimension {
@@ -70,17 +80,27 @@ enum Dispatcher {
             case .height: .vertical
             }
             let name = "resize \(dimension.rawValue) \(delta)"
+            var still = false
             if let reply = floating(name, window: window, { coordinator, id in
                 let anchor = ResizeAnchor(rawValue: coordinator.config.floating.resizeAnchor.rawValue) ?? .center
                 return coordinator.floating(id) { frame, area in
-                    FloatingFrame.resized(frame, by: CGFloat(delta), along: axis, within: area, anchor: anchor)
+                    let resized = FloatingFrame.resized(frame, by: CGFloat(delta), along: axis, within: area, anchor: anchor)
+                    still = resized == frame
+                    return resized
                 }
-            }) { return reply }
-            if floatingOnly { return .ok("\(name): the focused window does not float") }
+            }) { return still && reply.ok ? .nothing("\(name): nothing to do", ok: true) : reply }
+            if floatingOnly { return .nothing("\(name): the focused window does not float", ok: true) }
             return tree(name) { $0.resize(by: CGFloat(delta), along: axis) }
         case .fullscreen:
             if let reply = floating("fullscreen", window: window, { $0.toggleFloatingFullscreen($1) }) { return reply }
-            return tree("fullscreen") { $0.toggleFullscreen(); return true }
+            // A window already filling its workspace, alone there, would not change.
+            var fills = false
+            let reply = tree("fullscreen") { workspace in
+                fills = workspace.focusedFillsWorkspace
+                if !fills { workspace.toggleFullscreen() }
+                return true
+            }
+            return fills ? .nothing("fullscreen: the window already fills the workspace", ok: true) : reply
         case .grid(let placement, let toggle):
             guard let coordinator = AppState.shared.coordinator else { return .error("tiling is not running") }
             let id = window ?? coordinator.focusedWindow
@@ -110,7 +130,7 @@ enum Dispatcher {
                     if workspace.focused != window { workspace.focus(window) }
                     return workspace.cycleWidth(through: shares)
                 }
-                return changed == true ? .ok(name) : .error("\(name): nothing to do")
+                return changed == true ? .ok(name) : .nothing("\(name): nothing to do", ok: false)
             }
             return tree(name) { $0.cycleWidth(through: shares) }
         case .flattenWorkspaceTree:
@@ -129,12 +149,12 @@ enum Dispatcher {
             guard AppState.shared.coordinator != nil else { return .error("tiling is not running") }
             guard AppState.shared.config.windowSwitcher.enabled else { return .error("the window switcher is off: enabled = false") }
             return WindowSwitcher.shared.showFromKeyboard() ? .ok("window-switcher")
-                : .error("the workspace under the pointer has too few windows, as [window-switcher] show-single says, or a layout its layouts leave out")
+                : .nothing("the workspace under the pointer has too few windows, as [window-switcher] show-single says, or a layout its layouts leave out", ok: false)
         case .workspaceSwitcher:
             guard AppState.shared.coordinator != nil else { return .error("tiling is not running") }
             guard AppState.shared.config.workspaceSwitcher.enabled else { return .error("the workspace switcher is off: enabled = false") }
             return WorkspaceSwitcher.shared.showFromKeyboard() ? .ok("workspace-switcher")
-                : .error("fewer than two workspaces to pick from")
+                : .nothing("fewer than two workspaces to pick from", ok: false)
         case .clearMinimumSizes:
             guard let coordinator = AppState.shared.coordinator else { return .error("tiling is not running") }
             coordinator.clearMinimumSizes()
@@ -174,7 +194,8 @@ enum Dispatcher {
 
     private struct Refusal: Error {
         let reply: Reply
-        init(_ text: String) { reply = .error(text) }
+        /// `noop` for a target that is simply not there from here, as at the last workspace.
+        init(_ text: String, noop: Bool = false) { reply = noop ? .nothing(text, ok: false) : .error(text) }
     }
 
     /// The workspace a target names. `prev` and `next` step through the focused display's workspaces in number
@@ -186,10 +207,10 @@ enum Dispatcher {
         model.reconcile()
         switch target {
         case .number(let n):
-            guard (1...numbers.count).contains(n) else { throw Refusal("no workspace \(n), there are \(numbers.count)") }
+            guard (1...numbers.count).contains(n) else { throw Refusal("no workspace \(n), there are \(numbers.count)", noop: true) }
             return n
         case .recent:
-            guard let n = model.recentSpace.flatMap(numbers.number(of:)) else { throw Refusal("no recent workspace") }
+            guard let n = model.recentSpace.flatMap(numbers.number(of:)) else { throw Refusal("no recent workspace", noop: true) }
             return n
         case .prev, .next:
             guard let display = model.focusedDisplay(), let current = numbers.number(of: targetSpaceID(on: display)) else {
@@ -198,7 +219,7 @@ enum Dispatcher {
             let here = numbers.workspaces(on: display)
             guard let at = here.firstIndex(of: current) else { throw Refusal("not on a numbered workspace") }
             let i = at + (target == .next ? 1 : -1)
-            guard here.indices.contains(i) else { throw Refusal("no \(target == .next ? "next" : "previous") workspace on this display") }
+            guard here.indices.contains(i) else { throw Refusal("no \(target == .next ? "next" : "previous") workspace on this display", noop: true) }
             return here[i]
         }
     }
@@ -283,12 +304,20 @@ enum Dispatcher {
     private static func tree(_ name: String, wholeSpace: Bool = false, _ change: (inout Workspace) -> Bool) -> Reply {
         guard let coordinator = AppState.shared.coordinator else { return .error("tiling is not running") }
         let id = coordinator.focusedWindow
+        // A command can change the layout before finding nothing to do, as move ends fullscreen first: that is no noop.
+        var moved = false
+        func watched(_ workspace: inout Workspace) -> Bool {
+            let before = workspace.layout()
+            let done = change(&workspace)
+            moved = !done && workspace.layout() != before
+            return done
+        }
         let result = wholeSpace && coordinator.isFloating(id) == true
-            ? coordinator.spaceKey(of: id).flatMap { coordinator.command(onSpace: $0, change) }
-            : coordinator.command(change)
+            ? coordinator.spaceKey(of: id).flatMap { coordinator.command(onSpace: $0, watched) }
+            : coordinator.command(watched)
         switch result {
         case nil: return .error("\(name): the focused window is not tiled")
-        case false?: return .error("\(name): nothing to do")
+        case false?: return moved ? .error("\(name): nothing to do") : .nothing("\(name): nothing to do", ok: false)
         case true?: return .ok(name)
         }
     }
@@ -303,7 +332,7 @@ enum Dispatcher {
             }
             return change(&workspace)
         }
-        return refused ? .error("\(name): not supported in a fixed or scrolling layout") : reply
+        return refused ? .nothing("\(name): not supported in a fixed or scrolling layout", ok: false) : reply
     }
 
     /// Applies the layout after the last that describes the window now (see `LayoutName.next`): floating or tiling
@@ -321,7 +350,7 @@ enum Dispatcher {
         }
         let name = LayoutName.next(in: names, current: current)
         // Its workspace would float the window again at once, leaving nothing changed.
-        if name != .floating, coordinator.isOnFreeWorkspace(id) { return .error("layout \(name.rawValue): \(freeRefusal)") }
+        if name != .floating, coordinator.isOnFreeWorkspace(id) { return .nothing("layout \(name.rawValue): \(freeRefusal)", ok: false) }
         switch name {
         case .floating, .tiling:
             coordinator.setFloating(id, name == .floating)
@@ -347,11 +376,11 @@ enum Dispatcher {
         model.reconcile()
         guard wid != 0, let from = model.display(ofWindow: wid) else { return .error("no focused window") }
         let displays = model.displays
-        guard displays.count > 1, let i = displays.firstIndex(of: from) else { return .error("no other display") }
+        guard displays.count > 1, let i = displays.firstIndex(of: from) else { return .nothing("no other display", ok: false) }
         let n: Int
         if target == .recent {
             guard let recent = model.recentDisplay, recent != from, let at = displays.firstIndex(of: recent) else {
-                return .error("no recent display")
+                return .nothing("no recent display", ok: false)
             }
             n = at
         } else {
@@ -381,7 +410,7 @@ enum Dispatcher {
     private static func relocate(_ wid: WindowID, to space: UInt64, on to: Display, destination: String,
                                  follow: Bool) -> Reply? {
         guard wid != 0 else { return .error("no focused window") }
-        guard dinky_window_space_id(wid) != space else { return .ok("window \(wid) is already on \(destination)") }
+        guard dinky_window_space_id(wid) != space else { return .nothing("window \(wid) is already on \(destination)", ok: true) }
         let from = AppState.shared.displays.display(ofWindow: wid)
         if let error = move(wid, to: space, arriving: destination) { return error }
         if let from { keepOffset(of: wid, from: from, to: to, space: space) }

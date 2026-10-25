@@ -33,7 +33,15 @@ final class Coordinator {
     let applier = FrameApplier()
     private lazy var animator = Animator(applier: applier)
     private var borders: BorderManager?
-    func isBorderWindow(_ id: WindowID) -> Bool { borders?.isBorder(id) ?? false }
+    /// The noop flash's glow, over any window and its border: borders on or off, its app excluded or not.
+    private lazy var noopGlow = NoopGlow { [weak self] id in self?.borders?.border(above: id) }
+    func isBorderWindow(_ id: WindowID) -> Bool { borders?.isBorder(id) == true || noopGlow.isBorder(id) }
+
+    /// Makes a window's edge glow once, for a binding that did nothing, unless `[borders] noop-flash` is off.
+    func flashBorder(of id: WindowID) {
+        guard config.borders.noopFlash, let window = model.windows[id], window.isDocument else { return }
+        noopGlow.flash(id, config: config.borders, model: model)
+    }
     private(set) var workspaces: [UInt64: Workspace] = [:]
     var placements: [WindowID: Placement] = [:]
     var dirty: Set<UInt64> = []
@@ -218,9 +226,11 @@ final class Coordinator {
         // Detected here, not in the border manager, so hover focus stands down even with borders off.
         if MissionControl.shared.update(from: model) {
             borders?.missionControlChanged()
+            noopGlow.missionControlChanged()
             if !MissionControl.shared.active { missionControlClosed() }
         }
         borders?.handle(event)
+        noopGlow.handle(event)
         if let window = event.window {
             // A drag first, then the Space: macOS moves a window dragged over another display to its Space, often in
             // the first move dinky hears of, and the drag keeps it in its tree (Drag.swift) only once it is one.

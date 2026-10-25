@@ -24,12 +24,12 @@ extension Dispatcher {
         }
         switch action {
         case .stop, .wrapAroundAllMonitors:
-            return .ok("no window \(direction)")
+            return .nothing("no window \(direction)", ok: true)
         case .fail:
-            return .error("no window \(direction)")
+            return .nothing("no window \(direction)", ok: false)
         case .wrapAroundTheWorkspace:
             guard let id = coordinator.command({ $0.focus(direction, wrapping: true) ? $0.focused : nil }) ?? nil else {
-                return .ok("no window to wrap around to")
+                return .nothing("no window to wrap around to", ok: true)
             }
             return focus(window: id)
         }
@@ -41,7 +41,7 @@ extension Dispatcher {
         model.reconcile()
         guard let from = model.focusedDisplay() else { return .error("no display") }
         if target == .recent {
-            guard let recent = model.recentDisplay, recent != from else { return .error("no recent display") }
+            guard let recent = model.recentDisplay, recent != from else { return .nothing("no recent display", ok: false) }
             return focus(recent, window: AppState.shared.coordinator?.workspace(on: recent)?.focused)
         }
         let line = target.direction.map { displays(inLineWith: from, $0.orientation, model.displays) }
@@ -49,7 +49,8 @@ extension Dispatcher {
         let forward = target.direction?.isForward ?? (target == .next)
         let index = line.firstIndex(of: from)! + (forward ? 1 : -1)
         guard line.indices.contains(index) else {
-            return .error(target.direction == nil ? "no \(target.rawValue) display" : "no display \(target.rawValue) of the focused one")
+            return .nothing(target.direction == nil ? "no \(target.rawValue) display" : "no display \(target.rawValue) of the focused one",
+                            ok: false)
         }
         return focus(line[index], window: AppState.shared.coordinator?.workspace(on: line[index])?.focused)
     }
@@ -59,7 +60,7 @@ extension Dispatcher {
     static func focusMonitor(number n: Int) -> Reply {
         let model = AppState.shared.displays
         model.reconcile()
-        guard model.displays.indices.contains(n - 1) else { return .error("no display \(n), there are \(model.displays.count)") }
+        guard model.displays.indices.contains(n - 1) else { return .nothing("no display \(n), there are \(model.displays.count)", ok: false) }
         let display = model.displays[n - 1]
         return focus(display, window: AppState.shared.coordinator?.workspace(on: display)?.focused)
     }
@@ -118,7 +119,7 @@ extension Dispatcher {
         }
         guard let next = candidates.min(by: { hypot($0.frame.midX - from.x, $0.frame.midY - from.y)
                                               < hypot($1.frame.midX - from.x, $1.frame.midY - from.y) }) else {
-            return .error("no window \(direction)")
+            return .nothing("no window \(direction)", ok: false)
         }
         focusWindow(pid: next.pid, id: next.id)
         return .ok("focused window \(next.id) \(next.app)")

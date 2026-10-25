@@ -18,7 +18,7 @@ extension Config {
     hide-menu-bar-icon = 'never'    # never | always (as menu-bar-icon = 'none') | single-display (hidden while only one display is connected)
     scripting-addition = true       # scroll strips through the Dock scripting addition where it is injected (SIP off);
                                     # without it, or false, their windows move frame by frame
-    # highlight-color = '#7aa2f7'  # what every highlight left unset takes: the switchers' pick, the focused border, a drag's preview
+    # highlight-color = '#7aa2f7'  # what every highlight left unset takes: the switchers' pick, the focused border, the noop glow, a drag's preview
 
     # Example: only tile workspace 2 in a fixed 2x3 template.
     # Empty cells stay empty; a seventh window adds a column by default.
@@ -67,6 +67,11 @@ extension Config {
     inactive-color = '#494d64'
     order = 'below'                 # below | above (a click-through ring over the window)
     exclude-apps = []               # bundle IDs whose windows get no border
+    noop-flash = true               # a binding that does nothing makes the focused window's edge glow once
+    # noop-flash-color = '#d97757'  # '#rrggbb', '#rrggbbaa' or 'accent'; unset is highlight-color, else '#d97757'
+    noop-flash-width = 2            # the ring around the window, 0 to 8 points
+    noop-flash-spread = 100         # points the glow fades over inside the window, 8 to 160
+    noop-flash-opacity = 0.6        # its opacity at the window's edge, 0 to 1
 
     [focus-follows-mouse]
     enabled = false
@@ -95,6 +100,7 @@ extension Config {
     on-layout-change = true         # after the layout command
     on-mode-change = true           # when the binding mode changes
     on-workspace-change = true      # the new workspace's layout when a display moves to another workspace
+    on-noop = false                 # why, when a binding does nothing
 
     # What both switchers below share. Each of these keys can go in [window-switcher] or [workspace-switcher] too,
     # for that one alone.

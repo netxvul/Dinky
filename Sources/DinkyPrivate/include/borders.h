@@ -5,8 +5,9 @@
 NS_ASSUME_NONNULL_BEGIN
 
 // Border windows: plain SkyLight windows owned by dinky, one per decorated window, ordered
-// directly below or above their target. Either way they never cover its content: the ring's
-// interior is transparent and the whole window ignores the mouse. The JankyBorders approach,
+// directly below or above their target. Either way a border never covers its content: the
+// ring's interior is transparent. The noop glow, a border window too, is drawn over the
+// target's edge. Every border window ignores the mouse. The JankyBorders approach,
 // reimplemented. Every function takes the border's own window ID. Main thread only.
 
 // As CGSOrderingMode. Below, the target's own shadow falls on the ring and darkens it a
@@ -29,6 +30,27 @@ uint32_t dinky_border_create(double scale);
 // level and sub-level and orders it directly next to `target`, all in one transaction.
 void dinky_border_update(uint32_t border, uint32_t target, CGRect frame, int cornerRadius,
                          DinkyBorderColor color, double width, DinkyBorderOrder order);
+
+// The noop glow: a `width`-point ring of the colour hugging the target on the outside, left out at width 0, and inside
+// it the colour at `alpha` opacity at the target's edge, fading to nothing `depth` points in.
+typedef struct {
+    double width;
+    double depth;
+    double alpha;
+} DinkyGlow;
+
+// Reshapes and redraws the border as the noop glow around `frame`, at `opacity` as a whole, then places it as
+// dinky_border_update does, at `target`'s level but directly above `above`: the target, or the target's own border
+// when that is drawn above it. It covers the target's edge, so it is drawn over the window; the window still takes
+// every click.
+void dinky_glow_update(uint32_t border, uint32_t target, uint32_t above, CGRect frame, int cornerRadius,
+                       DinkyBorderColor color, DinkyGlow glow, double opacity);
+
+// Moves the noop glow and orders it directly above `above` again, without redrawing.
+void dinky_glow_move(uint32_t border, uint32_t target, uint32_t above, CGRect frame, double width);
+
+// Sets the noop glow's opacity as a whole, 0...1, where it is: a frame of its fading. Nothing is drawn again.
+void dinky_glow_fade(uint32_t border, double opacity);
 
 // Moves and re-orders without redrawing: the cheap path for drags and re-tiles that keep the size.
 void dinky_border_move(uint32_t border, uint32_t target, CGRect frame, double width,

@@ -29,8 +29,8 @@ public struct Config: Equatable {
     /// Whether dinky may use its Dock scripting addition, which needs SIP off. Off, it never probes or injects it,
     /// even with SIP off and the addition installed, and a scrolling strip moves its windows frame by frame instead.
     public var scriptingAddition = true
-    /// What every highlight a table leaves unset takes: the switchers' pick, the focused window's border and a drag's
-    /// preview. Nil leaves each its own default.
+    /// What every highlight a table leaves unset takes: the switchers' pick, the focused window's border, the noop glow
+    /// and a drag's preview. Nil leaves each its own default.
     public var highlightColor: Highlight?
     public var accordion = Accordion()
     public var scrolling = Scrolling()
@@ -731,11 +731,23 @@ public struct Borders: Equatable {
     public var order = BorderOrder.below
     /// Bundle IDs whose windows get no border.
     public var excludeApps: [String] = []
+    /// Whether a binding that does nothing makes the focused window's edge glow once.
+    public var noopFlash = true
+    /// The glow's colour: the top-level `highlight-color` when the table leaves it out and that is set, else Claude's
+    /// orange, as the screen's edges glow while Claude uses the computer.
+    public var noopFlashColor = Highlight.color(try! Color(hex: "#d97757"))
+    /// The ring around the window, in points; 0 leaves it out.
+    public var noopFlashWidth = 2.0
+    /// How far the glow inside the window reaches in, fading as it goes, in points.
+    public var noopFlashSpread = 100.0
+    /// The glow's opacity at the window's edge, as a share of the colour's own; 0 leaves it out.
+    public var noopFlashOpacity = 0.6
 
     public init() {}
 
     init(_ t: Table?, highlight: Highlight?) throws {
         activeColor = highlight ?? activeColor
+        noopFlashColor = highlight ?? noopFlashColor
         guard let t else { return }
         enabled = try t.bool("enabled") ?? enabled
         width = try t.double("width") ?? width
@@ -743,6 +755,14 @@ public struct Borders: Equatable {
         inactiveColor = try t.color("inactive-color") ?? inactiveColor
         order = try t.choice("order") ?? order
         excludeApps = try t.strings("exclude-apps") ?? excludeApps
+        noopFlash = try t.bool("noop-flash") ?? noopFlash
+        noopFlashColor = try t.highlight("noop-flash-color") ?? noopFlashColor
+        noopFlashWidth = try t.double("noop-flash-width") ?? noopFlashWidth
+        guard (0...8).contains(noopFlashWidth) else { throw ConfigError(path: t.path("noop-flash-width"), "must be 0 to 8") }
+        noopFlashSpread = try t.double("noop-flash-spread") ?? noopFlashSpread
+        guard (8...160).contains(noopFlashSpread) else { throw ConfigError(path: t.path("noop-flash-spread"), "must be 8 to 160") }
+        noopFlashOpacity = try t.double("noop-flash-opacity") ?? noopFlashOpacity
+        guard (0...1).contains(noopFlashOpacity) else { throw ConfigError(path: t.path("noop-flash-opacity"), "must be 0 to 1") }
         try t.done()
     }
 
@@ -859,6 +879,8 @@ public struct Hud: Equatable {
     public var onModeChange = true
     /// Shown when a display moves to another workspace, with that workspace's layout.
     public var onWorkspaceChange = true
+    /// Shown, with the command's answer, when a binding does nothing.
+    public var onNoop = false
 
     public init() {}
 
@@ -872,6 +894,7 @@ public struct Hud: Equatable {
         onLayoutChange = try t.bool("on-layout-change") ?? onLayoutChange
         onModeChange = try t.bool("on-mode-change") ?? onModeChange
         onWorkspaceChange = try t.bool("on-workspace-change") ?? onWorkspaceChange
+        onNoop = try t.bool("on-noop") ?? onNoop
         try t.done()
     }
 }

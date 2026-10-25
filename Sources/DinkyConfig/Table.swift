@@ -23,7 +23,12 @@ final class Table {
 
     func bool(_ key: String) throws -> Bool? { try scalar(key, "true or false") { try $0.bool(forKey: key) } }
     func int(_ key: String) throws -> Int? { try scalar(key, "an integer") { Int(try $0.integer(forKey: key)) } }
-    func double(_ key: String) throws -> Double? { try scalar(key, "a number") { try $0.float(forKey: key) } }
+    func double(_ key: String) throws -> Double? {
+        // TOMLDecoder fails to read the integer 0 as a float, so an integer is read as one.
+        try scalar(key, "a number") { table in
+            try (try? table.integer(forKey: key)).map { Double($0) } ?? table.float(forKey: key)
+        }
+    }
 
     func string(_ key: String) throws -> String? {
         // TOMLDecoder crashes reading a one digit integer as a string, so rule integers out first.
