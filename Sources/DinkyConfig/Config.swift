@@ -29,8 +29,8 @@ public struct Config: Equatable {
     /// Whether dinky may use its Dock scripting addition, which needs SIP off. Off, it never probes or injects it,
     /// even with SIP off and the addition installed, and a scrolling strip moves its windows frame by frame instead.
     public var scriptingAddition = true
-    /// What every highlight a table leaves unset takes: the switchers' pick, the focused window's border and a drag's
-    /// preview. Nil leaves each its own default.
+    /// What every highlight a table leaves unset takes: the switchers' pick, the focused window's border, the noop glow
+    /// and a drag's preview. Nil leaves each its own default.
     public var highlightColor: Highlight?
     public var accordion = Accordion()
     public var scrolling = Scrolling()
@@ -717,7 +717,8 @@ public struct Borders: Equatable {
     public var excludeApps: [String] = []
     /// Whether a binding that does nothing makes the focused window's edge glow once.
     public var noopFlash = true
-    /// The glow's colour: Claude's orange, as the screen's edges glow while Claude uses the computer.
+    /// The glow's colour: the top-level `highlight-color` when the table leaves it out and that is set, else Claude's
+    /// orange, as the screen's edges glow while Claude uses the computer.
     public var noopFlashColor = Highlight.color(try! Color(hex: "#d97757"))
     /// The ring around the window, in points; 0 leaves it out.
     public var noopFlashWidth = 2.0
@@ -730,6 +731,7 @@ public struct Borders: Equatable {
 
     init(_ t: Table?, highlight: Highlight?) throws {
         activeColor = highlight ?? activeColor
+        noopFlashColor = highlight ?? noopFlashColor
         guard let t else { return }
         enabled = try t.bool("enabled") ?? enabled
         width = try t.double("width") ?? width

@@ -289,7 +289,9 @@ struct ConfigTests {
         #expect(global.workspaceSwitcher.highlightColor == .color(purple))
         #expect(global.borders.activeColor == .color(purple))
         #expect(global.drag.previewBorderColor == .color(purple))
+        #expect(global.borders.noopFlashColor == .color(purple))
         #expect(defaults.drag.previewBorderColor == nil)
+        #expect(defaults.borders.noopFlashColor == .color(try Color(hex: "#d97757")))
         // A switcher's own over [switcher]'s over the top-level one; 'accent' stops the chain.
         let layered = try Config.parse("""
             highlight-color = '#59168b'
@@ -306,6 +308,7 @@ struct ConfigTests {
         #expect(layered.windowSwitcher.highlightColor == .color(try Color(hex: "#ff000080")))
         #expect(layered.workspaceSwitcher.highlightColor == .accent)
         #expect(layered.borders.activeColor == .color(try Color(hex: "#00ff00")))
+        #expect(try Config.parse("highlight-color = '#59168b'\n[borders]\nnoop-flash-color = 'accent'\n").borders.noopFlashColor == .accent)
         #expect(try Config.parse("highlight-color = '#59168b'\n[drag]\npreview-border-color = 'accent'\n").drag.previewBorderColor == .accent)
         #expect(try Config.parse("[borders]\nactive-color = 'accent'\n").borders.activeColor == .accent)
         #expect(try Config.parse("highlight-color = 'accent'\n").borders.activeColor == .accent)

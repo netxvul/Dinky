@@ -32,7 +32,7 @@ permalink: /configuration/
 | `menu-bar-icon` | `'blocks'` | `'blocks'` shows a block per display in the menu bar, left to right, with the workspace it shows: filled for the focused display, outlined for the others, corner marks for a full-screen Space. `'text'` shows the focused display's workspace number. `'none'` hides the menu bar item; the `dinky` CLI and key bindings still work. |
 | `hide-menu-bar-icon` | `'never'` | When to hide dinky's menu bar item. `'single-display'` hides it while only one display is connected and shows it again once a second one is. `'always'` hides it, as `menu-bar-icon = 'none'` does. `'never'` leaves it to `menu-bar-icon`. Hidden, the `dinky` CLI and key bindings still work. |
 | `scripting-addition` | `true` | Whether dinky may use its Dock scripting addition, which needs SIP off. Where it is injected (see [Scripting addition](scripting-addition.md)), a scrolling strip scrolls through it, its windows sliding past the screen edges; without it the strip moves its windows frame by frame. `false` never touches it, even with SIP off and the addition installed: dinky neither checks for it nor injects it, and the strip moves its windows frame by frame. Takes effect on reload. |
-| `highlight-color` | unset | One highlight colour for everything that has one: `'#rrggbb'`, `'#rrggbbaa'`, or `'accent'` for the accent colour in System Settings. Each highlight a table leaves unset takes it: the pick in both switchers ([`[switcher]`](#switcher)), the focused window's border ([`[borders]`](#borders) `active-color`) and a drag's preview ([`[drag]`](#drag) `preview-border-color`). A table's own colour always wins, and its `'accent'` keeps the accent colour there. Unset, each keeps its own default. Like every top-level key, it goes above the first `[table]`. |
+| `highlight-color` | unset | One highlight colour for everything that has one: `'#rrggbb'`, `'#rrggbbaa'`, or `'accent'` for the accent colour in System Settings. Each highlight a table leaves unset takes it: the pick in both switchers ([`[switcher]`](#switcher)), the focused window's border ([`[borders]`](#borders) `active-color`), the glow of a binding that does nothing ([`[borders]`](#borders) `noop-flash-color`) and a drag's preview ([`[drag]`](#drag) `preview-border-color`). A table's own colour always wins, and its `'accent'` keeps the accent colour there. Unset, each keeps its own default. Like every top-level key, it goes above the first `[table]`. |
 
 </div>
 
@@ -250,7 +250,7 @@ gaps.outer.top = 44
 | `order` | `'below'` | `'above'` draws a click-through ring over the window. |
 | `exclude-apps` | `[]` | Bundle IDs that get no border. |
 | `noop-flash` | `true` | Make the focused window's edge glow once, the way the screen's edges do while Claude uses the computer, when a key binding or gesture does nothing: a move at the edge, a resize at its limit, `focus` or `focus-monitor` with nothing that way, `workspace next` on the last workspace or a workspace number past `[workspaces]`, moving a window to where it already is, `fullscreen` on a lone window that already fills its workspace. A ring around the window and a glow inside it, strongest at the edge and fading towards the middle, fade in, hold until a held key would repeat and fade out, in about a second; holding the key keeps it shown until it is let go, and it fades out once. Drawn over the window and its border, even with `enabled = false` and for windows of `exclude-apps`; it goes as soon as the window hides or minimizes, the Space changes or Mission Control opens. |
-| `noop-flash-color` | `'#d97757'` | Its colour, Claude's orange: `'#rrggbb'`, `'#rrggbbaa'` or `'accent'`. The ring is drawn in it and the glow in it at `noop-flash-opacity` at the edge. |
+| `noop-flash-color` | [`highlight-color`](#top-level), else `'#d97757'` | Its colour, Claude's orange by default: `'#rrggbb'`, `'#rrggbbaa'` or `'accent'`. The ring is drawn in it and the glow in it at `noop-flash-opacity` at the edge. |
 | `noop-flash-width` | `2` | The ring around the window, in points, from `0`, none, to `8`. |
 | `noop-flash-spread` | `100` | How far the glow reaches into the window, in points, from `8` to `160`, and at most a quarter of the window's shorter side. It fades as the screen's glow does, to about a third every third of the way, and to nothing at the end. |
 | `noop-flash-opacity` | `0.6` | The glow's opacity at the window's edge, as a share of the colour's own, from `0`, none, to `1`. |
@@ -781,7 +781,7 @@ menu-bar-icon = 'blocks'        # blocks (one per display, focused filled) | tex
 hide-menu-bar-icon = 'never'    # never | always (as menu-bar-icon = 'none') | single-display (hidden while only one display is connected)
 scripting-addition = true       # scroll strips through the Dock scripting addition where it is injected (SIP off);
                                 # without it, or false, their windows move frame by frame
-# highlight-color = '#7aa2f7'  # what every highlight left unset takes: the switchers' pick, the focused border, a drag's preview
+# highlight-color = '#7aa2f7'  # what every highlight left unset takes: the switchers' pick, the focused border, the noop glow, a drag's preview
 
 # Example: only tile workspace 2 in a fixed 2x3 template.
 # Empty cells stay empty; a seventh window adds a column by default.
@@ -830,7 +830,7 @@ inactive-color = '#494d64'
 order = 'below'                 # below | above (a click-through ring over the window)
 exclude-apps = []               # bundle IDs whose windows get no border
 noop-flash = true               # a binding that does nothing makes the focused window's edge glow once
-noop-flash-color = '#d97757'    # '#rrggbb', '#rrggbbaa' or 'accent'
+# noop-flash-color = '#d97757'  # '#rrggbb', '#rrggbbaa' or 'accent'; unset is highlight-color, else '#d97757'
 noop-flash-width = 2            # the ring around the window, 0 to 8 points
 noop-flash-spread = 100         # points the glow fades over inside the window, 8 to 160
 noop-flash-opacity = 0.6        # its opacity at the window's edge, 0 to 1
