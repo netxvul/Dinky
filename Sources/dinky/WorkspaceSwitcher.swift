@@ -192,6 +192,8 @@ final class WorkspaceSwitcher {
         jumpTo = nil
         view.show(cards, layout: layout, headers: layout.headers.isEmpty ? [] : headers, picked: picked, scale: scale,
                   letters: config.letterKeys ? config.letters : [])
+        // Not over the window switcher's glance at a strip let go of.
+        WindowSwitcher.shared.endGlance()
         present()
         if titled {
             // The windows the window server gave no title, asked of their apps.

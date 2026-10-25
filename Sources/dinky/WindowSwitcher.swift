@@ -81,6 +81,11 @@ final class WindowSwitcher {
     private var pointerMoved = false
     /// Bumped on every showing, so a fade-out that finishes after a newer showing leaves the panel up.
     private var generation = 0
+    /// Closes a glance, the capsule shown by itself as fingers let go of a strip, set while one is up. See `glance`.
+    private var glanceEnd: Timer?
+    /// From a showing for the hold until its hide: the hold lets go before the commit that hides it, as a click's
+    /// release or Return's next turn of the run loop, and a glance meanwhile would put its pick in its place.
+    private var heldUp = false
 
     private lazy var view = SwitcherView(frame: .zero)
     private lazy var glass = GlassPanel(content: view, cornerRadius: SwitcherLayout.thumbHeight)
@@ -108,9 +113,12 @@ final class WindowSwitcher {
     }
 
     var isShowing: Bool { hold.isShowing }
+    /// Shown, held, from a binding or as a glance: thumbnails and titles landing late still go in.
+    private var isUp: Bool { isShowing || glanceEnd != nil }
     /// Whether the capsule, shown from the keyboard, takes this key.
     func takes(_ event: CGEvent) -> Bool { hold.takes(event) }
-    /// Whether a modifier or a key binding can show the capsule, so thumbnails are worth keeping.
+    /// Whether a modifier, a key binding or a strip let go of (a glance) can show the capsule, so thumbnails are worth
+    /// keeping.
     private var enabled = false
 
     /// The `window-switcher` command: the capsule in the middle of the display under the pointer, picked with the
@@ -126,14 +134,56 @@ final class WindowSwitcher {
         }
         self.config = config.windowSwitcher
         let modifier = self.config.enabled ? self.config.modifier : .none
-        enabled = self.config.enabled && (modifier != .none || config.binds("window-switcher"))
+        let glances = config.gestures.scroll.enabled && config.gestures.scroll.switcherMs > 0
+        enabled = self.config.enabled && (modifier != .none || config.binds("window-switcher") || glances)
         hold.update(modifier: modifier, sides: config.modifiers, delayMs: self.config.delayMs,
                     trigger: self.config.trigger, doubleTapMs: self.config.doubleTapMs)
     }
 
-    /// Closes the capsule without focusing anything, as a binding that runs while it is up does.
+    /// Closes the capsule without focusing anything, as a binding that runs while it is up does, a glance too.
     func dismiss() {
         hold.dismiss()
+        endGlance()
+    }
+
+    /// `[gestures.scroll] switcher-ms`: the fingers let go of the strip of Space `space` on display `uuid`, settling
+    /// with `pick` in view, and the capsule shows that workspace for `duration` seconds with `pick` picked, then closes
+    /// by itself: a glance at where the strip went, with nothing to hold, pick or let go of. It goes where it would
+    /// held, and for what it would held: not with the switcher off or `layouts` without the workspace's. Not over a
+    /// capsule shown or waiting to; one shown meanwhile takes the glance over.
+    func glance(space: UInt64, display uuid: String, pick: WindowID, for duration: TimeInterval) {
+        let glanced = glanceEnd != nil
+        glanceEnd?.invalidate()
+        glanceEnd = nil
+        let app = AppState.shared
+        guard config.enabled, duration > 0, !isShowing, !(heldUp && glass.panel.isVisible), waiting == nil, !showing,
+              app.enabled, !MissionControl.shared.active, !SpaceSwitcher.shared.switching,
+              !WorkspaceSwitcher.shared.isShowing, let coordinator = app.coordinator,
+              let display = app.displays.displays.first(where: { $0.uuid == uuid }),
+              display.currentSpaceID == space else {
+            if glanced { hide() }
+            return
+        }
+        // Over the pointer as held, where the fingers left it; in the middle should it have gone to another display.
+        let visible = display.visibleArea
+        let pointer = (CGEvent(source: nil)?.location).flatMap { display.frame.contains($0) ? $0 : nil }
+            ?? CGPoint(x: visible.midX, y: visible.midY)
+        showing = true
+        defer { showing = false }
+        // The pictures kept as each window last lost focus: capturing them all now would load the window server just
+        // as the strip glides and its window takes focus.
+        guard fill(display, pointer: pointer, pick: pick, fresh: false, coordinator) else {
+            if glanced { hide() }
+            return
+        }
+        glanceEnd = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in self?.hide() }
+        startWatching()
+    }
+
+    /// Closes a glance up, sooner than it would by itself; nothing else.
+    func endGlance() {
+        guard glanceEnd != nil else { return }
+        hide()
     }
 
     /// Captures a window that just lost focus on a workspace the switcher shows for, so its thumbnail is recent the next
@@ -183,14 +233,17 @@ final class WindowSwitcher {
     /// left; and the display can move to another workspace while it is up. Either way it shows the workspace the
     /// display is on now, in place, or closes when that one has nothing to pick.
     private func spacesChanged() {
-        guard isShowing, !showing,
+        guard isUp, !showing,
               let display = AppState.shared.displays.displays.first(where: { $0.uuid == shownDisplay }),
               display.currentSpaceID != shownSpace else { return }
+        // A glance is of the strip let go of, gone from the display now.
+        if glanceEnd != nil { return hide() }
         if !show() { hold.dismiss() }
     }
 
     /// Watches every frame while the capsule is up or waiting: shows a waiting capsule as soon as its display's Space
     /// lands, and moves a shown one to the workspace its display has landed on, without waiting for the notifications.
+    /// A glance closes as its display sets off for another Space or Mission Control opens.
     private func startWatching() {
         guard watch == nil else { return }
         watch = Timer.scheduledTimer(withTimeInterval: Self.watchInterval, repeats: true) { [weak self] _ in self?.tick() }
@@ -204,12 +257,13 @@ final class WindowSwitcher {
             if !show() { hold.dismiss() }
             return
         }
-        guard isShowing, !shownDisplay.isEmpty else {
+        guard isUp, !shownDisplay.isEmpty else {
             watch?.invalidate()
             watch = nil
             return
         }
         let uuid = shownDisplay as CFString
+        if glanceEnd != nil, MissionControl.shared.active || dinky_display_is_animating(uuid) { return hide() }
         guard !dinky_display_is_animating(uuid), dinky_current_space_id(uuid) != shownSpace else { return }
         AppState.shared.displays.reconcile()
         spacesChanged()
@@ -219,10 +273,16 @@ final class WindowSwitcher {
     /// a free workspace, any window), or two with `show-single` off. While the display under the pointer is still moving between Spaces, as in a trackpad swipe, it waits and
     /// shows the workspace it lands on.
     private func show() -> Bool {
+        // A glance up is this showing's now: it stays up for it, filled afresh, or goes.
+        let glanced = glanceEnd != nil
+        glanceEnd?.invalidate()
+        glanceEnd = nil
         if let pointer = CGEvent(source: nil)?.location,
            let display = AppState.shared.displays.displays.first(where: { $0.frame.contains(pointer) }),
            dinky_display_is_animating(display.uuid as CFString) {
+            if glanced { hide() }
             if waiting == nil { waiting = (display.uuid, uptime()) }
+            heldUp = true
             startWatching()
             return true
         }
@@ -235,7 +295,23 @@ final class WindowSwitcher {
         guard app.enabled, !MissionControl.shared.active, !SpaceSwitcher.shared.switching,
               let coordinator = app.coordinator, let pointer = CGEvent(source: nil)?.location,
               let display = app.displays.displays.first(where: { $0.frame.contains(pointer) }),
-              let screen = screen(of: display.id) else { return false }
+              fill(display, pointer: pointer, pick: nil, fresh: true, coordinator) else {
+            if glanced { hide() }
+            return false
+        }
+        heldUp = true
+        Thumbnails.shared.askOnce()
+        startWatching()
+        return true
+    }
+
+    /// Fills the capsule with the windows of the workspace `display` is on and shows it placed for `pointer`, `pick`
+    /// picked when it is one of them, else the focused window, each window's thumbnail captured afresh when `fresh`,
+    /// else only one without a picture yet. False, and nothing shown, when the workspace's layout is not in `layouts`
+    /// or it has too few windows. See `show()`.
+    private func fill(_ display: Display, pointer: CGPoint, pick: WindowID?, fresh: Bool,
+                      _ coordinator: Coordinator) -> Bool {
+        guard let screen = screen(of: display.id) else { return false }
         // A free workspace has no tree, or one kept from before it was free.
         let free = isFreeUserSpace(display.currentSpaceID, coordinator)
         let workspace = free ? nil : coordinator.workspace(on: display)
@@ -262,7 +338,7 @@ final class WindowSwitcher {
         // On a free workspace, the focused window, else the frontmost one there.
         let focused = workspace.map(\.focused) ?? (ids.contains(coordinator.focusedWindow) ? coordinator.focusedWindow
             : dinky_space_window_ids(display.currentSpaceID, false).lazy.map(\.uint32Value).first(where: ids.contains))
-        let picked = focused.flatMap { ids.firstIndex(of: $0) } ?? 0
+        let picked = pick.flatMap { ids.firstIndex(of: $0) } ?? focused.flatMap { ids.firstIndex(of: $0) } ?? 0
         let mapped = config.tilesStyle == .map && workspace.map { [.tiles, .fixed].contains(kind(of: $0)) } == true
         if mapped, let workspace {
             let map = SwitcherMap(tiles: ids.map { tiles[$0]! }, bounds: workspace.bounds,
@@ -300,18 +376,18 @@ final class WindowSwitcher {
         present()
         if config.showTitles { askTitles() }
 
-        Thumbnails.shared.askOnce()
         // Tall enough for the biggest cell, grown.
         let height = (arrangement.frames.map(\.height).max() ?? SwitcherLayout.thumbHeight) * 1.1
-        Thumbnails.shared.refresh(ids, height: height, scale: scale) { [weak self] id, image in
-            guard let self, self.isShowing else { return }
+        let shown = generation
+        let capture = fresh ? ids : ids.filter { Thumbnails.shared.image(of: $0) == nil }
+        Thumbnails.shared.refresh(capture, height: height, scale: scale) { [weak self] id, image in
+            guard let self, self.generation == shown, self.isUp else { return }
             self.view.update(id, image: image)
         }
         shownSpace = display.currentSpaceID
         shownFree = free
         shownPick = ids[picked]
         shownDisplay = display.uuid
-        startWatching()
         return true
     }
 
@@ -322,7 +398,7 @@ final class WindowSwitcher {
         }
         let shown = generation
         WindowTitles.ask(asks) { [weak self] id, title in
-            guard let self, self.generation == shown, self.isShowing else { return }
+            guard let self, self.generation == shown, self.isUp else { return }
             self.view.update(id, title: title)
         }
     }
@@ -411,6 +487,9 @@ final class WindowSwitcher {
 
     private func hide() {
         waiting = nil
+        heldUp = false
+        glanceEnd?.invalidate()
+        glanceEnd = nil
         let panel = glass.panel, shown = generation
         guard animates else { return panel.orderOut(nil) }
         NSAnimationContext.runAnimationGroup({ context in

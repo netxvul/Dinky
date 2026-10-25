@@ -781,6 +781,8 @@ final class Coordinator {
         if throughDock { saGlides[key] = nil }
         workspaces[key] = workspace
         stripScroll = StripScroll(key: key, display: display.uuid, heard: CACurrentMediaTime(), throughDock: throughDock)
+        // The glance the last let-go left up is of where the strip was.
+        WindowSwitcher.shared.endGlance()
         // Peeks move with the strip, so a click on one would miss; the pass after the fingers lift notes them again.
         PeekClicks.shared.update([], space: key)
         applier.assume(sizes, pids: pids)
@@ -826,8 +828,9 @@ final class Coordinator {
 
     /// The fingers let go, moving across at `velocity` trackpad widths a second: the strip coasts on as far as that
     /// takes it, then settles with the column showing nearest the middle in view, which takes focus once it rests, and
-    /// its pass glides the windows there from where they are, at their speed. A Space gone from under the fingers puts
-    /// the strip back instead.
+    /// its pass glides the windows there from where they are, at their speed, as the window switcher shows the strip
+    /// for `[gestures.scroll] switcher-ms`, that column's window picked. A Space gone from under the fingers puts the
+    /// strip back instead.
     private func endStripScroll(velocity: Double) {
         guard let scroll = stripScroll else { return }
         guard stripScrollShows(scroll) else { return abortStripScroll() }
@@ -842,11 +845,18 @@ final class Coordinator {
         telemetry.fingers(key, "let go" + (target.map { ", \(telemetry.name($0)) takes focus" } ?? ""))
         handBack(key)
         dirty.insert(key)
+        guard let target else { return flush() }
         // As SlideScroll does, the window is focused when it is another than before, or focus was on another Space.
-        guard let target, target != before || placements[lastFocused]?.space != key else { return flush() }
-        focusing = (target, Date() + 3)
-        flush()
-        focusOnceStill(target, in: key)
+        if target != before || placements[lastFocused]?.space != key {
+            focusing = (target, Date() + 3)
+            flush()
+            focusOnceStill(target, in: key)
+        } else {
+            flush()
+        }
+        // Over the glide the pass has set off.
+        WindowSwitcher.shared.glance(space: key, display: scroll.display, pick: target,
+                                     for: Double(config.gestures.scroll.switcherMs) / 1000)
     }
 
     /// The strip's Space went from under the fingers, or Mission Control opened: it goes back to where it showed as
