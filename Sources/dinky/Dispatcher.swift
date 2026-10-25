@@ -5,7 +5,7 @@ import DinkyLayout
 import DinkyPrivate
 
 /// What a command answers: a short line for the CLI, whether it worked, and whether it did nothing, which a binding
-/// shows by flashing the focused window's border.
+/// shows by making the focused window's edge breathe.
 struct Reply {
     var ok: Bool
     var text: String

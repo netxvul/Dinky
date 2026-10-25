@@ -255,9 +255,9 @@ struct SchemaTests {
         exclude-apps = ['com.apple.finder']
         noop-flash = true
         noop-flash-color = 'accent'
+        noop-flash-width = 3.5
         noop-flash-count = 3
-        noop-flash-ms = 150
-        noop-flash-spread = 12.5
+        noop-flash-spread = 40
 
         [focus-follows-mouse]
         enabled = true

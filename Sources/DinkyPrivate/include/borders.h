@@ -5,8 +5,9 @@
 NS_ASSUME_NONNULL_BEGIN
 
 // Border windows: plain SkyLight windows owned by dinky, one per decorated window, ordered
-// directly below or above their target. Either way they never cover its content: the ring's
-// interior is transparent and the whole window ignores the mouse. The JankyBorders approach,
+// directly below or above their target. Either way a border never covers its content: the
+// ring's interior is transparent. The noop glow, a border window too, is drawn over the
+// target's edge. Every border window ignores the mouse. The JankyBorders approach,
 // reimplemented. Every function takes the border's own window ID. Main thread only.
 
 // As CGSOrderingMode. Below, the target's own shadow falls on the ring and darkens it a
@@ -30,14 +31,29 @@ uint32_t dinky_border_create(double scale);
 void dinky_border_update(uint32_t border, uint32_t target, CGRect frame, int cornerRadius,
                          DinkyBorderColor color, double width, DinkyBorderOrder order);
 
-// The noop glow: reshapes and redraws the border as `color` at the edge of `frame`, fading out over `spread`
-// points outside it and half that inside, then places it directly above `target` as dinky_border_update does.
-// It covers the target's edge, so it is drawn over the window; the window still takes every click.
-void dinky_glow_update(uint32_t border, uint32_t target, CGRect frame, int cornerRadius,
-                       DinkyBorderColor color, double spread);
+// The noop glow: a `width`-point ring hugging the target on the outside at `ring` opacity, left out at width 0, and
+// `count` bands inside it, band i from `edges[i]` to `edges[i + 1]` points in at `alphas[i]` opacity, all of the colour.
+// No band reaches deeper than `extent` points, so a redraw clears that far and no further.
+typedef struct {
+    double width;
+    double ring;
+    const double *edges;
+    const double *alphas;
+    int count;
+    double extent;
+} DinkyGlow;
 
-// The whole border window's opacity, 0...1, applied by WindowServer without a redraw.
-void dinky_border_set_alpha(uint32_t border, double alpha);
+// Reshapes and redraws the border as the noop glow around `frame`, then places it as dinky_border_update does, at
+// `target`'s level but directly above `above`: the target, or the target's own border when that is drawn above it.
+// It covers the target's edge, so it is drawn over the window; the window still takes every click.
+void dinky_glow_update(uint32_t border, uint32_t target, uint32_t above, CGRect frame, int cornerRadius,
+                       DinkyBorderColor color, DinkyGlow glow);
+
+// Moves the noop glow and orders it directly above `above` again, without redrawing.
+void dinky_glow_move(uint32_t border, uint32_t target, uint32_t above, CGRect frame, double width);
+
+// Draws the noop glow again where it is, for a target of `size`: a frame of its breathing. No reshape, no move.
+void dinky_glow_draw(uint32_t border, CGSize size, int cornerRadius, DinkyBorderColor color, DinkyGlow glow);
 
 // Moves and re-orders without redrawing: the cheap path for drags and re-tiles that keep the size.
 void dinky_border_move(uint32_t border, uint32_t target, CGRect frame, double width,

@@ -196,11 +196,11 @@
           "default": [],
           "description": "Bundle IDs whose windows get no border."
         },
-        "noop-flash": { "type": "boolean", "default": true, "description": "Glow around the focused window when a key binding or gesture does nothing. Drawn even when borders are off." },
-        "noop-flash-color": { "$ref": "#/definitions/highlight", "default": "#ed8796", "description": "Colour of the glow at the window's edge." },
-        "noop-flash-count": { "type": "integer", "minimum": 1, "maximum": 5, "default": 2, "description": "How many times the glow breathes in and out." },
-        "noop-flash-ms": { "type": "integer", "minimum": 50, "maximum": 1000, "default": 80, "description": "How long each breath holds at full, between a 90 ms rise and a 200 ms fall." },
-        "noop-flash-spread": { "type": "number", "minimum": 4, "maximum": 64, "default": 24, "description": "How far the glow reaches out from the window's edge, in points; half as far in." }
+        "noop-flash": { "type": "boolean", "default": true, "description": "Make the focused window's edge breathe when a key binding or gesture does nothing. Drawn even when borders are off." },
+        "noop-flash-color": { "$ref": "#/definitions/highlight", "default": "#d97757", "description": "Colour of the ring around the window and of the glow inside it." },
+        "noop-flash-width": { "type": "number", "minimum": 0, "maximum": 8, "default": 2, "description": "The ring around the window, in points; 0 leaves it out." },
+        "noop-flash-count": { "type": "integer", "minimum": 1, "maximum": 5, "default": 2, "description": "How many times a press brightens before it fades." },
+        "noop-flash-spread": { "type": "number", "minimum": 8, "maximum": 160, "default": 68, "description": "How far the glow reaches into the window at its brightest, in points." }
       }
     },
     "focus-follows-mouse": {

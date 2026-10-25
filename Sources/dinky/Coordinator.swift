@@ -33,11 +33,11 @@ final class Coordinator {
     let applier = FrameApplier()
     private lazy var animator = Animator(applier: applier)
     private var borders: BorderManager?
-    /// The noop flash's glow, over any window: borders on or off, its app excluded or not.
-    private let noopGlow = NoopGlow()
+    /// The noop flash's glow, over any window and its border: borders on or off, its app excluded or not.
+    private lazy var noopGlow = NoopGlow { [weak self] id in self?.borders?.border(above: id) }
     func isBorderWindow(_ id: WindowID) -> Bool { borders?.isBorder(id) == true || noopGlow.isBorder(id) }
 
-    /// Glows around a window, for a binding that did nothing, unless `[borders] noop-flash` is off.
+    /// Makes a window's edge breathe, for a binding that did nothing, unless `[borders] noop-flash` is off.
     func flashBorder(of id: WindowID) {
         guard config.borders.noopFlash, let window = model.windows[id], window.isDocument else { return }
         noopGlow.flash(id, config: config.borders, model: model)

@@ -45,6 +45,12 @@ final class BorderManager {
     /// Whether a window id is one of the border windows dinky draws.
     func isBorder(_ id: UInt32) -> Bool { borders.values.contains { $0.id == id } }
 
+    /// The border shown directly above a window, with `order = 'above'`: what is drawn over the window goes above it.
+    func border(above id: UInt32) -> UInt32? {
+        guard config.order == .above, let border = borders[id], border.isShown, border.id != 0 else { return nil }
+        return border.id
+    }
+
     func handle(_ event: WindowEvent) {
         switch event.kind {
         case .spaceChange, .spaceCreated, .spaceDestroyed:
@@ -149,87 +155,122 @@ final class BorderManager {
     }
 }
 
-/// The noop flash: a glow around the window, the way the screen's edges glow while Claude uses the computer.
-/// `noop-flash-color` at the window's edge, fading out over `noop-flash-spread` points outside it and half that inside,
-/// drawn over the window and any border it has, breathing in and out `noop-flash-count` times. Every window gets it,
-/// borders on or off, its app excluded or not; it stays on the window as it moves and hides where a border would.
-/// The glow is drawn once and breathes by its window's opacity alone, so a frame of it costs one WindowServer call.
+/// The noop flash: the window's edge breathes in `noop-flash-color`, the way the screen's edges breathe while Claude uses
+/// the computer. A `noop-flash-width` ring around the window and six bands inside it, reaching `noop-flash-spread` points
+/// in, brighten and dim at an uneven pace (Breathing), `noop-flash-count` times for a press and on for as long as a held
+/// key repeats. Every window gets it, borders on or off, its app excluded or not. It is drawn over the window and its
+/// border and follows it, and goes as soon as the window closes, hides or minimizes, the Space changes or Mission Control
+/// opens.
 final class NoopGlow: NSObject {
+    /// The window's border drawn directly above it, if any, which the glow goes above.
+    private let borderAbove: (UInt32) -> UInt32?
     private var glow: BorderWindow?
-    private var target: UInt32 = 0
+    /// The glowing window as last seen.
+    private var window: Window?
     private var config = Borders()
-    private var pulse = Pulse(count: 1, hold: 0)
-    private var started = 0.0
-    private var strength = 0.0
+    private var breathing: Breathing?
+    private var state = Breathing.State(level: 1, presence: 0)
+    /// The glow needs placing again: its window moved or changed, or another was raised over it.
+    private var needsPlace = false
     private var link: CADisplayLink?
+    private var lastTick = 0.0
+    /// Counts glows, so the watch of one that has gone stops.
+    private var generation = 0
+
+    init(borderAbove: @escaping (UInt32) -> UInt32?) {
+        self.borderAbove = borderAbove
+    }
 
     /// Whether a window id is the glow's.
     func isBorder(_ id: UInt32) -> Bool { id != 0 && glow?.id == id }
 
-    /// Glows around the window. Again while it glows starts it over, rising on from where it is, so a held key that
-    /// repeats keeps it lit.
+    /// Breathes on the window's edge. Again on the same window while it shows keeps it breathing.
     func flash(_ id: UInt32, config: Borders, model: WindowModel) {
-        if target != id {
-            glow = nil
-            setStrength(0)
-        }
-        target = id
+        guard let window = model.windows[id], Self.shows(window) else { return }
+        let now = CACurrentMediaTime()
+        if window.id != self.window?.id { end() }
+        let changed = config != self.config
         self.config = config
-        pulse = Pulse(count: config.noopFlashCount, hold: Double(config.noopFlashMs) / 1000)
-        let started = CACurrentMediaTime() - Pulse.rising(to: strength)
-        self.started = started
-        guard let window = model.windows[id] else { return end() }
-        draw(window)
-
-        link?.invalidate()
-        link = (NSScreen.main ?? NSScreen.screens.first)?.displayLink(target: self, selector: #selector(tick))
-        link?.add(to: .main, forMode: .common)
-        // A link whose screen goes away stops firing: the glow ends on time all the same.
-        DispatchQueue.main.asyncAfter(deadline: .now() + pulse.duration + 0.25) { [weak self] in
-            if self?.started == started { self?.end() }
+        self.window = window
+        if breathing?.press(at: now) != true {
+            breathing = Breathing(count: config.noopFlashCount, at: now)
         }
+        state = breathing?.state(at: now) ?? state
+        // A glow already showing takes the press at its next frame, unless it is to look different.
+        if glow == nil || changed { place() }
+        guard link == nil else { return }
+        link = screen(containing: window.frame)?.displayLink(target: self, selector: #selector(tick))
+        // A breath takes seconds: 60 frames a second are smooth, and each is a redraw.
+        link?.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+        link?.add(to: .main, forMode: .common)
+        lastTick = now
+        watch(generation)
     }
 
-    /// The glowing window's events: the glow follows its moves and goes with it.
+    /// The window events while it shows: it follows its window, stays above it and goes with it.
     func handle(_ event: WindowEvent) {
-        guard glow != nil, let window = event.window, window.id == target else { return }
-        if event.change == .removed { return end() }
-        if [.windowMove, .windowResize].contains(event.kind) { draw(window) }
+        guard glow != nil else { return }
+        if event.kind == .spaceChange { return end() }
+        guard let changed = event.window else { return }
+        if changed.id == window?.id {
+            if event.change == .removed || !Self.shows(changed) { return end() }
+            window = changed
+            needsPlace = true
+        } else if event.kind == .windowReorder {
+            // A window raised later lands above the glow and may cover it.
+            needsPlace = true
+        }
     }
 
     /// Mission Control came or went.
     func missionControlChanged() {
-        if MissionControl.shared.active { glow?.hide() }
+        if MissionControl.shared.active { end() }
     }
 
+    /// One frame: the breath moves on, and the glow is placed again if it needs to be, or else just drawn again. Moves
+    /// and resizes wait for the frame, so a glide's events cost one placement a frame, not one each.
     @objc private func tick(_ link: CADisplayLink) {
-        guard let strength = pulse.strength(at: link.targetTimestamp - started) else { return end() }
-        setStrength(strength)
+        lastTick = CACurrentMediaTime()
+        guard let state = breathing?.state(at: link.targetTimestamp) else { return end() }
+        self.state = state
+        if needsPlace { place() } else { glow?.redraw(bands) }
     }
 
-    private func setStrength(_ strength: Double) {
-        self.strength = strength
-        glow?.setAlpha(strength)
+    /// The look now. The bands reach a quarter of the window's shorter side at most, so they never meet.
+    private var bands: GlowBands {
+        let size = window?.frame.size ?? .zero
+        return GlowBands(spread: min(config.noopFlashSpread, Double(min(size.width, size.height)) / 4), state: state)
     }
 
-    private func draw(_ window: Window) {
-        guard window.isOrderedIn, window.isVisible, !window.isMinimized, !MissionControl.shared.active else {
-            glow?.hide()
-            return
-        }
+    private func place() {
+        needsPlace = false
+        guard let window else { return }
         let glow = self.glow ?? BorderWindow(target: window.id)
         self.glow = glow
-        // A new glow window starts out opaque: it takes the breath where it is before it shows.
-        glow.setAlpha(strength)
-        glow.glow(window, color: config.noopFlashColor.resolved, spread: config.noopFlashSpread)
+        glow.glow(window, color: config.noopFlashColor.resolved, width: config.noopFlashWidth, bands: bands,
+                  above: borderAbove(window.id) ?? window.id)
+    }
+
+    /// A display link whose screen goes away stops firing: the glow goes all the same.
+    private func watch(_ generation: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            guard let self, self.generation == generation else { return }
+            if CACurrentMediaTime() - self.lastTick > 0.5 { self.end() } else { self.watch(generation) }
+        }
+    }
+
+    private static func shows(_ window: Window) -> Bool {
+        window.isOrderedIn && window.isVisible && !window.isMinimized && !MissionControl.shared.active
     }
 
     private func end() {
         link?.invalidate()
         link = nil
         glow = nil
-        target = 0
-        started = 0
-        strength = 0
+        window = nil
+        breathing = nil
+        state = Breathing.State(level: 1, presence: 0)
+        needsPlace = false
+        generation += 1
     }
 }

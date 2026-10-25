@@ -715,14 +715,16 @@ public struct Borders: Equatable {
     public var order = BorderOrder.below
     /// Bundle IDs whose windows get no border.
     public var excludeApps: [String] = []
-    /// Whether a binding that does nothing glows around the focused window.
+    /// Whether a binding that does nothing makes the focused window's edge breathe.
     public var noopFlash = true
-    public var noopFlashColor = Highlight.color(try! Color(hex: "#ed8796"))
-    /// How many times the glow breathes in and out, each holding at full for `noop-flash-ms`.
+    /// The breathing edge's colour: Claude's orange, as the screen's edges glow while Claude uses the computer.
+    public var noopFlashColor = Highlight.color(try! Color(hex: "#d97757"))
+    /// The ring around the window, in points; 0 leaves it out.
+    public var noopFlashWidth = 2.0
+    /// How many times a press brightens before it fades.
     public var noopFlashCount = 2
-    public var noopFlashMs = 80
-    /// How far the glow reaches out from the window's edge, in points; it reaches half as far in.
-    public var noopFlashSpread = 24.0
+    /// How far the glow reaches into the window at its brightest, in points.
+    public var noopFlashSpread = 68.0
 
     public init() {}
 
@@ -737,12 +739,12 @@ public struct Borders: Equatable {
         excludeApps = try t.strings("exclude-apps") ?? excludeApps
         noopFlash = try t.bool("noop-flash") ?? noopFlash
         noopFlashColor = try t.highlight("noop-flash-color") ?? noopFlashColor
+        noopFlashWidth = try t.double("noop-flash-width") ?? noopFlashWidth
+        guard (0...8).contains(noopFlashWidth) else { throw ConfigError(path: t.path("noop-flash-width"), "must be 0 to 8") }
         noopFlashCount = try t.int("noop-flash-count") ?? noopFlashCount
         guard (1...5).contains(noopFlashCount) else { throw ConfigError(path: t.path("noop-flash-count"), "must be 1 to 5") }
-        noopFlashMs = try t.int("noop-flash-ms") ?? noopFlashMs
-        guard (50...1000).contains(noopFlashMs) else { throw ConfigError(path: t.path("noop-flash-ms"), "must be 50 to 1000") }
         noopFlashSpread = try t.double("noop-flash-spread") ?? noopFlashSpread
-        guard (4...64).contains(noopFlashSpread) else { throw ConfigError(path: t.path("noop-flash-spread"), "must be 4 to 64") }
+        guard (8...160).contains(noopFlashSpread) else { throw ConfigError(path: t.path("noop-flash-spread"), "must be 8 to 160") }
         try t.done()
     }
 

@@ -128,8 +128,8 @@ final class AppState {
     }
 }
 
-/// Runs a key binding's or a gesture's commands in order through the dispatcher. A command that did nothing flashes
-/// the focused window's border, and with `[hud] on-noop` shows why.
+/// Runs a key binding's or a gesture's commands in order through the dispatcher. A command that did nothing makes the
+/// focused window's edge breathe, and with `[hud] on-noop` shows why.
 func runBound(_ commands: [String]) {
     // A binding that uses a switcher's modifier is the modifier at work for something else, unless it is the
     // switcher's own command, which steps its pick.

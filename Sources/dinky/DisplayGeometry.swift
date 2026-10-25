@@ -8,6 +8,15 @@ func screen(of id: CGDirectDisplayID) -> NSScreen? {
     return NSScreen.screens.first { ($0.deviceDescription[number] as? NSNumber)?.uint32Value == id }
 }
 
+/// The NSScreen under a frame's centre, or the primary one. Frames are top-left global, NSScreen frames bottom-left,
+/// flipped around the primary screen.
+func screen(containing frame: CGRect) -> NSScreen? {
+    let screens = NSScreen.screens
+    guard let primary = screens.first else { return nil }
+    let center = CGPoint(x: frame.midX, y: primary.frame.maxY - frame.midY)
+    return screens.first { $0.frame.contains(center) } ?? primary
+}
+
 /// The display's frame minus menu bar and Dock, in CG coordinates (top-left origin at the primary display);
 /// `frame` when no screen shows it.
 func visibleArea(of id: CGDirectDisplayID, frame: CGRect) -> CGRect {
