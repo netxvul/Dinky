@@ -36,6 +36,8 @@ final class Coordinator {
     private var borders: BorderManager?
     /// The noop flash's glow, over any window and its border: borders on or off, its app excluded or not.
     private lazy var noopGlow = NoopGlow { [weak self] id in self?.borders?.border(above: id) }
+    /// The glow along a display's side as fingers push its strip on past an end.
+    private lazy var edgeGlow = EdgeGlow()
     func isBorderWindow(_ id: WindowID) -> Bool { borders?.isBorder(id) == true || noopGlow.isBorder(id) }
 
     /// Makes a window's edge glow once, for a binding that did nothing, unless `[borders] noop-flash` is off.
@@ -263,6 +265,7 @@ final class Coordinator {
         }
         borders?.handle(event)
         noopGlow.handle(event)
+        if event.kind == .spaceChange { edgeGlow.dismiss() }
         if let window = event.window {
             // A drag first, then the Space: macOS moves a window dragged over another display to its Space, often in
             // the first move dinky hears of, and the drag keeps it in its tree (Drag.swift) only once it is one.
@@ -810,25 +813,19 @@ final class Coordinator {
         let delta = -CGFloat(dx * config.gestures.scroll.speed) * workspace.bounds.width
         let moved = workspace.scrollFreely(by: delta)
         // Pushed on past an end, some or all of the way.
-        if abs(delta - moved) >= 0.5 { flashStripEnd(of: workspace, last: delta > 0) }
+        if abs(delta - moved) >= 0.5 { flashStripEnd(on: scroll.display, last: delta > 0) }
         guard moved != 0 else { return }
         workspaces[scroll.key] = workspace
         followStrip(scroll, in: workspace)
     }
 
-    /// Moves windows to `frames` through Dock's connection, the noop glow over one of them going with it.
-    private func moveThroughDock(_ frames: [WindowID: CGRect]) {
-        ScriptingAddition.move(frames)
-        noopGlow.moved(frames)
-    }
-
-    /// The fingers push the strip on past an end, its `last` or its first: the window there glows on that side alone,
-    /// as a binding that does nothing makes a window glow all round, held while they push. Unless `[gestures.scroll]
-    /// edge-flash` is off, whatever `[borders] noop-flash` says.
-    private func flashStripEnd(of workspace: Workspace, last: Bool) {
-        guard config.gestures.scroll.edgeFlash, let id = workspace.endWindow(last: last),
-              model.windows[id]?.isDocument == true else { return }
-        noopGlow.flash(id, edge: last ? .right : .left, byKey: false, config: config.borders, model: model)
+    /// The fingers push the strip on display `uuid` on past an end, its `last` or its first: the display's side there
+    /// glows, its right or its left, as a binding that does nothing makes a window glow, held while they push. Unless
+    /// `[gestures.scroll] edge-flash` is off, whatever `[borders] noop-flash` says.
+    private func flashStripEnd(on uuid: String, last: Bool) {
+        guard config.gestures.scroll.edgeFlash, let display = displays.displays.first(where: { $0.uuid == uuid }),
+              let screen = screen(of: display.id) else { return }
+        edgeGlow.flash(on: screen, right: last, config: config.borders)
     }
 
     /// Has the strip's windows follow it to where the fingers have it now: a window already moving bends towards its
@@ -840,8 +837,7 @@ final class Coordinator {
         let starts = Dictionary(uniqueKeysWithValues: targets.map { id, target in (id, previous[id] ?? target) })
         let place = { (frames: [WindowID: CGRect]) in workspace.placeStrip(strip.merging(frames) { $1 }) }
         if scroll.throughDock {
-            animator.follow(scroll.key, from: starts, to: targets, pids: pids,
-                            sink: { [unowned self] in moveThroughDock(place($0)) })
+            animator.follow(scroll.key, from: starts, to: targets, pids: pids, sink: { ScriptingAddition.move(place($0)) })
         } else {
             animator.follow(scroll.key, from: starts, to: targets, pids: pids, place: place)
         }
@@ -1497,7 +1493,7 @@ final class Coordinator {
                         saGlide.glideEnded()
                     }
                 }
-                let slide = { [unowned self] (frames: [WindowID: CGRect]) in moveThroughDock(unfrozen(place(frames))) }
+                let slide = { (frames: [WindowID: CGRect]) in ScriptingAddition.move(unfrozen(place(frames))) }
                 slide(initial)
                 return animator.animate(key, from: starts, to: targets, pids: pids, stretch: stretch, restart: restart,
                                         curve: curve, sink: slide) { [weak self] in

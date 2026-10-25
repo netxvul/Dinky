@@ -31,21 +31,12 @@ uint32_t dinky_border_create(double scale);
 void dinky_border_update(uint32_t border, uint32_t target, CGRect frame, int cornerRadius,
                          DinkyBorderColor color, double width, DinkyBorderOrder order);
 
-// Which of the target's sides the noop glow lights: all of them, or the left or the right alone, faded out towards its
-// ends where the corners round off.
-typedef NS_ENUM(int, DinkyGlowEdge) {
-    DinkyGlowEdgeAll = 0,
-    DinkyGlowEdgeLeft = 1,
-    DinkyGlowEdgeRight = 2,
-};
-
 // The noop glow: a `width`-point ring of the colour hugging the target on the outside, left out at width 0, and inside
-// it the colour at `alpha` opacity at the target's edge, fading to nothing `depth` points in, on its `edge`.
+// it the colour at `alpha` opacity at the target's edge, fading to nothing `depth` points in.
 typedef struct {
     double width;
     double depth;
     double alpha;
-    DinkyGlowEdge edge;
 } DinkyGlow;
 
 // Reshapes and redraws the border as the noop glow around `frame`, at `opacity` as a whole, then places it as

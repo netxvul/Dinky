@@ -168,8 +168,6 @@ final class NoopGlow: NSObject {
     /// The glowing window as last seen.
     private var window: Window?
     private var config = Borders()
-    /// The sides it lights: all, or one alone, as an end of a strip the fingers push against.
-    private var edge = DinkyGlowEdge.all
     private var pulse: Pulse?
     private var presence = 0.0
     /// The glow needs placing again: its window moved or changed, or another was raised over it.
@@ -178,10 +176,6 @@ final class NoopGlow: NSObject {
     private var lastTick = 0.0
     /// Counts glows, so the watch of one that has gone stops.
     private var generation = 0
-    /// Until when its window's moves are dinky's own, through Dock (`moved`): the window server's reports of them come
-    /// back late, from where the window was a frame or more ago.
-    private var movedUntil = 0.0
-    private static let movedEcho = 0.15
 
     init(borderAbove: @escaping (UInt32) -> UInt32?) {
         self.borderAbove = borderAbove
@@ -190,21 +184,18 @@ final class NoopGlow: NSObject {
     /// Whether a window id is the glow's.
     func isBorder(_ id: UInt32) -> Bool { id != 0 && glow?.id == id }
 
-    /// Glows on the window's edge, or on its `edge` side alone. Again on the same window while it shows holds it: a
-    /// key's press for as long as the key repeats, anything else's, not `byKey`, for `Pulse.hold`.
-    func flash(_ id: UInt32, edge: DinkyGlowEdge = .all, byKey: Bool = true, config: Borders, model: WindowModel) {
+    /// Glows on the window's edge. Again on the same window while it shows holds it.
+    func flash(_ id: UInt32, config: Borders, model: WindowModel) {
         guard let window = model.windows[id], Self.shows(window) else { return }
         let now = CACurrentMediaTime()
         if window.id != self.window?.id { end() }
-        let changed = config != self.config || edge != self.edge
+        let changed = config != self.config
         self.config = config
-        self.edge = edge
         self.window = window
         // A held key repeats its press only after the key repeat delay, then at the key repeat rate: each press holds the
         // glow until the next can come, so a held key shows it once.
-        let first = byKey ? Self.hold(NSEvent.keyRepeatDelay) : Pulse.hold
-        if pulse?.press(at: now, hold: byKey ? Self.hold(NSEvent.keyRepeatInterval) : Pulse.hold) != true {
-            pulse = Pulse(at: now, hold: first)
+        if pulse?.press(at: now, hold: Self.hold(NSEvent.keyRepeatInterval)) != true {
+            pulse = Pulse(at: now, hold: Self.hold(NSEvent.keyRepeatDelay))
         }
         presence = pulse?.presence(at: now) ?? presence
         // A glow already showing takes the press at its next frame, unless it is to look different.
@@ -225,25 +216,12 @@ final class NoopGlow: NSObject {
         guard let changed = event.window else { return }
         if changed.id == window?.id {
             if event.change == .removed || !Self.shows(changed) { return end() }
-            var changed = changed
-            if let window, CACurrentMediaTime() < movedUntil { changed.frame.origin = window.frame.origin }
             window = changed
             needsPlace = true
         } else if event.kind == .windowReorder {
             // A window raised later lands above the glow and may cover it.
             needsPlace = true
         }
-    }
-
-    /// dinky moved windows to `frames` through Dock, as a strip follows the fingers or glides: the glow goes with its
-    /// window at once, in the same frame, not when the window server reports the move, by then a frame or more behind.
-    func moved(_ frames: [UInt32: CGRect]) {
-        guard glow != nil, var window, let frame = frames[window.id] else { return }
-        movedUntil = CACurrentMediaTime() + Self.movedEcho
-        guard frame.origin != window.frame.origin else { return }
-        window.frame.origin = frame.origin
-        self.window = window
-        place()
     }
 
     /// Mission Control came or went.
@@ -264,7 +242,7 @@ final class NoopGlow: NSObject {
     private var inside: BorderWindow.Glow {
         let size = window?.frame.size ?? .zero
         return BorderWindow.Glow(depth: min(config.noopFlashSpread, Double(min(size.width, size.height)) / 4),
-                                 alpha: config.noopFlashOpacity, edge: edge)
+                                 alpha: config.noopFlashOpacity)
     }
 
     /// The glow's opacity as a whole now, to 1/256, finer than the eye tells apart: one that stays the same is not set
@@ -303,7 +281,6 @@ final class NoopGlow: NSObject {
         pulse = nil
         presence = 0
         needsPlace = false
-        movedUntil = 0
         generation += 1
     }
 }

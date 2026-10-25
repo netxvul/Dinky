@@ -175,50 +175,6 @@ static double glow_falloff(double share)
 // in steps of a point, each at the strength of its middle, too fine for the eye to tell apart. Outermost first, each
 // reaching a point past where the next one starts: copied over that point, the next one's anti-aliased edge blends into
 // it rather than into nothing, so neighbours meet without a seam.
-// The band `from` to `to` points in from the target's edge, negative outside it, along its left or right side alone: a
-// straight bar the target's height, in a border window of `size` whose edges are `width` out from the target's.
-static CGRect side_band(CGSize size, double width, BOOL left, double from, double to)
-{
-    double x = left ? width + from : size.width - width - to;
-    return CGRectMake(x, width, to - from, size.height - 2 * width);
-}
-
-// The glow on one side alone: the ring's side and the bands inside it as straight bars, as draw_glow draws them all
-// round, then faded out towards the side's ends, nothing where the corners round off and full a glow's depth further,
-// so it shows as a light against that edge and never reaches round a corner.
-static void draw_glow_side(CGContextRef context, CGSize size, int cornerRadius, DinkyBorderColor color, DinkyGlow glow)
-{
-    BOOL left = glow.edge == DinkyGlowEdgeLeft;
-    if (glow.width > 0) {
-        CGRect ring = side_band(size, glow.width, left, -glow.width, glow.depth > 0 ? 1 : 0);
-        CGContextSetRGBFillColor(context, color.red, color.green, color.blue, color.alpha);
-        CGContextFillRect(context, ring);
-    }
-    for (double from = 0; from < glow.depth; from += 1) {
-        double to = MIN(from + 1, glow.depth);
-        CGRect band = side_band(size, glow.width, left, from, to < glow.depth ? to + 1 : to);
-        CGContextSetRGBFillColor(context, color.red, color.green, color.blue,
-                                 color.alpha * glow.alpha * glow_falloff((from + to) / 2 / glow.depth));
-        CGContextFillRect(context, band);
-    }
-
-    double height = size.height;
-    if (height <= 0) return;
-    double corner = MIN(glow.width + cornerRadius, height / 2);
-    double ramp = MAX(MIN(MAX(glow.depth, cornerRadius), height / 2 - corner), 0);
-    CGFloat locations[] = { 0, corner / height, (corner + ramp) / height,
-                            1 - (corner + ramp) / height, 1 - corner / height, 1 };
-    CGFloat components[] = { 0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 1,  0, 0, 0, 1,  0, 0, 0, 0,  0, 0, 0, 0 };
-    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
-    CGGradientRef fade = CGGradientCreateWithColorComponents(space, components, locations, 6);
-    CGColorSpaceRelease(space);
-    if (!fade) return;
-    // Kept as far as the fade's alpha has it.
-    CGContextSetBlendMode(context, kCGBlendModeDestinationIn);
-    CGContextDrawLinearGradient(context, fade, CGPointZero, CGPointMake(0, height), 0);
-    CGGradientRelease(fade);
-}
-
 static void draw_glow(uint32_t border, CGSize size, int cornerRadius, DinkyBorderColor color, DinkyGlow glow)
 {
     int cid = dinky_connection();
@@ -229,13 +185,6 @@ static void draw_glow(uint32_t border, CGSize size, int cornerRadius, DinkyBorde
     CGRect frame = CGRectInset(bounds, glow.width, glow.width);
     CGContextSetBlendMode(context, kCGBlendModeCopy);
     CGContextClearRect(context, bounds);
-    if (glow.edge != DinkyGlowEdgeAll) {
-        draw_glow_side(context, size, cornerRadius, color, glow);
-        CGContextFlush(context);
-        CGContextRelease(context);
-        SLSFlushWindowContentRegion(cid, border, NULL);
-        return;
-    }
     if (glow.width > 0) {
         fill_band(context, frame, cornerRadius, -glow.width, glow.depth > 0 ? 1 : 0, color, 1);
     }

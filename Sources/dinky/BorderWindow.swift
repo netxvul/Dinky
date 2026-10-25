@@ -6,12 +6,10 @@ import DinkyPrivate
 // The border of one window, or its noop glow: a dinky-owned SkyLight window kept directly below or above its target.
 // Redraws only when the look or size changes; a plain move just re-places it, and the glow fades without a redraw.
 final class BorderWindow {
-    /// The noop glow inside the window: its colour at `alpha` at the window's edge, fading to nothing `depth` points in,
-    /// all round or on one side.
+    /// The noop glow inside the window: its colour at `alpha` at the window's edge, fading to nothing `depth` points in.
     struct Glow: Equatable {
         var depth: Double
         var alpha: Double
-        var edge = DinkyGlowEdge.all
     }
 
     struct Look: Equatable {
@@ -94,8 +92,7 @@ final class BorderWindow {
             let rgba = Self.rgba(look.color)
             if let glow = look.glow {
                 dinky_glow_update(id, target, above, window.frame, Int32(window.cornerRadius), rgba,
-                                  DinkyGlow(width: look.width, depth: glow.depth, alpha: glow.alpha, edge: glow.edge),
-                                  opacity)
+                                  DinkyGlow(width: look.width, depth: glow.depth, alpha: glow.alpha), opacity)
                 self.opacity = opacity
             } else {
                 dinky_border_update(id, target, window.frame, Int32(window.cornerRadius), rgba, look.width, order)
