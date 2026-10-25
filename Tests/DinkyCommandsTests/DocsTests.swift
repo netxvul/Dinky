@@ -1,14 +1,18 @@
 import Foundation
 import Testing
+import DinkyConfig
 @testable import DinkyCommands
 
 /// docs/commands.md is written by hand; `Command.all` owns the names, the docs the prose. These keep them in step.
+/// So is the default config docs/configuration.md shows, which is to be the file dinky writes on first run.
 struct DocsTests {
-    private static let commands: String = {
+    private static func doc(_ name: String) -> String {
         let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appending(path: "docs/commands.md")
+            .appending(path: "docs/\(name)")
         return try! String(contentsOf: url, encoding: .utf8)
-    }()
+    }
+
+    private static let commands = doc("commands.md")
 
     /// The contents of every `backticked` span in `text`.
     private static func spans(_ text: some StringProtocol) -> [String] {
@@ -32,5 +36,12 @@ struct DocsTests {
         for name in WorkspaceQuery.variables + WindowQuery.variables + MonitorQuery.variables + Format.special {
             #expect(documented.contains(name) || documented.contains("%{\(name)}"), "\(name)")
         }
+    }
+
+    @Test func `Default config page is the file dinky writes`() throws {
+        let page = Self.doc("configuration.md")
+        let after = try #require(page.components(separatedBy: "## Default config\n\n```toml\n").dropFirst().first)
+        let block = try #require(after.components(separatedBy: "\n```").first)
+        #expect(block == Config.defaultTOML)
     }
 }

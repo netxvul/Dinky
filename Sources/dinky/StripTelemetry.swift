@@ -7,6 +7,7 @@ import DinkyPrivate
 // - `strip N: focus` when macOS's focus moves the strip to a window that was parked, and from which window;
 // - `strip N: focus … passed over` when macOS reports focus on a window only because dinky is raising it into order,
 //   which nothing follows;
+// - `strip N: fingers` when fingers take hold of the strip to scroll it (`[gestures.scroll]`), let go or lose it;
 // - `strip N: + / -` when a window joins or leaves the strip, and why;
 // - `strip N: landed` when a write left a window short of where the strip put it;
 // - `strip N: check` a moment after the strip settles, for a window not where the strip has it, or one on the
@@ -83,6 +84,13 @@ final class StripTelemetry {
 
     /// dinky moved focus in a strip itself: a command, the window switcher, a peek clicked.
     func command(_ key: UInt64, _ what: String) { causes[key] = what }
+
+    /// Fingers took hold of the strip to scroll it (`[gestures.scroll]`), let go of it, or lost it: logged as
+    /// `strip N: fingers …`, and the cause of the next `view` line.
+    func fingers(_ key: UInt64, _ what: String) {
+        causes[key] = "fingers \(what)"
+        log(key, "fingers \(what)")
+    }
 
     /// macOS reported focus on `id` only because dinky was raising it into order behind another window, and
     /// `syncFocus` did not follow it. Logged once for each window until the strip's next pass.

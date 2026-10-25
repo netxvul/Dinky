@@ -84,6 +84,10 @@ public struct Workspace: Equatable, Sendable {
     /// `revealFocus()`: a click focused it, and a strip scrolled under the pressed button would take the window from
     /// under the pointer. See `focus(_:holdingScroll:)`.
     public internal(set) var holdsScroll = false
+    /// Scrolling: where the strip showed as fingers took hold of it to scroll it freely, while they do: the layout
+    /// keeps `scrollOffset` within the ends meanwhile, the focused column not scrolled to. Nil otherwise. See
+    /// FreeScroll.swift.
+    var freeScrollFrom: CGFloat?
     /// Scrolling: the edges of `bounds` with another display beyond them, where a window cannot hang over.
     public var walls: Set<Direction> = []
     /// The algorithm a `layout` command switched to, kept over the config's. Nil follows the config.

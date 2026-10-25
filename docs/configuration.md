@@ -279,14 +279,20 @@ gaps.outer.top = 44
 | Key | Default | |
 |---|---|---|
 | `enabled` | `true` | Windows glide to their tiles instead of jumping. Off while macOS's Reduce Motion is on. |
-| `duration-ms` | `150` | Roughly how long a window takes to arrive on the spring, exactly how long along an easing, up to 1000. `0` jumps. |
+| `duration-ms` | `363` | Roughly how long a window takes to arrive on the spring, exactly how long along an easing, up to 1000. `0` jumps. |
+| `damping` | `1` | How the spring settles, `0.5` to `1`: `1` eases into place without overshooting; lower gets there sooner and overshoots, more the lower. |
 | `curve` | `'spring'` | How windows travel; see below. |
 
 </div>
 
-`curve = 'spring'` puts each window on a spring that settles without bouncing.
-A command pressed again mid-glide bends the motion towards the new place,
-keeping its speed.
+`curve = 'spring'` puts each window on a spring, SlideScroll's by default:
+critically damped at `damping = 1`, it sets off at once and eases into place
+without overshooting, most of the way there in about a quarter of a second and
+settled within a point in about half of one. `duration-ms = 150` with
+`damping = 0.9` is the quicker spring dinky had before. A command pressed
+again mid-glide bends the motion towards the new place, keeping its speed.
+Glides step at the full rate of the display the windows are on, 120 times a
+second on a ProMotion display.
 
 Any other value is a timing function from [easings.net](https://easings.net),
 as yabai's `window_animation_easing` offers, run over exactly `duration-ms`:
@@ -543,8 +549,9 @@ exclude = [3]
 ## `[gestures]`
 
 Swipes run commands, as key bindings do: on the trackpad in
-`[gestures.trackpad]`, on a Magic Mouse in `[gestures.mouse]`. Gestures read
-both through macOS's private MultitouchSupport framework.
+`[gestures.trackpad]`, on a Magic Mouse in `[gestures.mouse]`. Fingers moved
+across the trackpad can scroll a strip instead, in `[gestures.scroll]`.
+Gestures read both through macOS's private MultitouchSupport framework.
 
 ```toml
 [gestures.trackpad]
@@ -623,6 +630,50 @@ the mouse too.
 enabled = true
 swipe-up = 'window-switcher'
 swipe-down = 'workspace-switcher'
+```
+
+### `[gestures.scroll]`
+
+Off by default: with `enabled = true`, `fingers` fingers moved across the
+trackpad scroll the strip on the display under the pointer with them, as
+SlideScroll's do. Once they have gone about 2 mm, mostly across, the strip goes
+where they take it, `speed` screens for the trackpad's whole width, its windows
+following a moment behind on a stiff spring, never past either end. Let go, it
+coasts on at their speed and settles with the column showing nearest the middle
+in view, scrolled to as `[scrolling] center-focused-column` has it, and that
+column's window takes focus once it rests; at an end of the strip, the column
+there. A finger landing or lifting lets go too.
+
+The fingers may rest before they move. With the same fingers as
+`[gestures.trackpad]`, they still swipe up and down soon after they land, but
+`swipe-left` and `swipe-right` can't be bound for them there. Nothing scrolls
+where the columns all fit, while a window is fullscreen, while a click, a drag
+or a switcher is under way, or while a Space changes. A command or a window
+taking focus mid-scroll takes the strip over; a Space changing under the
+fingers, or Mission Control, puts the strip back where it was. With Reduce
+Motion on or animations off, the windows still follow the fingers, and land at
+once when they lift.
+
+macOS swipes three or four fingers across between full-screen apps, and three
+between pages or to drag, unless that is off in System Settings, Trackpad,
+More Gestures; `dinky doctor` says when the fingers clash. Four fingers, the
+default, clash with nothing once "Swipe between full-screen applications" is
+off.
+
+<div class="wide-table" markdown="1">
+
+| Key | Default | |
+|---|---|---|
+| `enabled` | `false` | `true` scrolls strips with the fingers. |
+| `fingers` | `4` | How many fingers scroll, `3` to `5`; not `[gestures.trackpad]`'s while it binds `swipe-left` or `swipe-right`. |
+| `speed` | `1.5` | How many screens the strip moves as the fingers cross the whole trackpad, `0.25` to `5`. |
+
+</div>
+
+```toml
+[gestures.scroll]
+enabled = true
+fingers = 4
 ```
 
 ## `[modifiers]`
@@ -852,7 +903,8 @@ accordion-edges = true          # resting on a peeking accordion edge focuses th
 
 [animations]
 enabled = true                  # windows glide to their tiles; off while Reduce Motion is on
-duration-ms = 150               # roughly how long a window takes to arrive
+duration-ms = 363               # roughly how long a window takes to arrive; 363 with damping 1 is SlideScroll's spring
+damping = 1                     # how the spring settles: 1 eases in without overshooting, lower overshoots; 0.5 to 1
 curve = 'spring'                # spring | linear | ease-out-cubic and the other easings.net curves
 
 [drag]
@@ -896,6 +948,37 @@ layouts = ['scrolling', 'tiles']  # where it shows: scrolling | tiles | accordio
 tiles-style = 'map'             # tiles and fixed: map (their tiles, picked in two dimensions) | row
 show-single = true              # also show it for a workspace with a lone tiled window (free: a lone window)
 
+# Hold the modifier alone for a glass capsule of the workspaces at the pointer, each drawn small in its layout;
+# move across to pick one, release to switch to it.
+[workspace-switcher]
+modifier = 'none'               # none (off) | alt | ctrl | cmd | shift | hyper; not [window-switcher]'s unless the triggers differ
+displays = 'all'                # all (a group per display) | pointer (the display under the pointer)
+show-empty = true               # cards for workspaces without windows
+exclude = []                    # workspace numbers left out
+card-height = 85                # points, 60 to 200; the width follows each display's proportions
+thumbnails = 'windows'          # windows (pictures, need Screen Recording) | icons (app icons) | schematic (a fixed picture of the layout)
+# delay-ms = 300                # any [switcher] key set here is for this switcher alone
+
+# Swipes on the trackpad and a Magic Mouse, each running commands as a key binding does. A swipe that shows a
+# switcher goes on picking with the same fingers, a step every `step` millimetres; lift them to take the pick.
+# [gestures.trackpad]
+# enabled = true
+# fingers = 3                   # 2 to 5
+# distance = 15                 # millimetres before it is a swipe, 6 to 40
+# step = 12                     # millimetres per step, 4 to 50
+# swipe-right = 'window-switcher'   # also swipe-left, swipe-up, swipe-down
+# swipe-left = 'workspace-switcher'
+# [gestures.mouse]              # the same on a Magic Mouse, off by default
+# enabled = true
+# fingers = 2                   # 2 to 4; it seldom feels a third
+# distance = 8                  # millimetres, 3 to 30
+# step = 4                      # millimetres per step, 2 to 30
+# swipe-up = 'window-switcher'  # its own swipes replace the trackpad's; none, and those run
+# [gestures.scroll]             # fingers moved across the trackpad scroll a strip with them, off by default
+# enabled = true
+# fingers = 4                   # 3 to 5; not [gestures.trackpad]'s while it binds swipe-left or swipe-right
+# speed = 1.5                   # screens the strip moves as the fingers cross the trackpad, 0.25 to 5
+
 # Which key of each pair bindings answer to: both | left | right. With alt = 'left',
 # right Option still types special characters.
 [modifiers]
@@ -915,7 +998,7 @@ hyper = 'alt-ctrl-cmd-shift'     # what a switcher's modifier = 'hyper' holds to
 
 # Every rule whose conditions all match a new window runs, in order.
 [[rules]]
-app-id = 'com.apple.systempreferences'   # also: app-name, title (regexes), kind (normal|dialog|sheet|panel)
+app-id = 'com.apple.systempreferences'   # also: app-name, title (regexes), kind (normal|dialog|sheet|panel), disk-image
 run = 'layout floating'
 
 [mode.main]

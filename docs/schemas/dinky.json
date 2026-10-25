@@ -238,8 +238,15 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 1000,
-          "default": 150,
-          "description": "Roughly how long a window takes to arrive on the spring, exactly how long along an easing. 0 jumps."
+          "default": 363,
+          "description": "Roughly how long a window takes to arrive on the spring, exactly how long along an easing. 0 jumps. 363 with damping 1 is SlideScroll's spring."
+        },
+        "damping": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 1,
+          "default": 1,
+          "description": "How the spring settles: 1 eases into place without overshooting; lower gets there sooner and overshoots, more the lower."
         },
         "curve": {
           "type": "string",
@@ -528,7 +535,7 @@
     "gestures": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Swipes on the trackpad and on a Magic Mouse, each running a command or commands as a key binding does. A swipe that shows a switcher goes on picking with the same fingers until they lift.",
+      "description": "Swipes on the trackpad and on a Magic Mouse, each running a command or commands as a key binding does, and fingers on the trackpad scrolling a strip. A swipe that shows a switcher goes on picking with the same fingers until they lift.",
       "properties": {
         "trackpad": {
           "type": "object",
@@ -558,6 +565,16 @@
             "swipe-right": { "$ref": "#/definitions/commands" },
             "swipe-up": { "$ref": "#/definitions/commands" },
             "swipe-down": { "$ref": "#/definitions/commands" }
+          }
+        },
+        "scroll": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Fingers moved across the trackpad scroll the strip under the pointer with them, after SlideScroll; let go, it coasts on and settles with the column nearest the middle in view.",
+          "properties": {
+            "enabled": { "type": "boolean", "default": false, "description": "true scrolls strips with the fingers." },
+            "fingers": { "type": "integer", "minimum": 3, "maximum": 5, "default": 4, "description": "How many fingers scroll. Not [gestures.trackpad]'s fingers while it binds swipe-left or swipe-right." },
+            "speed": { "type": "number", "minimum": 0.25, "maximum": 5, "default": 1.5, "description": "How many screens the strip moves as the fingers cross the whole trackpad." }
           }
         }
       }

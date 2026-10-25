@@ -1,7 +1,8 @@
 import CoreGraphics
 
 /// A damped spring on one value, SwiftUI style: `response` is roughly the time to arrive,
-/// `damping` 1 arrives without overshoot. Semi-implicit Euler with substeps short enough to stay stable.
+/// `damping` 1 arrives without overshoot. Semi-implicit Euler with substeps short enough to stay stable, and never
+/// longer than SlideScroll's 1/480 s, so a soft spring keeps to the curve it would follow continuously.
 public struct Spring: Equatable, Sendable {
     public let stiffness: Double
     public let friction: Double
@@ -18,7 +19,7 @@ public struct Spring: Equatable, Sendable {
 
     /// Advance `value` and `velocity` towards `target` by `dt` seconds.
     public func step(_ value: inout Double, _ velocity: inout Double, to target: Double, dt: Double) {
-        let limit = 0.5 / max(stiffness.squareRoot(), friction)
+        let limit = min(0.5 / max(stiffness.squareRoot(), friction), 1.0 / 480)
         let steps = max(1, Int((dt / limit).rounded(.up)))
         let h = dt / Double(steps)
         for _ in 0..<steps {
@@ -102,6 +103,9 @@ public struct FrameAnimation: Equatable, Sendable {
     private var age: Double = 0
     /// Where an eased animation set out from: the start, or where the window was when the target last changed.
     private var origin: [Double]
+    /// How near its target, in points, and how slow, in points a second, every edge of a window on a spring must be
+    /// for it to have arrived, as SlideScroll's springs have it: it then lands on the target.
+    public static let settleDistance = 1.0, settleSpeed = 20.0
 
     public init(from start: CGRect, to target: CGRect) {
         self.target = target
@@ -133,6 +137,14 @@ public struct FrameAnimation: Equatable, Sendable {
         origin = value
     }
 
+    /// Starts over from where it is, as when its curve changes: an easing from here, a spring from rest (an easing keeps
+    /// no speed, so what it holds is stale).
+    public mutating func restart() {
+        origin = value
+        age = 0
+        velocity = [0, 0, 0, 0]
+    }
+
     /// Advance by `dt` seconds on a spring. True once at rest on the target, or after `timeout` seconds.
     public mutating func step(_ spring: Spring, dt: Double, timeout: Double) -> Bool {
         step(.spring(spring), dt: dt, timeout: timeout)
@@ -146,7 +158,9 @@ public struct FrameAnimation: Equatable, Sendable {
         switch curve {
         case .spring(let spring):
             for i in 0..<4 { spring.step(&value[i], &velocity[i], to: goal[i], dt: dt) }
-            settled = (0..<4).allSatisfy { abs(value[$0] - goal[$0]) < 0.5 && abs(velocity[$0]) < 10 }
+            settled = (0..<4).allSatisfy {
+                abs(value[$0] - goal[$0]) < Self.settleDistance && abs(velocity[$0]) < Self.settleSpeed
+            }
         case .eased(let easing, let duration):
             let progress = duration > 0 ? min(age / duration, 1) : 1
             let share = easing(progress)

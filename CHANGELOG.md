@@ -36,6 +36,8 @@
 ### Animations
 
 - New `[animations] curve` picks how windows travel: `'spring'`, as before, or one of the [easings.net](https://easings.net) timing functions yabai offers, such as `'ease-out-cubic'`, run over exactly `duration-ms`. `'linear'` and the `ease-in-`, `ease-out-` and `ease-in-out-` forms of `sine`, `quad`, `cubic`, `quart`, `quint`, `expo` and `circ` are there.
+- The spring is SlideScroll's by default, softer and critically damped: windows set off at once and ease into place without overshooting, most of the way in about a quarter of a second and settled within a point in about half of one (`duration-ms = 363`, and the new `damping = 1`). A config that sets `duration-ms` keeps about its pace, critically damped now; `damping = 0.9` brings back the spring as it was, and `duration-ms = 150` with it the old pace. `damping` goes from `0.5`, which overshoots most, to `1`.
+- Glides step on the display the windows are on, at its full rate, each step taken to when its frame will show, rather than at the main display's rate as of the last frame, and App Nap is held off while they run: smoother on a second display with another refresh rate, and on ProMotion. The log says at what rate each display glides, and how evenly each glide went.
 
 ### Floating
 
@@ -77,6 +79,7 @@
 ### Scrolling
 
 - New `[scrolling] center-focused-column`, after niri's: `'always'` scrolls the focused column to the middle of the display, the first and last columns too, the display bare beyond them; `'always-fill'` does so too, but never past the strip's ends, so the first and last columns, and with narrow columns the ones next to them, go only to the display's edge, the columns beside them filling it; `'on-overflow'` does so only when the column did not all show, and leaves one already in view where it is. `'never'`, the default, scrolls just far enough to show it whole, as before. Columns that all fit stay centred as a whole.
+- New `[gestures.scroll]`, after SlideScroll: with `enabled = true`, `fingers` fingers (4 by default) moved across the trackpad scroll the strip on the display under the pointer with them, `speed` screens (1.5) for the trackpad's width, its windows following on a stiff spring. Let go, it coasts on at their speed and settles with the column nearest the middle in view, which takes focus once it rests; at an end of the strip, the column there. With the same fingers as `[gestures.trackpad]`, they still swipe up and down; binding `swipe-left` or `swipe-right` for them there as well is an error. A Space changing under the fingers puts the strip back where it was; a command or a window focused mid-scroll takes it over. With Reduce Motion on or animations off, the windows still follow the fingers and land at once. `dinky doctor` says when macOS swipes the same fingers across between pages, full-screen apps or Spaces, or drags with three.
 
 ### Fixes
 

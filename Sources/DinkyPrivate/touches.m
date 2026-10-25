@@ -97,7 +97,7 @@ static int contactFrame(MTDeviceRef device, MTTouch *touches, int count, double 
         x = x / down * width / 100.0;
         y = y / down * height / 100.0;
     }
-    frameHandler(down, x, y, time, (uintptr_t)device, mouse);
+    frameHandler(down, x, y, time, (uintptr_t)device, mouse, width / 100.0);
     return 0;
 }
 

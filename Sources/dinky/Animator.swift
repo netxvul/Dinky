@@ -3,14 +3,15 @@ import DinkyLayout
 import DinkyPrivate
 
 // Glides windows to their tiles. Each window rides a spring, or an easing over a fixed time, from where it is to its
-// tile, stepped on every frame of the main display and written through the applier's per-app queues without
+// tile, stepped on every frame of the display the tree is on and written through the applier's per-app queues without
 // readback. Once a tree's windows have arrived, its pass finishes as an unanimated one would: the full write with
 // readback, retry and raises. A new pass mid-flight retargets the windows: on the spring they curve to their new
 // tiles, keeping their speed; an easing starts over from where they are. A scrolling strip glides as a whole: its
 // windows ride in strip coordinates, unparked, and each frame the tree's `place` puts them all on screen together,
 // so a long scroll passes the columns between across the screen in turn.
 //
-// Frames are stepped and written at the display's rate (120 a second on a ProMotion display). Each app moves its own
+// Frames are stepped and written at the full rate of the display the tree last set gliding is on (120 a second on a
+// ProMotion display), each step taken to when its frame shows, with App Nap held off meanwhile. Each app moves its own
 // windows; one that takes longer than `FrameScheduler.slowStep` over a step is then moved only every third frame
 // rather than dropped for the rest of the glide, so it keeps gliding at a pace it can hold instead of freezing and
 // jumping to its tile at the end; frames coalesce per window in the scheduler, so a throttled app never has a backlog
@@ -18,7 +19,11 @@ import DinkyPrivate
 // windows keep with the slow one as it shows, and wait for it at the end (see `ColumnHold`).
 //
 // A tree can glide something other than its windows instead, such as their Dock transforms (see ScriptingAddition): its
-// frames go to its `sink` and nowhere else, at the display's full rate, since no app has to keep up. Main thread only.
+// frames go to its `sink` and nowhere else, at the display's full rate, since no app has to keep up.
+//
+// A tree can also follow fingers (`follow`): its windows ride a stiff spring towards targets that move with every touch
+// frame, and never arrive, however still they hold, until the fingers let go and its next pass glides them on from
+// where they are, at their speed, on the configured spring. Main thread only.
 final class Animator: NSObject {
     private struct Entry {
         var animation: FrameAnimation
@@ -53,11 +58,27 @@ final class Animator: NSObject {
     /// By tree, the rest of its latest pass, run once its windows have arrived.
     private var finishes: [UInt64: () -> Void] = [:]
     private var link: CADisplayLink?
-    private var lastTick: CFTimeInterval?
+    /// The display the link was made for, as `displayOf` found it; nil where that was unknown. Its link is on its
+    /// screen, or on the main one where no screen shows it, so a display with no screen yet does not have the link
+    /// made again on every call: the screens changing makes it again (`screensChanged`).
+    private var linkDisplay: CGDirectDisplayID?
+    /// When the last frame stepped was to show, so each step goes as far as when its own will.
+    private var lastTarget: CFTimeInterval?
+    /// Since when the link has run, how many frames it stepped, and the longest wait between two, for the log once it
+    /// pauses: how evenly the glides went.
+    private var pace: (since: CFTimeInterval, frames: Int, longest: CFTimeInterval)?
+    /// Held while windows glide, so App Nap does not bunch the frames, as SlideScroll holds it.
+    private var activity: NSObjectProtocol?
     /// When a frame was last stepped, on the wall clock, so a display link that stopped firing is noticed.
     private var lastStepAt = CACurrentMediaTime()
     private var watchdog: Timer?
-    private var curve = AnimationCurve.spring(Spring(response: 0.15, damping: 0.9))
+    /// The configured spring, which windows the fingers let go of glide on whatever `curve` is.
+    private var spring = Spring(response: 0.363, damping: 1)
+    private var curve = AnimationCurve.spring(Spring(response: 0.363, damping: 1))
+    /// By tree, the curve its windows glide on in place of `curve`, as fingers following or letting go have it.
+    private var curves: [UInt64: AnimationCurve] = [:]
+    /// Trees whose windows follow fingers (`follow`): they never arrive, however still, until `endFollow`.
+    private var following: Set<UInt64> = []
     /// How long a window growing to the left stands at its start at most, waiting for its lead-in to be written.
     private static let leadInWait: CFTimeInterval = 0.25
     private var timeout = 1.0
@@ -69,6 +90,10 @@ final class Animator: NSObject {
     var onArrive: ([WindowID]) -> Void = { _ in }
     /// By tree, the strip's columns, so the windows of one glide together.
     var columns: (UInt64) -> [[WindowID]] = { AppState.shared.coordinator?.workspaces[$0]?.stripColumns ?? [] }
+    /// By tree, the display its windows are on, so the link steps at that display's rate.
+    var displayOf: (UInt64) -> CGDirectDisplayID? = { _ in nil }
+    /// The tree last set gliding, whose display the link steps on.
+    private var lastKey: UInt64?
     /// Apps found too slow to follow a glide frame by frame, in this glide or an earlier one: a column holds to their
     /// windows from a glide's first frame, rather than snapping back to them once they have fallen behind.
     private var slowPids: Set<pid_t> = []
@@ -78,6 +103,9 @@ final class Animator: NSObject {
     private var waitingSince: [WindowID: CFTimeInterval] = [:]
     /// How long a window at its target waits for the slow window of its column at most.
     private static let columnWait: CFTimeInterval = 0.5
+    /// The spring windows follow fingers on: SlideScroll's, stiffness 3000 or so, about 31 ms behind them at 120 frames
+    /// a second, which smooths their uneven frames.
+    private static let followCurve = AnimationCurve.spring(Spring(response: 0.115, damping: 1))
 
     init(applier: FrameApplier) {
         self.applier = applier
@@ -88,12 +116,18 @@ final class Animator: NSObject {
                                                queue: .main) { [weak self] _ in self?.screensChanged() }
     }
 
-    /// How long a window takes to arrive, roughly on the spring and exactly along an easing; nil for the spring.
-    func configure(durationMs ms: Int, easing: Easing?) {
+    /// How long a window takes to arrive, roughly on the spring and exactly along an easing; nil for the spring, whose
+    /// `damping` 1 eases in without overshooting, and less overshoots.
+    func configure(durationMs ms: Int, easing: Easing?, damping: Double) {
         let duration = Double(ms) / 1000
-        curve = easing.map { .eased($0, duration: duration) } ?? .spring(Spring(response: duration, damping: 0.9))
+        spring = Spring(response: duration, damping: damping)
+        curve = easing.map { .eased($0, duration: duration) } ?? .spring(spring)
         timeout = max(1, 4 * duration)
     }
+
+    /// What windows the fingers let go of glide on: the configured spring, whatever the curve, since it carries on at
+    /// the speed they had where an easing would start over from rest.
+    var releaseCurve: AnimationCurve { .spring(spring) }
 
     /// Whether dinky is moving the window right now, so its frame changes are not the user's.
     func isAnimating(_ id: WindowID) -> Bool { entries[id] != nil }
@@ -112,14 +146,19 @@ final class Animator: NSObject {
     /// long as `stretch` has the others take. A window in `anchors` grows to the left as it glides, its right edge held
     /// past the screen's; one that did so before and no longer does carries on from where it was written. A window in
     /// `restart` sets out from its start even if it is moving already, as one a strip's long scroll takes straight on
-    /// out of view does (see ScrollShortcut.swift).
+    /// out of view does (see ScrollShortcut.swift). `curve` is the tree's own in place of the configured one, till its
+    /// next glide; a tree that followed fingers no longer does.
     func animate(_ key: UInt64, from starts: [WindowID: CGRect], to targets: [WindowID: CGRect],
                  pids: [WindowID: pid_t], place: (([WindowID: CGRect]) -> [WindowID: CGRect])? = nil,
                  resting: [WindowID: CGRect] = [:], stretch: Double = 1, slower: [WindowID: Double] = [:],
-                 anchors: [WindowID: ResizeOnce.Anchor] = [:], restart: Set<WindowID> = [],
+                 anchors: [WindowID: ResizeOnce.Anchor] = [:], restart: Set<WindowID> = [], curve: AnimationCurve? = nil,
                  sink: (([WindowID: CGRect]) -> Void)? = nil, then finish: @escaping () -> Void) {
         // A new glide: every app gets another chance to keep up.
         if entries.isEmpty { applier.clearSlow() }
+        following.remove(key)
+        // What each moving window glided on till now, so one whose curve changes can start over on the new one.
+        let before = curves
+        curves[key] = curve
         windowPids.merge(pids) { $1 }
         let wasPlaced = placers[key] != nil
         let still = Dictionary(uniqueKeysWithValues: resting.compactMap { id, frame in pids[id].map { (id, ($0, frame)) } })
@@ -133,6 +172,7 @@ final class Animator: NSObject {
         for (id, target) in targets {
             waitingSince[id] = nil
             if entries[id] != nil {
+                let was = (before[entries[id]!.key] ?? self.curve).stretched(entries[id]!.stretch)
                 if entries[id]!.anchor != nil, anchors[id] == nil { entries[id]!.animation.carryOn(from: entries[id]!.frame) }
                 if entries[id]!.anchor == nil, anchors[id] != nil { entries[id]!.heldSince = CACurrentMediaTime() }
                 if anchors[id] == nil { entries[id]!.heldSince = nil }
@@ -140,16 +180,68 @@ final class Animator: NSObject {
                 entries[id]!.key = key
                 entries[id]!.stretch = stretch * (slower[id] ?? 1)
                 entries[id]!.anchor = anchors[id]
+                // Another curve, its target the same or not: an easing over from here, as a retarget starts one, and a
+                // spring after an easing from rest, since an easing keeps no speed. A spring after a spring keeps its own.
+                let now = (curve ?? self.curve).stretched(entries[id]!.stretch)
+                if was != now, case .eased = now {
+                    entries[id]!.animation.restart()
+                } else if case .eased = was, case .spring = now {
+                    entries[id]!.animation.restart()
+                }
             } else if let start = starts[id], let pid = pids[id], !isResting(id, at: start, for: target) {
                 entries[id] = Entry(animation: FrameAnimation(from: start, to: target), pid: pid, key: key,
                                     stretch: stretch * (slower[id] ?? 1), anchor: anchors[id],
                                     heldSince: anchors[id] == nil ? nil : CACurrentMediaTime())
             }
         }
+        // The link steps on the display of the tree last set gliding, not of one that had nothing to move.
+        if entries.values.contains(where: { $0.key == key }) { lastKey = key }
         finishes[key] = finish
         finishArrived()
         if !entries.isEmpty { run() }
     }
+
+    /// Has the tree's windows follow `targets` closely, on a stiff spring, as fingers move a strip: called again with
+    /// each move, they bend towards the new targets keeping their speed, and they never arrive, however still they
+    /// hold, until `endFollow`. A window not moving yet sets out from its start. As with `animate`, `place` puts strip
+    /// frames on screen and `sink` takes the frames instead of the windows. The rest of the tree's last pass, to have
+    /// run once its windows arrived, is dropped: the pass after the fingers lift runs its own.
+    func follow(_ key: UInt64, from starts: [WindowID: CGRect], to targets: [WindowID: CGRect], pids: [WindowID: pid_t],
+                place: (([WindowID: CGRect]) -> [WindowID: CGRect])? = nil, sink: (([WindowID: CGRect]) -> Void)? = nil) {
+        if entries.isEmpty { applier.clearSlow() }
+        windowPids.merge(pids) { $1 }
+        if following.insert(key).inserted { finishes[key] = nil }
+        let before = curves
+        curves[key] = Self.followCurve
+        // Every window of the strip follows, so none rests meanwhile.
+        let resting: [WindowID: (pid: pid_t, frame: CGRect)] = [:]
+        placers[key] = place.map { (targets, $0, resting) }
+        sinks[key] = sink
+        for (id, entry) in entries where entry.key == key && targets[id] == nil {
+            entries[id] = nil
+            written[id] = nil
+        }
+        for (id, target) in targets {
+            waitingSince[id] = nil
+            if entries[id] != nil {
+                // Coming off an easing, which keeps no speed: the stiff spring sets out from rest.
+                if case .eased = (before[entries[id]!.key] ?? curve) { entries[id]!.animation.restart() }
+                if entries[id]!.anchor != nil { entries[id]!.animation.carryOn(from: entries[id]!.frame) }
+                entries[id]!.anchor = nil
+                entries[id]!.heldSince = nil
+                entries[id]!.stretch = 1
+                entries[id]!.key = key
+                entries[id]!.animation.retarget(target)
+            } else if let start = starts[id], let pid = pids[id] {
+                entries[id] = Entry(animation: FrameAnimation(from: start, to: target), pid: pid, key: key)
+            }
+        }
+        if entries.values.contains(where: { $0.key == key }) { lastKey = key }
+        if !entries.isEmpty { run() }
+    }
+
+    /// Lets the tree's windows arrive again, as the pass after the fingers lift glides them on.
+    func endFollow(_ key: UInt64) { following.remove(key) }
 
     /// Whether a window at `frame` is where it came to rest when last asked for `asked`, or on it: not moved since by
     /// its app or the user. An app that snaps to a grid or keeps a minimum size rests a few points off.
@@ -179,6 +271,8 @@ final class Animator: NSObject {
         finishes[key] = nil
         placers[key] = nil
         sinks[key] = nil
+        curves[key] = nil
+        following.remove(key)
     }
 
     /// Forgets a window that is gone, so a new window given its id starts fresh.
@@ -196,54 +290,114 @@ final class Animator: NSObject {
         finishes = [:]
         placers = [:]
         sinks = [:]
+        curves = [:]
+        following = []
         written = [:]
         waitingSince = [:]
         link?.isPaused = true
-        lastTick = nil
+        lastTarget = nil
+        pace = nil
+        endActivity()
         watchdog?.invalidate()
         watchdog = nil
     }
 
     private func run() {
-        if link == nil {
-            link = (NSScreen.main ?? NSScreen.screens.first)?.displayLink(target: self, selector: #selector(tick))
-            link?.add(to: .main, forMode: .common)
+        // On the display of the tree last set gliding, made again once that is another, the main one while unknown.
+        let display = lastKey.flatMap(displayOf)
+        let fresh = link == nil || (display != nil && display != linkDisplay)
+        if fresh { makeLink(on: display) }
+        // Called again with every move of the fingers: only a link setting off starts the clocks again, so one that
+        // stops firing is still noticed (`checkStalled`).
+        if fresh || link?.isPaused == true {
+            link?.isPaused = false
+            lastStepAt = CACurrentMediaTime()
+            pace = (lastStepAt, 0, 0)
         }
-        // Aim for the display's full rate, snapshots and real windows alike; an app that cannot keep up is moved
-        // every third step instead (see `step`), so it glides at its own pace rather than dragging the rate down.
-        link?.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
-        link?.isPaused = false
-        lastStepAt = CACurrentMediaTime()
+        if activity == nil {
+            activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical],
+                                                             reason: "Gliding windows")
+        }
         if watchdog == nil {
             watchdog = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.checkStalled() }
         }
     }
 
-    /// Drops the link, so the next pass makes one for the screen that is main now, and carries on with a pass in flight.
+    /// A link on `display`'s screen, or the main one, at its full rate: snapshots and real windows alike, an app that
+    /// cannot keep up moved every third step instead (see `step`), so it glides at its own pace rather than dragging
+    /// the rate down. Logged, as the pace glides go at.
+    private func makeLink(on display: CGDirectDisplayID?) {
+        link?.invalidate()
+        lastTarget = nil
+        let own = display.flatMap { screen(of: $0) }
+        let shown = own ?? NSScreen.main ?? NSScreen.screens.first
+        linkDisplay = display
+        link = shown?.displayLink(target: self, selector: #selector(tick))
+        let rate = Float(max(shown?.maximumFramesPerSecond ?? 60, 1))
+        link?.preferredFrameRateRange = CAFrameRateRange(minimum: min(rate, 60), maximum: rate, preferred: rate)
+        link?.add(to: .main, forMode: .common)
+        if link != nil {
+            print("\(stamp()) animator: \(Int(rate)) frames a second on \(shown?.localizedName ?? "no screen")")
+            fflush(stdout)
+        }
+    }
+
+    /// App Nap may come back once nothing glides.
+    private func endActivity() {
+        guard let activity else { return }
+        ProcessInfo.processInfo.endActivity(activity)
+        self.activity = nil
+    }
+
+    /// Drops the link, so the next pass makes one for the screens there are now, and carries on with a pass in flight.
     private func screensChanged() {
         dropLink()
-        if !entries.isEmpty { run() }
+        if entries.isEmpty { idle() } else { run() }
     }
 
     /// A link that has not fired for a while (its screen went away without a screen change reaching us) would
     /// leave windows mid-glide for good: put them on their tiles now and start over with a new link next time.
     private func checkStalled() {
-        guard !entries.isEmpty, CACurrentMediaTime() - lastStepAt > 2 else { return }
+        // Emptied by `stop` or `forget` with no tick to follow, as after a dropped link.
+        guard !entries.isEmpty else { return idle() }
+        guard CACurrentMediaTime() - lastStepAt > 2 else { return }
         dropLink()
         step(dt: timeout)
+    }
+
+    /// Nothing glides: the link paused, its pace logged, App Nap allowed again, the watchdog stopped.
+    private func idle() {
+        link?.isPaused = true
+        lastTarget = nil
+        if let pace, pace.frames > 0 {
+            let seconds = lastStepAt - pace.since
+            print("\(stamp()) animator: \(pace.frames) frames in \(Int((seconds * 1000).rounded())) ms, "
+                  + "\(Int((Double(pace.frames) / max(seconds, 0.001)).rounded())) a second, "
+                  + "the longest wait \(String(format: "%.1f", pace.longest * 1000)) ms")
+            fflush(stdout)
+        }
+        pace = nil
+        endActivity()
+        watchdog?.invalidate()
+        watchdog = nil
     }
 
     private func dropLink() {
         link?.invalidate()
         link = nil
-        lastTick = nil
+        linkDisplay = nil
+        lastTarget = nil
     }
 
     @objc private func tick(_ link: CADisplayLink) {
-        // A stalled clock (sleep, a busy main thread) resumes where it was rather than leaping ahead.
-        let dt = min(lastTick.map { link.timestamp - $0 } ?? link.duration, 1.0 / 30)
-        lastTick = link.timestamp
-        step(dt: dt)
+        // Each step goes as far as when its frame will show, a frame after the last at the display's rate, or more
+        // after a frame missed. A stalled clock (sleep, a busy main thread) resumes where it was rather than leaping
+        // ahead.
+        let gap = lastTarget.map { link.targetTimestamp - $0 } ?? link.duration
+        lastTarget = link.targetTimestamp
+        pace?.frames += 1
+        pace?.longest = max(pace?.longest ?? 0, gap)
+        step(dt: min(max(gap, 0), 1.0 / 30))
     }
 
     /// Advances every window by `dt` seconds and writes the frames; `dt` of `timeout` or more lands them all.
@@ -258,10 +412,12 @@ final class Animator: NSObject {
                 continue
             }
             entries[id]!.heldSince = nil
-            let stretch = entries[id]!.stretch
-            let finished = entries[id]!.animation.step(curve.stretched(stretch), dt: dt, timeout: timeout * stretch)
+            let stretch = entries[id]!.stretch, key = entries[id]!.key
+            let along = (curves[key] ?? curve).stretched(stretch)
+            let finished = entries[id]!.animation.step(along, dt: dt, timeout: timeout * stretch)
             frames[id] = entries[id]!.frame
-            if finished { done.insert(id) }
+            // A window following fingers holds there, at its target, however long.
+            if finished, !following.contains(key) { done.insert(id) }
         }
         for entry in moving.values where applier.isSlow(entry.pid) { slowPids.insert(entry.pid) }
         // A tree gliding something else takes its frames, and its windows are left alone.
@@ -316,12 +472,7 @@ final class Animator: NSObject {
         applier.step(jobs)
         if !arrived.isEmpty { onArrive(arrived) }
         finishArrived()
-        if entries.isEmpty {
-            link?.isPaused = true
-            lastTick = nil
-            watchdog?.invalidate()
-            watchdog = nil
-        }
+        if entries.isEmpty { idle() }
     }
 
     /// Finish every tree none of whose windows is still moving.

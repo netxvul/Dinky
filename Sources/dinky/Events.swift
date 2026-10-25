@@ -5,11 +5,13 @@ import DinkyPrivate
 // killed; `dinky debug windows` prints the model's windows and exits. Both run without the app, as do the
 // window and app actions below, which the fuzzer (scripts/fuzz.py) uses in place of Apple Events.
 func runDebug(_ args: [String]) -> Int32 {
+    // A gesture for the running app to feel as from a trackpad, for tests (see `TrackpadGestures.debug`).
+    if args.first == "scroll-gesture" { return sendAndPrint((["debug"] + args).joined(separator: " ")) }
     if args.count >= 2, let n = Int32(args[1]), let result = debugAction(args[0], n, args.dropFirst(2).compactMap(Double.init)) {
         return result
     }
     guard args == ["events"] || args == ["windows"] else {
-        fputs("usage: dinky debug events|windows|ax-close <id>|ax-minimize <id>|ax-unminimize <id>|ax-frame <id> <x> <y> <w> <h>|hide-app <pid>|unhide-app <pid>\n", stderr)
+        fputs("usage: dinky debug events|windows|ax-close <id>|ax-minimize <id>|ax-unminimize <id>|ax-frame <id> <x> <y> <w> <h>|hide-app <pid>|unhide-app <pid>|scroll-gesture <mm> [<ms>] [<before-ms>] [<after-ms>]\n", stderr)
         return 64
     }
     let model = WindowModel()

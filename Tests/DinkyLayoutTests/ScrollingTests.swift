@@ -848,3 +848,211 @@ struct ScrollingTuckTests {
         #expect(Set(layout.raises(current: current)) == [left[0], right[0]])
     }
 }
+
+struct ScrollingFreeScrollTests {
+    @Test func `Fingers scroll the strip freely, no further than its ends`() {
+        var ws = strip(4)
+        #expect(lefts(ws) == [-975, -475, 25, 525])
+        #expect(ws.beginFreeScroll() == true)
+        #expect(ws.isScrollingFreely)
+        #expect(lefts(ws) == [-975, -475, 25, 525], "from where it showed")
+        #expect(ws.scrollFreely(by: -300) == -300)
+        #expect(lefts(ws) == [-675, -175, 325, 825], "the focused column half off, not scrolled back to")
+        #expect(ws.focused == 4 && ws.layout().order.first == 4, "focus stays put till the fingers let go")
+        #expect(ws.scrollFreely(by: -2000) == -650)
+        #expect(lefts(ws) == [-25, 475, 975, 1475], "the first column reaching into the gutter, as at the start")
+        #expect(ws.scrollFreely(by: 5000) == 950)
+        #expect(lefts(ws) == [-975, -475, 25, 525])
+    }
+
+    @Test func `Let go, the column showing nearest the middle takes focus, scrolled as little as shows it`() {
+        var ws = strip(4, width: 0.8)
+        #expect(lefts(ws) == [-2175, -1375, -575, 225])
+        ws.beginFreeScroll()
+        ws.scrollFreely(by: -500)
+        #expect(lefts(ws) == [-1675, -875, -75, 725])
+        #expect(ws.endFreeScroll() == 3)
+        #expect(ws.focused == 3 && !ws.isScrollingFreely)
+        #expect(lefts(ws) == [-1600, -800, 0, 800])
+    }
+
+    @Test func `Let go at an end of the strip, the column there takes focus`() {
+        var ws = strip(4)
+        ws.beginFreeScroll()
+        ws.scrollFreely(by: -2000)
+        #expect(lefts(ws) == [-25, 475, 975, 1475])
+        #expect(ws.endFreeScroll() == 1, "the second shows nearer the middle, but the middle cannot reach the first")
+        #expect(lefts(ws) == [-25, 475, 975, 1475])
+        var near = strip(4)
+        near.beginFreeScroll()
+        near.scrollFreely(by: -900)
+        #expect(near.endFreeScroll() == 2, "short of the start, the column nearest the middle")
+    }
+
+    @Test func `A fling carries the strip on before it lets go, no further than its ends`() {
+        var ws = strip(8)
+        ws.beginFreeScroll()
+        ws.scrollFreely(by: -100)
+        #expect(ws.endFreeScroll(momentum: -1000) == 5)
+        #expect(lefts(ws) == [-1875, -1375, -875, -375, 125, 625, 1125, 1625])
+        var far = strip(8)
+        far.beginFreeScroll()
+        #expect(far.endFreeScroll(momentum: -10_000) == 1)
+        #expect(lefts(far)[0] == -25)
+    }
+
+    @Test func `Centring, the strip scrolls freely as far as centres an end column, and let go centres the column`() {
+        var ws = strip(4)
+        ws.columnCentring = .always
+        ws.focus(4)
+        #expect(lefts(ws) == [-1250, -750, -250, 250])
+        ws.beginFreeScroll()
+        #expect(ws.scrollFreely(by: -3000) == -1500)
+        #expect(lefts(ws) == [250, 750, 1250, 1750], "the screen bare left of the first column")
+        ws.scrollFreely(by: 700)
+        #expect(lefts(ws) == [-450, 50, 550, 1050])
+        #expect(ws.endFreeScroll() == 2)
+        #expect(lefts(ws) == [-250, 250, 750, 1250])
+    }
+
+    @Test func `Always fill, the strip scrolls freely only as far as takes an end column to the edge`() {
+        var ws = strip(4)
+        ws.columnCentring = .alwaysFill
+        ws.focus(4)
+        ws.beginFreeScroll()
+        #expect(ws.scrollFreely(by: -3000) == -950)
+        #expect(lefts(ws) == [-25, 475, 975, 1475])
+    }
+
+    @Test func `On overflow, let go, a column that did not all show is centred, one that did left where it is`() {
+        var ws = strip(4, width: 0.8)
+        ws.columnCentring = .onOverflow
+        ws.beginFreeScroll()
+        ws.scrollFreely(by: -500)
+        #expect(ws.endFreeScroll() == 3)
+        #expect(lefts(ws) == [-1500, -700, 100, 900], "centred")
+        ws.beginFreeScroll()
+        ws.scrollFreely(by: 50)
+        #expect(ws.endFreeScroll() == 3)
+        #expect(lefts(ws) == [-1550, -750, 50, 850], "it all showed, so left where the fingers left it")
+    }
+
+    @Test func `Let go on a column of several, its most recently focused window takes focus`() {
+        var ws = strip(5)
+        ws.focus(3)
+        ws.join(.left)
+        ws.focus(2)
+        ws.setMode(.accordion)
+        #expect(shape(ws.root) == "h[1 av[2 3] 4 5]")
+        ws.focus(5)
+        ws.beginFreeScroll()
+        ws.scrollFreely(by: -600)
+        #expect(ws.endFreeScroll() == 2, "the one the accordion shows on top, not the column's last")
+    }
+
+    @Test func `Cancelled, the strip goes back where it showed, focus unchanged`() {
+        var ws = strip(5)
+        ws.focus(3)
+        let before = ws.layout()
+        ws.beginFreeScroll()
+        ws.scrollFreely(by: 700)
+        #expect(ws.layout() != before)
+        ws.cancelFreeScroll()
+        #expect(!ws.isScrollingFreely)
+        #expect(ws.focused == 3)
+        #expect(ws.layout() == before)
+    }
+
+    @Test func `A focus change while scrolling freely ends it, scrolling to focus as ever`() {
+        var ws = strip(5)
+        ws.focus(3)
+        ws.beginFreeScroll()
+        ws.scrollFreely(by: 400)
+        ws.insert(9)
+        #expect(!ws.isScrollingFreely)
+        #expect(ws.isInView(9))
+        #expect(ws.endFreeScroll() == nil)
+    }
+
+    @Test func `Fullscreen while scrolling freely puts the strip back as it was, nothing focused`() {
+        var ws = strip(4)
+        ws.focus(2)
+        let before = ws.layout()
+        ws.beginFreeScroll()
+        ws.scrollFreely(by: 300)
+        ws.toggleFullscreen()
+        #expect(ws.endFreeScroll() == nil)
+        #expect(!ws.isScrollingFreely)
+        ws.toggleFullscreen()
+        #expect(ws.layout() == before)
+    }
+
+    @Test func `Fingers that cannot scroll the strip leave it alone`() {
+        #expect(!strip(1).canScrollFreely, "a lone column")
+        #expect(!strip(2).canScrollFreely, "columns that all fit")
+        #expect(!strip(2, width: 0.49).canScrollFreely)
+        #expect(!workspace(3).canScrollFreely, "no strip")
+        var full = strip(4)
+        full.focus(2)
+        full.toggleFullscreen()
+        #expect(full.beginFreeScroll() == false)
+        var kept = strip(4)
+        kept.keepsScroll = true
+        #expect(!kept.canScrollFreely, "a drop shown holds it")
+        var ws = strip(4)
+        let before = ws
+        #expect(ws.scrollFreely(by: -300) == 0)
+        #expect(ws.endFreeScroll() == nil)
+        ws.cancelFreeScroll()
+        #expect(ws == before)
+    }
+
+    @Test func `A strip a click holds still scrolls freely from where it shows, and holds no more`() {
+        var ws = strip(4)
+        ws.columnCentring = .always
+        ws.focus(4)
+        ws.focus(3, holdingScroll: true)
+        #expect(ws.beginFreeScroll() == true)
+        #expect(!ws.holdsScroll)
+        #expect(lefts(ws) == [-1250, -750, -250, 250], "where it was pressed, not centred on 3")
+    }
+
+    @Test func `Scrolled freely, every window moves continuously and the strip parks as the layout does`() {
+        for gaps in [Gaps.zero, Gaps(all: 8)] {
+            var ws = strip(9, gaps: gaps)
+            ws.focus(1)
+            ws.beginFreeScroll()
+            var last: [WindowID: CGRect]?
+            for _ in 0..<4000 {
+                ws.scrollFreely(by: 1)
+                let placed = ws.layout().frames
+                #expect(ws.placeStrip(ws.stripFrames) == placed)
+                for id in ws.windows {
+                    if let before = last?[id] { #expect(abs(placed[id]!.minX - before.minX) <= 1, "\(id) jumped") }
+                }
+                last = placed
+            }
+        }
+    }
+
+    @Test func `At walls nothing scrolled freely leaves the screen`() {
+        var ws = strip(6, walls: [.left, .right])
+        ws.focus(1)
+        ws.beginFreeScroll()
+        for _ in 0..<2000 {
+            ws.scrollFreely(by: 1)
+            for frame in ws.layout().frames.values {
+                #expect(frame.minX >= ws.bounds.minX && frame.maxX <= ws.bounds.maxX)
+            }
+        }
+    }
+
+    @Test func `Scrolled freely, no column reaches over to a wall, so none changes width under the fingers`() {
+        var ws = strip(3, gaps: Gaps(all: 10), walls: [.left])
+        #expect(ws.layout().frames[2] == rect(-15, 10, 520, 580), "at rest it reaches out to the outer gap")
+        ws.beginFreeScroll()
+        #expect(ws.layout().frames[2] == rect(10, 10, 495, 580), "its own width, the room left bare")
+        ws.scrollFreely(by: -40)
+        #expect(ws.layout().frames[2] == rect(50, 10, 495, 580))
+    }
+}

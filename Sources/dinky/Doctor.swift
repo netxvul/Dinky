@@ -61,6 +61,13 @@ func runDoctor(_ args: [String]) -> Int32 {
                         : warn("\(mouse.fingers)-finger swipes on a Magic Mouse also \(clashes.joined(separator: " and ")) in macOS; "
                                + "change it in System Settings > Mouse, or [gestures.mouse]")
     }
+    if config.gestures.scroll.enabled {
+        let fingers = config.gestures.scroll.fingers
+        let clashes = scrollGestureClashes(fingers: fingers)
+        clashes.isEmpty ? ok("\(fingers)-finger strip scrolls clash with nothing macOS does")
+                        : warn("\(fingers)-finger strip scrolls also \(clashes.joined(separator: " and ")) in macOS; "
+                               + "turn that off in System Settings > Trackpad > More Gestures, or change [gestures.scroll] fingers")
+    }
 
     // Where the workspaces go with the displays connected now; the app arranges the Spaces to match.
     let connected = dinky_displays()
@@ -129,6 +136,24 @@ func gestureClashes(fingers: Int, swipes: Set<GestureSwipe>) -> [String] {
         if fingers == 3, (setting("TrackpadThreeFingerDrag") ?? 0) != 0 { clashes.append("drag") }
     default:
         break
+    }
+    return clashes
+}
+
+/// What macOS does as `fingers` fingers move across the trackpad, which scrolling a strip with them would set off too,
+/// from the built-in trackpad's settings and, once one has been set up, a Magic Trackpad's (see
+/// `ScrollGesture.clashes`). Unset, macOS swipes three and four fingers across between full-screen apps.
+func scrollGestureClashes(fingers: Int) -> [String] {
+    var clashes: [String] = []
+    for domain in ["com.apple.AppleMultitouchTrackpad", "com.apple.driver.AppleBluetoothMultitouch.trackpad"] {
+        func setting(_ key: String) -> Int? {
+            CFPreferencesCopyAppValue(key as CFString, domain as CFString) as? Int
+        }
+        let three = setting("TrackpadThreeFingerHorizSwipeGesture"), four = setting("TrackpadFourFingerHorizSwipeGesture")
+        if domain != "com.apple.AppleMultitouchTrackpad", three == nil, four == nil { continue }
+        let found = ScrollGesture.clashes(fingers: fingers, three: three ?? 2, four: four ?? 2,
+                                          drag: (setting("TrackpadThreeFingerDrag") ?? 0) != 0)
+        for clash in found where !clashes.contains(clash) { clashes.append(clash) }
     }
     return clashes
 }

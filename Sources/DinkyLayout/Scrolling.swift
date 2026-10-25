@@ -111,25 +111,33 @@ extension Workspace {
         return (index == 0 ? area.minX - inset.minX : 0, index == root.children.count - 1 ? inset.maxX - area.maxX : 0)
     }
 
-    /// The scroll offset the layout uses. The strip never scrolls past either end, and the column at an end
-    /// reaches into the gutter there, which nothing is parked in, out to the outer gap. A strip that fits
-    /// between the outer gaps is centred. The focused column always shows whole, scrolled to as little as
-    /// that takes, even when what scrolled it away left focus alone: a column closing or growing to its
-    /// windows' minimum width left of it, or the display or gaps changing; not `showingFocus`, nor while a click
-    /// holds the strip still (`holdsScroll`), the offset is only kept within the ends. With `columnCentring` `always`
-    /// or `onOverflow`, the ends are as far as centres the column there, the screen bare beyond it; `alwaysFill`
-    /// keeps them, so the column there goes to the screen's edge and the columns beside it fill the rest.
+    /// The scroll offset the layout uses. The strip never scrolls past either end (`scrollLimits`), and the column at
+    /// an end reaches into the gutter there, which nothing is parked in, out to the outer gap. A strip that fits
+    /// between the outer gaps is centred. The focused column always shows whole, scrolled to as little as that takes,
+    /// even when what scrolled it away left focus alone: a column closing or growing to its windows' minimum width left
+    /// of it, or the display or gaps changing; not `showingFocus`, nor while a click holds the strip still
+    /// (`holdsScroll`) or fingers scroll it freely (`freeScrollFrom`), the offset is only kept within the ends.
     func offset(for spans: [(start: CGFloat, width: CGFloat)], in area: CGRect, showingFocus: Bool = true) -> CGFloat {
-        let total = spans.last.map { $0.start + $0.width } ?? 0, inset = gaps.inset(bounds)
-        let first = area.minX - inset.minX, last = total - area.width - (inset.maxX - area.maxX)
-        let wanted = showingFocus && !holdsScroll
+        let wanted = showingFocus && !holdsScroll && freeScrollFrom == nil
             ? focused.flatMap { root.path(of: $0)?.first }.map { showing(spans[$0], from: scrollOffset, in: area) } : nil
         if keepsScroll { return wanted ?? scrollOffset }
-        guard first < last else { return (first + (total - inset.width) / 2).rounded() }
-        guard columnCentring.centresEnds, let start = spans.first, let end = spans.last else {
-            return min(max(wanted ?? scrollOffset, first), last)
+        guard let limits = scrollLimits(for: spans, in: area) else {
+            let total = spans.last.map { $0.start + $0.width } ?? 0, inset = gaps.inset(bounds)
+            return (area.minX - inset.minX + (total - inset.width) / 2).rounded()
         }
-        return min(max(wanted ?? scrollOffset, min(first, centred(start, in: area))), max(last, centred(end, in: area)))
+        return min(max(wanted ?? scrollOffset, limits.lowerBound), limits.upperBound)
+    }
+
+    /// How far the strip scrolls, from its first column at its start to its last at its end; nil for a strip that fits
+    /// between the outer gaps, which is centred. With `columnCentring` `always` or `onOverflow`, the ends are as far as
+    /// centres the column there, the screen bare beyond it; `alwaysFill` keeps them, so the column there goes to the
+    /// screen's edge and the columns beside it fill the rest.
+    func scrollLimits(for spans: [(start: CGFloat, width: CGFloat)], in area: CGRect) -> ClosedRange<CGFloat>? {
+        let total = spans.last.map { $0.start + $0.width } ?? 0, inset = gaps.inset(bounds)
+        let first = area.minX - inset.minX, last = total - area.width - (inset.maxX - area.maxX)
+        guard first < last else { return nil }
+        guard columnCentring.centresEnds, let start = spans.first, let end = spans.last else { return first...last }
+        return min(first, centred(start, in: area))...max(last, centred(end, in: area))
     }
 
     /// The offset that puts `column` in the middle of the area.
@@ -147,9 +155,11 @@ extension Workspace {
 
     /// Scroll to the window's column as `columnCentring` says: as little as shows it whole, to the middle of the
     /// screen, to the middle as near as the strip's ends allow, or to the middle only when it did not all show.
-    /// Columns that all fit stay centred as a whole. A strip a click held still (`holdsScroll`) is held no more.
+    /// Columns that all fit stay centred as a whole. A strip a click held still (`holdsScroll`) is held no more, and
+    /// fingers scrolling it freely (`freeScrollFrom`) let go.
     mutating func reveal(_ id: WindowID) {
         holdsScroll = false
+        freeScrollFrom = nil
         guard isScrolling, let index = root.path(of: id)?.first else { return }
         let area = stripArea, spans = columnSpans(in: area), column = spans[index]
         let shown = showing(column, from: offset(for: spans, in: area), in: area)
@@ -208,7 +218,9 @@ extension Workspace {
             let x = area.minX + spans[i].start - offset
             return ((x + (i > 0 ? gap / 2 : 0)).rounded(), (x + spans[i].width - (i < last ? gap / 2 : 0)).rounded())
         }
-        let reaching: (left: Int?, right: Int?) = pushed.isEmpty ? reachingWalls(edges, in: area) : (nil, nil)
+        // Not while fingers scroll the strip freely: a column would change width under them as it came to the wall.
+        let reaching: (left: Int?, right: Int?) = pushed.isEmpty && freeScrollFrom == nil ? reachingWalls(edges, in: area)
+            : (nil, nil)
         result.containerRects[[]] = inset
         for i in root.stackingOrder {
             let trail = i < last ? gap / 2 : 0

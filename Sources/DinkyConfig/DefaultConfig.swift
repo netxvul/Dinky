@@ -80,7 +80,8 @@ extension Config {
 
     [animations]
     enabled = true                  # windows glide to their tiles; off while Reduce Motion is on
-    duration-ms = 150               # roughly how long a window takes to arrive
+    duration-ms = 363               # roughly how long a window takes to arrive; 363 with damping 1 is SlideScroll's spring
+    damping = 1                     # how the spring settles: 1 eases in without overshooting, lower overshoots; 0.5 to 1
     curve = 'spring'                # spring | linear | ease-out-cubic and the other easings.net curves
 
     [drag]
@@ -150,6 +151,10 @@ extension Config {
     # distance = 8                  # millimetres, 3 to 30
     # step = 4                      # millimetres per step, 2 to 30
     # swipe-up = 'window-switcher'  # its own swipes replace the trackpad's; none, and those run
+    # [gestures.scroll]             # fingers moved across the trackpad scroll a strip with them, off by default
+    # enabled = true
+    # fingers = 4                   # 3 to 5; not [gestures.trackpad]'s while it binds swipe-left or swipe-right
+    # speed = 1.5                   # screens the strip moves as the fingers cross the trackpad, 0.25 to 5
 
     # Which key of each pair bindings answer to: both | left | right. With alt = 'left',
     # right Option still types special characters.

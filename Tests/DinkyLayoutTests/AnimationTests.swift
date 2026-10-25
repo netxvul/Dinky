@@ -60,6 +60,41 @@ struct AnimationTests {
         #expect(a.step(spring, dt: 0.1, timeout: 0.1) == true)
         #expect(a.frame == rect(1000, 0, 100, 100))
     }
+
+    @Test func `A critically damped spring eases in without overshooting`() {
+        let critical = Spring(response: 0.363, damping: 1)
+        #expect(abs(critical.stiffness - 300) < 1, "SlideScroll's layout spring")
+        var a = FrameAnimation(from: rect(0, 0, 100, 100), to: rect(500, 0, 100, 100))
+        var frames: [CGRect] = []
+        while !a.step(critical, dt: 1.0 / 60, timeout: 5) { frames.append(a.frame) }
+        #expect(frames.allSatisfy { $0.minX <= 500 }, "never past its target")
+        #expect(zip(frames, frames.dropFirst()).allSatisfy { $0.minX <= $1.minX }, "never turns back")
+        #expect((0.25..<0.6).contains(Double(frames.count + 1) / 60), "at rest in about half a second")
+        #expect(a.frame == rect(500, 0, 100, 100))
+    }
+
+    @Test func `Lands within a point of its target, as SlideScroll's spring does`() {
+        var a = FrameAnimation(from: rect(0, 0, 100, 100), to: rect(0.9, 0, 100, 100))
+        let landed = a.step(Spring(response: 0.363, damping: 1), dt: 1.0 / 60, timeout: 5)
+        #expect(landed)
+        #expect(a.frame == rect(1, 0, 100, 100))
+    }
+
+    @Test func `A stiff spring follows fingers closely and stays stable through a hitch`() {
+        let follow = Spring(response: 0.115, damping: 1)
+        var a = FrameAnimation(from: rect(0, 0, 100, 100), to: rect(0, 0, 100, 100))
+        // Fingers moving at 1000 points a second, read every 120th of a second.
+        for i in 1...60 {
+            a.retarget(rect(CGFloat(i) * 1000 / 120, 0, 100, 100))
+            _ = a.step(follow, dt: 1.0 / 120, timeout: 5)
+        }
+        let lag = (500 - a.frame.minX) / 1000
+        #expect((0.02...0.045).contains(lag), "about 31 ms behind")
+        a.retarget(rect(600, 0, 100, 100))
+        #expect(a.step(follow, dt: 1.0 / 30, timeout: 5) == false, "a 33 ms frame neither lands nor blows up")
+        for _ in 0..<30 { _ = a.step(follow, dt: 1.0 / 120, timeout: 5) }
+        #expect(a.frame == rect(600, 0, 100, 100))
+    }
 }
 
 struct EasingTests {
@@ -122,6 +157,16 @@ struct EasedAnimationTests {
         #expect(a.frame == rect(250, 0, 100, 100))
         _ = a.step(curve, dt: 0.5, timeout: 5)
         #expect(a.frame == rect(0, 0, 100, 100))
+    }
+
+    @Test func `Restarting starts an easing over from where it is, its target the same`() {
+        var a = FrameAnimation(from: rect(0, 0, 100, 100), to: rect(1000, 0, 100, 100))
+        _ = a.step(.eased(.linear, duration: 1), dt: 0.5, timeout: 5)
+        #expect(a.frame == rect(500, 0, 100, 100))
+        // Now twice as long: from here, not from the start.
+        a.restart()
+        _ = a.step(.eased(.linear, duration: 2), dt: 0.5, timeout: 5)
+        #expect(a.frame == rect(625, 0, 100, 100))
     }
 
     @Test func `A zero duration jumps`() {

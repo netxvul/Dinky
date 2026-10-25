@@ -464,6 +464,46 @@ struct ConfigTests {
         assertError("[gestures.mouse]\no = 'workspace 1'\n", path: "gestures.mouse.o", line: 2, contains: "'swipe-left'")
     }
 
+    @Test func `Scroll gesture`() throws {
+        let defaults = Config().gestures.scroll
+        #expect(!defaults.enabled)
+        #expect(defaults.fingers == 4)
+        #expect(defaults.speed == 1.5)
+        let config = try Config.parse("""
+            [gestures.trackpad]
+            fingers = 4
+            swipe-up = 'window-switcher'
+            [gestures.scroll]
+            enabled = true
+            speed = 2
+            """)
+        #expect(config.gestures.scroll.enabled)
+        #expect(config.gestures.scroll.fingers == 4)
+        #expect(config.gestures.scroll.speed == 2)
+        assertError("[gestures.scroll]\nfingers = 2\n", path: "gestures.scroll.fingers", line: 2, contains: "3 to 5")
+        assertError("[gestures.scroll]\nspeed = 0\n", path: "gestures.scroll.speed", line: 2, contains: "0.25 to 5")
+        assertError("[gestures.scroll]\nnatural = false\n", path: "gestures.scroll.natural", line: 2, contains: "unknown key")
+        assertError("[gestures.trackpad]\nfingers = 4\nswipe-left = 'focus left'\n[gestures.scroll]\nenabled = true\n",
+                    path: "gestures.scroll.fingers", line: 4, contains: "'swipe-left'")
+        #expect(throws: Never.self) {
+            try Config.parse("[gestures.trackpad]\nfingers = 4\nswipe-left = 'focus left'\n[gestures.scroll]\nfingers = 4\n")
+        }
+        #expect(throws: Never.self) {
+            try Config.parse("[gestures.trackpad]\nswipe-left = 'focus left'\n[gestures.scroll]\nenabled = true\n")
+        }
+    }
+
+    @Test func `Strip scrolls clash with macOS's own swipes across`() {
+        #expect(ScrollGesture.clashes(fingers: 4, three: 0, four: 0, drag: false) == [])
+        #expect(ScrollGesture.clashes(fingers: 4, three: 0, four: 2, drag: false) == ["switch Spaces"])
+        #expect(ScrollGesture.clashes(fingers: 4, three: 2, four: 0, drag: false) == ["switch Spaces"],
+                "three fingers between Spaces takes four too")
+        #expect(ScrollGesture.clashes(fingers: 4, three: 1, four: 0, drag: true) == [])
+        #expect(ScrollGesture.clashes(fingers: 3, three: 1, four: 2, drag: false) == ["swipe between pages"])
+        #expect(ScrollGesture.clashes(fingers: 3, three: 2, four: 0, drag: true) == ["switch Spaces", "drag"])
+        #expect(ScrollGesture.clashes(fingers: 5, three: 2, four: 2, drag: true) == [])
+    }
+
     @Test func `Syntax error has line`() {
         let error = #expect(throws: ConfigError.self) {
             try Config.parse("workspaces = 5\n[gaps\n")
@@ -733,6 +773,10 @@ struct ConfigTests {
         #expect(config.animations.durationMs == 300)
         #expect(config.animations.curve == .easeOutCubic)
         #expect(Animations().curve == .spring)
+        #expect(Animations().durationMs == 363)
+        #expect(Animations().damping == 1)
+        #expect(try Config.parse("[animations]\ndamping = 0.9\n").animations.damping == 0.9)
+        assertError("[animations]\ndamping = 0.2\n", path: "animations.damping", line: 2, contains: "0.5 to 1")
         assertError("[animations]\ncurve = 'bounce'\n", path: "animations.curve", line: 2, contains: "'ease-out-cubic'")
         #expect(!config.drag.placeholders)
         assertError("[animations]\nduration-ms = -1\n", path: "animations.duration-ms", line: 2, contains: "0 to 1000")

@@ -14,10 +14,11 @@ enum SystemTiling {
     /// The Window-menu items, by their accessibility identifiers.
     static let fill = "_zoomFill:", untile = "_zoomUntile:"
 
-    /// How many times as long as a glide the columns a window going fullscreen through the system pushes take: well
-    /// longer than the system's animation, about a third of a second after a tenth or more, so they follow it, held at
-    /// its edge, rather than run ahead or arrive first.
-    static let followers = 6.0
+    /// How long the columns a window going fullscreen through the system pushes take, in seconds of a spring's
+    /// response or an easing's time, however long a glide is (never quicker than one): well longer than the system's
+    /// animation, about a third of a second after a tenth or more, so they follow it, held at its edge, rather than run
+    /// ahead or arrive first. Six times the 150 ms glides once were.
+    static let followTime = 0.9
 
     /// The margin macOS keeps round a tiled window when "Tiled windows have margins" is on.
     static let margin: CGFloat = 8

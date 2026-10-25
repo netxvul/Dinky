@@ -286,7 +286,9 @@ final class DinkyApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 }
 
-/// A command from the menu or the CLI. `recover` belongs to the app rather than the command vocabulary.
+/// A command from the menu or the CLI. `recover` belongs to the app rather than the command vocabulary, as does the
+/// hidden test hook `dinky debug scroll-gesture` sends as `debug …` (see `TrackpadGestures.debug`).
 private func handleCommand(_ line: String) -> Reply {
-    line == "recover" ? AppState.shared.recover() : Dispatcher.run(line)
+    if line.hasPrefix("debug ") { return TrackpadGestures.shared.debug(line.split(separator: " ").dropFirst().map(String.init)) }
+    return line == "recover" ? AppState.shared.recover() : Dispatcher.run(line)
 }

@@ -23,6 +23,7 @@ final class Coordinator {
             if !enabled {
                 applier.cancel(); animator.cancel(); pushes = [:]; stagingWindows = [:]; systemTiling = [:]
                 PeekClicks.shared.clear()
+                dropStripScroll()
             }
             if enabled, !oldValue { reconcile() }
         }
@@ -137,6 +138,29 @@ final class Coordinator {
     var filledFrom: [WindowID: CGRect] = [:]
     /// Windows of `free` workspaces that `grid --toggle` placed, and the frame each had before. In memory only.
     var griddedFrom: [WindowID: CGRect] = [:]
+    /// Fingers holding a strip to scroll it (`[gestures.scroll]`). See `beginStripScroll()`.
+    private struct StripScroll {
+        /// The strip's tree, by its Space.
+        let key: UInt64
+        /// The display it shows on, by its UUID.
+        let display: String
+        /// When the fingers were last heard from.
+        var heard: CFTimeInterval
+        /// Whether its windows follow the fingers through Dock's connection rather than Accessibility.
+        let throughDock: Bool
+    }
+    private var stripScroll: StripScroll?
+    /// By tree, a strip the fingers just let go of, its windows still moving at their speed, and whether through Dock
+    /// (true) or Accessibility (false), so its next pass glides them on that way, from where they are.
+    private var flung: [UInt64: Bool] = [:]
+    /// Looks every `stripScrollCheck` while fingers hold a strip, as SlideScroll does, for its Space going from under
+    /// them.
+    private var stripScrollWatch: Timer?
+    private static let stripScrollCheck: TimeInterval = 0.1
+    /// How long fingers holding a strip may go unheard before they count as lifted: a trackpad gone, its frames lost.
+    private static let stripScrollQuiet: CFTimeInterval = 1
+    /// How far a strip coasts once the fingers lift: as far as their speed would take it in this many seconds.
+    private static let stripScrollFling = 0.15
 
     init(displays: DisplayModel, config: Config) {
         self.displays = displays
@@ -169,6 +193,11 @@ final class Coordinator {
             }
         }
         animator.onArrive = { [weak self] ids in self?.borders?.arrived(ids) }
+        animator.displayOf = { [unowned self] key in
+            // A floating window's glide has its id in its key (see `floatingKey`); any other is a Space's.
+            key & (1 << 63) != 0 ? displays.display(ofWindow: UInt32(truncatingIfNeeded: key))?.id
+                                 : displays.display(containingSpace: key)?.id
+        }
         var known = Set(displays.displays.map(\.uuid))
         var arrangement = Self.arrangement(of: displays)
         displays.observe { [weak self] displays in
@@ -203,7 +232,8 @@ final class Coordinator {
         self.config = config
         ScriptingAddition.enabled = config.scriptingAddition
         animator.configure(durationMs: config.animations.durationMs,
-                           easing: Easing(rawValue: config.animations.curve.rawValue))
+                           easing: Easing(rawValue: config.animations.curve.rawValue),
+                           damping: config.animations.damping)
         modifierDrag.update(modifiers: config.drag.mouseModifier, sides: config.modifiers)
         if config.borders.enabled {
             borders = borders ?? BorderManager(config: config.borders, model: model,
@@ -695,12 +725,216 @@ final class Coordinator {
         for (key, tree) in workspaces where tree.holdsScroll { edit(key) { $0.revealFocus() } }
     }
 
+    // MARK: Strip scroll
+
+    /// `[gestures.scroll]`'s fingers on the trackpad, as TrackpadGestures hears them: they take hold of the strip under
+    /// the pointer, scroll it, and let go. See `beginStripScroll()`.
+    func fingersScrolled(_ scroll: FingerScroll) {
+        switch scroll {
+        case .began(let dx):
+            // Fingers landing again before the last of them were heard to lift.
+            if stripScroll != nil { endStripScroll(velocity: 0) }
+            if beginStripScroll() { scrollStrip(by: dx) }
+        case .moved(let dx):
+            scrollStrip(by: dx)
+        case .ended(let velocity):
+            endStripScroll(velocity: velocity)
+        }
+    }
+
+    /// Fingers take hold of the strip on the display under the pointer, as SlideScroll's do, where it can scroll freely
+    /// and nothing else has it: no click, drag or switcher under way, no Space changing or Mission Control, nothing
+    /// staged, filling through the system, pushing or glided through Dock transforms. Its windows follow them from
+    /// where they are, a glide under way carrying on into it at its speed: through Dock's connection, as a scroll
+    /// glides, where Dock moves them all as they are, else through Accessibility. Nothing is laid out on its Space till
+    /// they let go. False, and nothing changed, when they take nothing: the rest of their stroke does nothing.
+    private func beginStripScroll() -> Bool {
+        guard enabled, !clickHold, drag == nil, windowPress == nil,
+              !CGEventSource.buttonState(.combinedSessionState, button: .left),
+              !MissionControl.shared.active, !SpaceSwitcher.shared.switching,
+              !WindowSwitcher.shared.isShowing, !WorkspaceSwitcher.shared.isShowing,
+              let pointer = CGEvent(source: nil)?.location,
+              let display = displays.displays.first(where: { $0.frame.contains(pointer) }),
+              !dinky_display_is_animating(display.uuid as CFString),
+              dinky_current_space_id(display.uuid as CFString) == display.currentSpaceID else { return false }
+        let key = display.currentSpaceID
+        guard var workspace = workspaces[key], !snap.contains(key), pushes[key] == nil,
+              !workspace.windows.contains(where: { stagingWindows[$0] != nil || systemTiling[$0] != nil }),
+              workspace.beginFreeScroll() else { return false }
+        let strip = workspace.stripFrames, windows = model.windows
+        let pids = Dictionary(uniqueKeysWithValues: strip.keys.compactMap { id in windows[id].map { (id, $0.pid) } })
+        let sizes = Dictionary(uniqueKeysWithValues: strip.keys.compactMap { id -> (WindowID, CGSize)? in
+            let info = dinky_window_info(id)
+            return info.exists ? (id, info.frame.size) : nil
+        })
+        // Dock moves windows without resizing them: only a strip whose windows all have the sizes it gives them, with
+        // no wall, behind which a window hides at another, can follow the fingers through it.
+        let dock = ScriptingAddition.available && ScriptingAddition.moves && workspace.walls.isEmpty
+            && strip.allSatisfy { id, frame in
+                sizes[id].map { abs($0.width - frame.width) <= 1 && abs($0.height - frame.height) <= 1 } ?? false
+            }
+        // A scripting-addition glide under way carries on into the follow through Dock, as a newer pass would take it
+        // over: not one through Dock transforms, which would stay over the windows, nor one whose windows would have to
+        // change size on the way. A glide of the windows themselves carries on through Accessibility.
+        if saGlides[key] != nil, !dock { return false }
+        let throughDock = dock && (saGlides[key] != nil || !strip.keys.contains(where: animator.isAnimating))
+        if throughDock { saGlides[key] = nil }
+        workspaces[key] = workspace
+        stripScroll = StripScroll(key: key, display: display.uuid, heard: CACurrentMediaTime(), throughDock: throughDock)
+        // Peeks move with the strip, so a click on one would miss; the pass after the fingers lift notes them again.
+        PeekClicks.shared.update([], space: key)
+        applier.assume(sizes, pids: pids)
+        telemetry.fingers(key, "took hold" + (throughDock ? ", through Dock" : ""))
+        stripScrollWatch?.invalidate()
+        stripScrollWatch = Timer.scheduledTimer(withTimeInterval: Self.stripScrollCheck, repeats: true) { [weak self] _ in
+            self?.watchStripScroll()
+        }
+        return true
+    }
+
+    /// Scrolls the strip the fingers hold by `dx` trackpad widths, `[gestures.scroll] speed` screens a width, its
+    /// content going with them, and has its windows follow it there.
+    private func scrollStrip(by dx: Double) {
+        guard let scroll = stripScroll else { return }
+        stripScroll?.heard = CACurrentMediaTime()
+        // A drag, which is the user's to move, ends the scroll where it is.
+        guard drag == nil, windowPress == nil else { return endStripScroll(velocity: 0) }
+        guard var workspace = workspaces[scroll.key], workspace.isScrollingFreely else {
+            takeOver(scroll.key)
+            return flush()
+        }
+        let delta = -CGFloat(dx * config.gestures.scroll.speed) * workspace.bounds.width
+        guard workspace.scrollFreely(by: delta) != 0 else { return }
+        workspaces[scroll.key] = workspace
+        followStrip(scroll, in: workspace)
+    }
+
+    /// Has the strip's windows follow it to where the fingers have it now: a window already moving bends towards its
+    /// new place at its speed, one at rest sets out from where the last pass left it.
+    private func followStrip(_ scroll: StripScroll, in workspace: Workspace) {
+        let strip = workspace.stripFrames, previous = lastStrips[scroll.key]?.strip ?? [:], windows = model.windows
+        let pids = Dictionary(uniqueKeysWithValues: strip.keys.compactMap { id in windows[id].map { (id, $0.pid) } })
+        let targets = strip.filter { pids[$0.key] != nil }
+        let starts = Dictionary(uniqueKeysWithValues: targets.map { id, target in (id, previous[id] ?? target) })
+        let place = { (frames: [WindowID: CGRect]) in workspace.placeStrip(strip.merging(frames) { $1 }) }
+        if scroll.throughDock {
+            animator.follow(scroll.key, from: starts, to: targets, pids: pids, sink: { ScriptingAddition.move(place($0)) })
+        } else {
+            animator.follow(scroll.key, from: starts, to: targets, pids: pids, place: place)
+        }
+    }
+
+    /// The fingers let go, moving across at `velocity` trackpad widths a second: the strip coasts on as far as that
+    /// takes it, then settles with the column showing nearest the middle in view, which takes focus once it rests, and
+    /// its pass glides the windows there from where they are, at their speed. A Space gone from under the fingers puts
+    /// the strip back instead.
+    private func endStripScroll(velocity: Double) {
+        guard let scroll = stripScroll else { return }
+        guard stripScrollShows(scroll) else { return abortStripScroll() }
+        let key = scroll.key
+        guard let workspace = workspaces[key], workspace.isScrollingFreely else {
+            takeOver(key)
+            return flush()
+        }
+        let before = workspace.focused
+        let momentum = -CGFloat(velocity * config.gestures.scroll.speed * Self.stripScrollFling) * workspace.bounds.width
+        let target = edit(key) { $0.endFreeScroll(momentum: momentum) } ?? nil
+        telemetry.fingers(key, "let go" + (target.map { ", \(telemetry.name($0)) takes focus" } ?? ""))
+        handBack(key)
+        dirty.insert(key)
+        // As SlideScroll does, the window is focused when it is another than before, or focus was on another Space.
+        guard let target, target != before || placements[lastFocused]?.space != key else { return flush() }
+        focusing = (target, Date() + 3)
+        flush()
+        focusOnceStill(target, in: key)
+    }
+
+    /// The strip's Space went from under the fingers, or Mission Control opened: it goes back to where it showed as
+    /// they took hold, placed at once, as SlideScroll's does, since what shows now is something else; the rest of their
+    /// stroke does nothing.
+    private func abortStripScroll() {
+        guard let key = stripScroll?.key else { return }
+        telemetry.fingers(key, "lost it, the strip no longer showing")
+        edit(key) { $0.cancelFreeScroll() }
+        handBack(key)
+        animator.stop(key)
+        flung[key] = nil
+        placeAtOnce(key)
+        dirty.insert(key)
+        flush()
+    }
+
+    /// Something ended the fingers' free scroll, as a command, or a window focused or opening, or left the strip
+    /// nothing to scroll, as fullscreen: it takes the strip over, laid out as ever from where the windows are, and the
+    /// rest of the fingers' stroke does nothing.
+    private func takeOver(_ key: UInt64) {
+        telemetry.fingers(key, "let go, the strip taken over")
+        // A strip still scrolled freely, as one gone fullscreen, is back where it showed as they took hold.
+        workspaces[key]?.cancelFreeScroll()
+        handBack(key)
+        dirty.insert(key)
+    }
+
+    /// Ends the fingers' hold on the strip on `key`: its windows may arrive again, and its next pass glides them on
+    /// from where they are at the speed they have, the way they moved (`flung`), or places them at once without glides.
+    private func handBack(_ key: UInt64) {
+        guard let scroll = stripScroll, scroll.key == key else { return }
+        stripScroll = nil
+        stripScrollWatch?.invalidate()
+        stripScrollWatch = nil
+        if animates, !snap.contains(key) {
+            flung[key] = scroll.throughDock
+            animator.endFollow(key)
+        } else {
+            animator.stop(key)
+        }
+    }
+
+    /// Every `stripScrollCheck` while fingers hold a strip: its Space gone from under them puts it back, and fingers
+    /// not heard from for `stripScrollQuiet` let go.
+    private func watchStripScroll() {
+        guard let scroll = stripScroll else {
+            stripScrollWatch?.invalidate()
+            stripScrollWatch = nil
+            return
+        }
+        if !stripScrollShows(scroll) {
+            abortStripScroll()
+        } else if CACurrentMediaTime() - scroll.heard > Self.stripScrollQuiet {
+            endStripScroll(velocity: 0)
+        }
+    }
+
+    /// Whether the strip the fingers hold still shows: dinky on, Mission Control shut, and its Space its display's
+    /// current one and not sliding away, as the window server has it now rather than the display model, which hears
+    /// late.
+    private func stripScrollShows(_ scroll: StripScroll) -> Bool {
+        enabled && !MissionControl.shared.active && !dinky_display_is_animating(scroll.display as CFString)
+            && dinky_current_space_id(scroll.display as CFString) == scroll.key
+    }
+
+    /// dinky turned off: the fingers hold nothing, and the strip they held forgets it was scrolled freely.
+    private func dropStripScroll() {
+        if let key = stripScroll?.key { workspaces[key]?.cancelFreeScroll() }
+        stripScroll = nil
+        stripScrollWatch?.invalidate()
+        stripScrollWatch = nil
+        flung = [:]
+    }
+
     // MARK: Applying
 
     func flush() {
         guard !clickHold else { return }
-        let keys = dirty
+        // Something ended the fingers' free scroll, as a command or a window focused, or left the strip nothing to
+        // scroll, as fullscreen: it takes the strip over.
+        if let key = stripScroll?.key, workspaces[key].map({ !$0.isScrollingFreely || !$0.canScrollFreely }) ?? true {
+            takeOver(key)
+        }
+        var keys = dirty
         dirty = []
+        // A strip the fingers hold is laid out once they let go: till then it stays dirty.
+        if let key = stripScroll?.key, keys.remove(key) != nil { dirty.insert(key) }
         guard enabled else { return }
         for key in keys where isVisible(key) { apply(key) }
     }
@@ -729,9 +963,24 @@ final class Coordinator {
         telemetry.command(key, "peek of \(id) \(model.windows[id]?.appName ?? "?") clicked")
         edit(key) { $0.focus(id) }
         flush()
-        let began = CACurrentMediaTime()
+        focusOnceStill(id, in: key)
+    }
+
+    /// Focuses a window of the tree on `key` once it rests where its tree has it, or after a second and a half all the
+    /// same: its app is not activated while its window moves. Nothing once `focusing` is another's, or once the user has
+    /// focused another meanwhile.
+    private func focusOnceStill(_ id: WindowID, in key: UInt64) {
+        let began = CACurrentMediaTime(), from = dinky_border_focused_window()
         func check() {
             guard focusing?.id == id else { return }
+            // Focus taken elsewhere meanwhile, by a click or Cmd-Tab, not a raise of dinky's: that wins, and the tree
+            // follows it, as `syncFocus` held it off for this window.
+            let now = dinky_border_focused_window()
+            if now != from, now != id, now != 0, !applier.echoesRaise(now) {
+                focusing = nil
+                syncFocus()
+                return flush()
+            }
             let moving = animator.isAnimating(id) || pushes[key] != nil
             guard !moving || CACurrentMediaTime() - began > 1.5 else {
                 DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { check() }
@@ -747,7 +996,7 @@ final class Coordinator {
     private func checkStrip(_ key: UInt64) {
         telemetry.schedule(key, moving: { [weak self] in
             guard let self else { return false }
-            return saGlides[key] != nil || pushes[key] != nil || dragging != nil || clickHold
+            return saGlides[key] != nil || pushes[key] != nil || dragging != nil || clickHold || stripScroll?.key == key
                 || workspaces[key]?.windows.contains(where: isAnimating) == true
         }) { [weak self] in
             guard let self, enabled, isVisible(key), let workspace = workspaces[key] else { return }
@@ -775,6 +1024,9 @@ final class Coordinator {
     /// room on the Space, its tree is laid out as the drop shown leaves it, and the windows the drag has are not
     /// written, but for one it takes from here to another display, which waits in its tile here (Drag.swift).
     private func apply(_ key: UInt64) {
+        // Fingers just let go of the strip, its windows moving at their speed: through Dock (true) or their own
+        // (false).
+        let fling = flung.removeValue(forKey: key)
         let shownByDrag = dragShows(key), frozen = dragFrozen
         let waiting = shownByDrag == nil ? [:] : dragWaiting(on: key)
         guard var workspace = shownByDrag ?? workspaces[key] else { return }
@@ -1018,8 +1270,12 @@ final class Coordinator {
         /// Glides a tree that is no strip to `layout`.
         func glideTree() {
             settleGlide()
+            // Windows the fingers moved through Dock ride the follow's entries in unparked strip coordinates, which have
+            // no place in a tree: those are dropped, and the windows set out from where the window server shows them.
+            if fling == true { animator.stop(key) }
+            let startOf = fling == true ? frameOf : frameNow
             let starts = Dictionary(uniqueKeysWithValues: layout.order.compactMap { id in
-                frozen.contains(id) || leftAlone.contains(id) ? nil : frameNow(id).map { (id, $0) }
+                frozen.contains(id) || leftAlone.contains(id) ? nil : startOf(id).map { (id, $0) }
             })
             var targets = layout.frames.filter { !leftAlone.contains($0.key) }
             hold(&targets, from: starts)
@@ -1059,8 +1315,9 @@ final class Coordinator {
             hold(&targets, from: starts)
             var restart: Set<WindowID> = []
             // A long scroll glides about a screen's width, past none of the columns between (see ScrollShortcut.swift);
-            // not with a window changing size, dragged, shown over the strip or left to the system.
-            if special.isEmpty, fullscreen.isEmpty, frozen.allSatisfy({ strip[$0] == nil }),
+            // not with a window changing size, dragged, shown over the strip or left to the system, nor one the fingers
+            // let go of, whose windows carry on from where they are at the speed they had.
+            if fling == nil, special.isEmpty, fullscreen.isEmpty, frozen.allSatisfy({ strip[$0] == nil }),
                !leftAlone.contains(where: { strip[$0] != nil }),
                let shortcut = workspace.scrollShortcut(from: starts, to: targets) {
                 restart = Set(shortcut.starts.filter { starts[$0.key] != $0.value }.keys)
@@ -1078,7 +1335,8 @@ final class Coordinator {
                 return write()
             }
             // A long scroll takes longer, a little more for each column it passes, so a window an app is slow to move
-            // falls less far behind the others in a frame. Only how far those in view at either end go counts.
+            // falls less far behind the others in a frame. Only how far those in view at either end go counts. Not one
+            // the fingers let go of: its windows carry on on the configured spring, whatever the curve, at their speed.
             let screen = workspace.bounds
             let shows = { (r: CGRect) in r.maxX > screen.minX && r.minX < screen.maxX }
             let moved = strip.keys.compactMap { id -> CGFloat? in
@@ -1086,8 +1344,9 @@ final class Coordinator {
                 return abs(target.minX - start.minX)
             }.max() ?? 0
             let column = max(workspace.bounds.width * CGFloat(workspace.columnWidth), 1)
-            let stretch = AnimationCurve.stripStretch(base: Double(config.animations.durationMs) / 1000,
-                                                      columns: Double(moved / column))
+            let base = Double(config.animations.durationMs) / 1000
+            let stretch = fling != nil ? 1 : AnimationCurve.stripStretch(base: base, columns: Double(moved / column))
+            let curve = fling.map { _ in animator.releaseCurve }
             applier.assume(Dictionary(uniqueKeysWithValues: strip.keys.compactMap { id in
                 frozen.contains(id) ? nil : frameNow(id).map { (id, $0.size) }
             }), pids: pids)
@@ -1154,7 +1413,9 @@ final class Coordinator {
                 let target = layout.frames[id] ?? frame
                 return abs(size.width - target.width) > 1 || abs(size.height - target.height) > 1
             }
-            if fullscreen.isEmpty, !saResizing, ScriptingAddition.available {
+            // Fingers that moved the windows through Accessibility hand them on to the window glide below, at their
+            // speed.
+            if fullscreen.isEmpty, !saResizing, fling != false, ScriptingAddition.available {
                 let stripIDs = Array(strip.keys)
                 // The glide this pass takes over carries on into it: its windows keep their steps, and their transforms if
                 // they have them, and head for the new targets from there. One it moved that is no longer in the strip
@@ -1179,12 +1440,14 @@ final class Coordinator {
                     ScriptingAddition.transform(unfrozen(place(initial)))
                     writeThen { saGlide.framesLanded() }
                     return animator.animate(key, from: starts, to: targets, pids: pids, stretch: stretch, restart: restart,
-                                            sink: { ScriptingAddition.transform(unfrozen(place($0))) }) { saGlide.glideEnded() }
+                                            curve: curve, sink: { ScriptingAddition.transform(unfrozen(place($0))) }) {
+                        saGlide.glideEnded()
+                    }
                 }
                 let slide = { (frames: [WindowID: CGRect]) in ScriptingAddition.move(unfrozen(place(frames))) }
                 slide(initial)
                 return animator.animate(key, from: starts, to: targets, pids: pids, stretch: stretch, restart: restart,
-                                        sink: slide) { [weak self] in
+                                        curve: curve, sink: slide) { [weak self] in
                     // Taken over by a newer pass, which writes its own frames.
                     guard self?.saGlides[key]?.token == token else { return }
                     writeThen { saGlide.framesLanded() }
@@ -1204,12 +1467,13 @@ final class Coordinator {
             }
             // The columns a window going fullscreen through the system pushes off take longer than its animation, so
             // they never get ahead of it and finish where it shows: they follow it, under it.
+            let followers = max(SystemTiling.followTime * 1000 / Double(max(config.animations.durationMs, 1)), 1)
             for (lead, beside) in systemLeads where fullscreenNow.contains(lead) {
-                for id in (beside.left + beside.right).joined() { slower[id] = SystemTiling.followers }
+                for id in (beside.left + beside.right).joined() { slower[id] = followers }
             }
             return animator.animate(key, from: starts, to: targets, pids: pids, place: place, resting: resting,
                                     stretch: stretch, slower: slower, anchors: anchors(to: targets), restart: restart,
-                                    then: write)
+                                    curve: curve, then: write)
         }
 
         let glide = strip.isEmpty ? glideTree : glideStrip

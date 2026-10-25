@@ -450,23 +450,31 @@ public enum GestureSwipe: String, CaseIterable {
 }
 
 /// `[gestures]`: swipes on the trackpad in `[gestures.trackpad]` and on a Magic Mouse in `[gestures.mouse]`, each
-/// running commands as a key binding does.
+/// running commands as a key binding does, and fingers on the trackpad scrolling a strip in `[gestures.scroll]`.
 public struct Gestures: Equatable {
     public var trackpad = TrackpadSwipes()
     public var mouse = MouseSwipes()
+    public var scroll = ScrollGesture()
 
     public init() {}
 
     init(_ t: Table) throws {
-        for key in t.keys where !["trackpad", "mouse"].contains(key) {
+        for key in t.keys where !["trackpad", "mouse", "scroll"].contains(key) {
             guard key == "fingers" || key == "distance" || key == "step" || GestureSwipe(rawValue: key) != nil else {
-                throw ConfigError(path: t.path(key), "'\(key)' is not one of 'trackpad', 'mouse'")
+                throw ConfigError(path: t.path(key), "'\(key)' is not one of 'trackpad', 'mouse', 'scroll'")
             }
             throw ConfigError(path: t.path(key), "'\(key)' goes in [gestures.trackpad] now")
         }
         trackpad = try t.table("trackpad").map(TrackpadSwipes.init) ?? trackpad
         mouse = try t.table("mouse").map(MouseSwipes.init) ?? mouse
+        scroll = try t.table("scroll").map(ScrollGesture.init) ?? scroll
         try t.done()
+        // The same fingers across would scroll the strip and swipe at once.
+        if scroll.enabled, trackpad.enabled, scroll.fingers == trackpad.fingers,
+           let across = [GestureSwipe.swipeLeft, .swipeRight].first(where: { trackpad.swipes[$0] != nil }) {
+            throw ConfigError(path: t.path("scroll.fingers"),
+                              "[gestures.trackpad] already uses \(trackpad.fingers) fingers for '\(across.rawValue)'; use other fingers, or bind only swipe-up and swipe-down there")
+        }
     }
 
     /// What the trackpad swipes run; none while it is off.
@@ -533,6 +541,50 @@ public struct MouseSwipes: Equatable {
         let own = try gestureSwipes(t, besides: ["enabled", "fingers", "distance", "step"])
         swipes = own.isEmpty ? nil : own
         try t.done()
+    }
+}
+
+/// `[gestures.scroll]`: `fingers` fingers moved across the trackpad scroll a strip with them, as SlideScroll's do: let
+/// go, it coasts on at their speed and settles with the column nearest the middle in view. Off until `enabled`. Never
+/// on a mouse.
+public struct ScrollGesture: Equatable {
+    public var enabled = false
+    /// How many fingers scroll, 3 to 5.
+    public var fingers = 4
+    /// How many screens the strip moves as the fingers cross the whole trackpad.
+    public var speed = 1.5
+
+    public init() {}
+
+    init(_ t: Table) throws {
+        enabled = try t.bool("enabled") ?? enabled
+        fingers = try t.int("fingers") ?? fingers
+        guard (3...5).contains(fingers) else { throw ConfigError(path: t.path("fingers"), "must be 3 to 5") }
+        speed = try t.double("speed") ?? speed
+        guard (0.25...5).contains(speed) else { throw ConfigError(path: t.path("speed"), "must be 0.25 to 5") }
+        try t.done()
+    }
+
+    /// What macOS does as `fingers` fingers move across the trackpad, which scrolling a strip with them would set off
+    /// too, from its trackpad settings: `three` and `four` are TrackpadThreeFingerHorizSwipeGesture and
+    /// TrackpadFourFingerHorizSwipeGesture (0 off, 1 between pages, 2 between full-screen apps and Spaces), and `drag`
+    /// whether three fingers drag. Three fingers between Spaces takes four as well.
+    public static func clashes(fingers: Int, three: Int, four: Int, drag: Bool) -> [String] {
+        switch fingers {
+        case 3:
+            var clashes: [String] = []
+            if three == 2 {
+                clashes.append("switch Spaces")
+            } else if three != 0 {
+                clashes.append("swipe between pages")
+            }
+            if drag { clashes.append("drag") }
+            return clashes
+        case 4:
+            return four == 2 || three == 2 ? ["switch Spaces"] : []
+        default:
+            return []
+        }
     }
 }
 
@@ -807,8 +859,11 @@ public enum AnimationCurve: String, CaseIterable {
 public struct Animations: Equatable {
     public var enabled = true
     /// Roughly how long a window takes to reach its tile on the spring, exactly how long along an easing. 0 jumps,
-    /// as with animations off.
-    public var durationMs = 150
+    /// as with animations off. 363 with `damping` 1 is SlideScroll's spring, its stiffness 300.
+    public var durationMs = 363
+    /// How the spring settles, 0.5 to 1: 1 eases into place without overshooting; lower gets there sooner and
+    /// overshoots, more the lower.
+    public var damping = 1.0
     public var curve = AnimationCurve.spring
 
     public init() {}
@@ -817,6 +872,8 @@ public struct Animations: Equatable {
         enabled = try t.bool("enabled") ?? enabled
         durationMs = try t.int("duration-ms") ?? durationMs
         guard (0...1000).contains(durationMs) else { throw ConfigError(path: t.path("duration-ms"), "must be 0 to 1000") }
+        damping = try t.double("damping") ?? damping
+        guard (0.5...1).contains(damping) else { throw ConfigError(path: t.path("damping"), "must be 0.5 to 1") }
         curve = try t.choice("curve") ?? curve
         try t.done()
     }

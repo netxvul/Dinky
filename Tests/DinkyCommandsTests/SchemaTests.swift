@@ -226,6 +226,11 @@ struct SchemaTests {
         swipe-left = 'focus left'
         swipe-right = 'focus right'
 
+        [gestures.scroll]
+        enabled = true
+        fingers = 3
+        speed = 2
+
         [floating]
         move-step = 20
         resize-anchor = 'top-left'
@@ -276,6 +281,7 @@ struct SchemaTests {
         [animations]
         enabled = true
         duration-ms = 100
+        damping = 0.9
         curve = 'ease-in-out-expo'
 
         [drag]
