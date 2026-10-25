@@ -89,23 +89,4 @@ struct PulseTests {
         #expect(!late)
         #expect(pulse.presence(at: Pulse.hold + Pulse.fadeOut + 0.1) == nil)
     }
-
-    @Test func `One band, at its opacity when shown, gone with the ring`() {
-        let shown = GlowBand(depth: 12, opacity: 0.35, presence: 1)
-        #expect(shown.depth == 12)
-        #expect(abs(shown.alpha - 0.35) <= 1.0 / 512)
-        #expect(shown.ring == 1)
-        let half = GlowBand(depth: 12, opacity: 0.35, presence: 0.5)
-        #expect(abs(half.alpha - 0.175) <= 1.0 / 512)
-        #expect(half.ring == 0.5)
-        let gone = GlowBand(depth: 12, opacity: 0.35, presence: 0)
-        #expect(gone.alpha == 0)
-        #expect(gone.ring == 0)
-    }
-
-    @Test func `A look that barely moves is the same look`() {
-        let a = GlowBand(depth: 12, opacity: 0.35, presence: 0.5)
-        let b = GlowBand(depth: 12, opacity: 0.35, presence: 0.5001)
-        #expect(a == b)
-    }
 }

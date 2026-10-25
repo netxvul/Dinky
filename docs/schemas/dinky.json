@@ -197,10 +197,10 @@
           "description": "Bundle IDs whose windows get no border."
         },
         "noop-flash": { "type": "boolean", "default": true, "description": "Make the focused window's edge glow once when a key binding or gesture does nothing. Drawn even when borders are off." },
-        "noop-flash-color": { "$ref": "#/definitions/highlight", "default": "#d97757", "description": "Colour of the ring around the window and of the band inside it." },
+        "noop-flash-color": { "$ref": "#/definitions/highlight", "default": "#d97757", "description": "Colour of the ring around the window and of the glow inside it." },
         "noop-flash-width": { "type": "number", "minimum": 0, "maximum": 8, "default": 2, "description": "The ring around the window, in points; 0 leaves it out." },
-        "noop-flash-spread": { "type": "number", "minimum": 2, "maximum": 64, "default": 12, "description": "How far the band inside the window reaches in, in points." },
-        "noop-flash-opacity": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.35, "description": "The band's opacity, as a share of the colour's own; 0 leaves it out." }
+        "noop-flash-spread": { "type": "number", "minimum": 8, "maximum": 160, "default": 100, "description": "How far the glow inside the window reaches in, fading as it goes, in points." },
+        "noop-flash-opacity": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.6, "description": "The glow's opacity at the window's edge, as a share of the colour's own; 0 leaves it out." }
       }
     },
     "focus-follows-mouse": {

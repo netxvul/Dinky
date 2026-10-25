@@ -1,6 +1,7 @@
 #import "borders.h"
 #import "query.h"
 #import "skylight.h"
+#import <math.h>
 
 // Window creation, shape and drawing, as JankyBorders src/misc/extern.h declares them.
 extern CGError CGSNewRegionWithRect(CGRect *rect, CFTypeRef *region);
@@ -10,6 +11,7 @@ extern CGError SLSSetWindowTags(int cid, uint32_t wid, uint64_t *tags, int tagSi
 extern CGError SLSSetWindowShape(int cid, uint32_t wid, float x, float y, CFTypeRef shape);
 extern CGError SLSSetWindowResolution(int cid, uint32_t wid, double resolution);
 extern CGError SLSSetWindowOpacity(int cid, uint32_t wid, bool isOpaque);
+extern CGError SLSSetWindowAlpha(int cid, uint32_t wid, float alpha);
 extern CGError SLSWindowSetShadowProperties(uint32_t wid, CFDictionaryRef properties);
 extern CGError SLSGetWindowLevel(int cid, uint32_t wid, int64_t *level);
 extern int32_t SLSGetWindowSubLevel(int cid, uint32_t wid) __attribute__((weak_import));
@@ -139,8 +141,8 @@ void dinky_border_update(uint32_t border, uint32_t target, CGRect frame, int cor
 }
 
 // How round a glow edge `depth` points into a window rounding its corners by `radius` is, negative outside it: outside,
-// the ring's outer edge grows the radius by the width as a border's does; inside, the band's inner edge rounds more the
-// deeper it reaches, as the screen's glow does at its corners.
+// the ring's outer edge grows the radius by the width as a border's does; inside, the glow rounds more the deeper it
+// reaches, as the screen's glow does at its corners.
 static double glow_radius(int radius, double depth)
 {
     return depth < 0 ? radius - depth : radius + depth / 2;
@@ -162,25 +164,18 @@ static void fill_band(CGContextRef context, CGRect frame, int radius, double fro
     CGPathRelease(band);
 }
 
-// Clears `bounds` down to `depth` points into `frame`. Its outer edge lies past the window's, so the pixels of the
-// ring's rounded corners are cleared whole: one the edge covered in part would keep part of every frame before it.
-static void clear_strip(CGContextRef context, CGRect bounds, CGRect frame, int radius, double depth)
+// How strong the glow is `share` of the way in from the window's edge to as deep as it reaches: falling off as the
+// screen's glow does, by e every third of the way, and down to nothing at the end.
+static double glow_falloff(double share)
 {
-    CGMutablePathRef strip = CGPathCreateMutable();
-    CGPathAddRect(strip, NULL, CGRectInset(bounds, -1, -1));
-    CGRect inner = CGRectInset(frame, depth, depth);
-    if (!CGRectIsEmpty(inner)) add_rounded_rect(strip, inner, glow_radius(radius, depth));
-    CGContextSetRGBFillColor(context, 0, 0, 0, 0);
-    CGContextAddPath(context, strip);
-    CGContextEOFillPath(context);
-    CGPathRelease(strip);
+    return (exp(-3 * share) - exp(-3)) / (1 - exp(-3));
 }
 
-// The glow in a border window of `size`, the target's frame `width` in from its edges. The ring first, reaching a point
-// past where the band starts: copied over that point, the band's anti-aliased edge blends into the ring rather than
-// into nothing, so the two meet without a seam. `whole` clears the whole window, as a new shape needs; a frame of the
-// fading clears only what the band can reach, not the window's untouched middle.
-static void draw_glow(uint32_t border, CGSize size, int cornerRadius, DinkyBorderColor color, DinkyGlow glow, bool whole)
+// The glow in a border window of `size`, the target's frame `width` in from its edges: the ring, then the glow inside
+// in steps of a point, each at the strength of its middle, too fine for the eye to tell apart. Outermost first, each
+// reaching a point past where the next one starts: copied over that point, the next one's anti-aliased edge blends into
+// it rather than into nothing, so neighbours meet without a seam.
+static void draw_glow(uint32_t border, CGSize size, int cornerRadius, DinkyBorderColor color, DinkyGlow glow)
 {
     int cid = dinky_connection();
     CGContextRef context = SLWindowContextCreate(cid, border, NULL);
@@ -189,16 +184,14 @@ static void draw_glow(uint32_t border, CGSize size, int cornerRadius, DinkyBorde
     CGRect bounds = { CGPointZero, size };
     CGRect frame = CGRectInset(bounds, glow.width, glow.width);
     CGContextSetBlendMode(context, kCGBlendModeCopy);
-    if (whole) {
-        CGContextClearRect(context, bounds);
-    } else {
-        clear_strip(context, bounds, frame, cornerRadius, glow.depth + 1);
-    }
+    CGContextClearRect(context, bounds);
     if (glow.width > 0) {
-        fill_band(context, frame, cornerRadius, -glow.width, glow.depth > 0 ? 1 : 0, color, glow.ring);
+        fill_band(context, frame, cornerRadius, -glow.width, glow.depth > 0 ? 1 : 0, color, 1);
     }
-    if (glow.depth > 0) {
-        fill_band(context, frame, cornerRadius, 0, glow.depth, color, glow.alpha);
+    for (double from = 0; from < glow.depth; from += 1) {
+        double to = MIN(from + 1, glow.depth);
+        fill_band(context, frame, cornerRadius, from, to < glow.depth ? to + 1 : to, color,
+                  glow.alpha * glow_falloff((from + to) / 2 / glow.depth));
     }
 
     CGContextFlush(context);
@@ -207,7 +200,7 @@ static void draw_glow(uint32_t border, CGSize size, int cornerRadius, DinkyBorde
 }
 
 void dinky_glow_update(uint32_t border, uint32_t target, uint32_t above, CGRect frame, int cornerRadius,
-                       DinkyBorderColor color, DinkyGlow glow)
+                       DinkyBorderColor color, DinkyGlow glow, double opacity)
 {
     int cid = dinky_connection();
     CGRect outer = outer_frame(frame, glow.width);
@@ -218,16 +211,16 @@ void dinky_glow_update(uint32_t border, uint32_t target, uint32_t above, CGRect 
 
     SLSDisableUpdate(cid);
     SLSSetWindowShape(cid, border, 0, 0, region);
-    draw_glow(border, outer.size, cornerRadius, color, glow, true);
+    draw_glow(border, outer.size, cornerRadius, color, glow);
+    dinky_glow_fade(border, opacity);
     place(border, target, above, outer.origin, DinkyBorderOrderAbove, true);
     SLSReenableUpdate(cid);
     CFRelease(region);
 }
 
-void dinky_glow_draw(uint32_t border, CGSize size, int cornerRadius, DinkyBorderColor color, DinkyGlow glow)
+void dinky_glow_fade(uint32_t border, double opacity)
 {
-    CGSize outer = { size.width + 2 * glow.width, size.height + 2 * glow.width };
-    draw_glow(border, outer, cornerRadius, color, glow, false);
+    SLSSetWindowAlpha(dinky_connection(), border, (float)opacity);
 }
 
 void dinky_glow_move(uint32_t border, uint32_t target, uint32_t above, CGRect frame, double width)

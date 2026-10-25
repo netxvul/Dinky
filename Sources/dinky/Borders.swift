@@ -155,11 +155,12 @@ final class BorderManager {
     }
 }
 
-/// The noop flash: the window's edge glows once in `noop-flash-color`. A `noop-flash-width` ring around the window and
-/// one band inside it, `noop-flash-spread` points deep at `noop-flash-opacity`, fade in, hold and fade out (Pulse), held
-/// on for as long as a held key repeats. Every window gets it, borders on or off, its app excluded or not. It is drawn
-/// over the window and its border and follows it, and goes as soon as the window closes, hides or minimizes, the Space
-/// changes or Mission Control opens.
+/// The noop flash: the window's edge glows once in `noop-flash-color`, the way the screen's edges glow while Claude uses
+/// the computer. A `noop-flash-width` ring around the window, and inside it the colour at `noop-flash-opacity` at the
+/// edge, fading to nothing `noop-flash-spread` points in, fade in, hold and fade out (Pulse), held on for as long as a
+/// held key repeats. Every window gets it, borders on or off, its app excluded or not. It is drawn over the window and
+/// its border and follows it, and goes as soon as the window closes, hides or minimizes, the Space changes or Mission
+/// Control opens.
 final class NoopGlow: NSObject {
     /// The window's border drawn directly above it, if any, which the glow goes above.
     private let borderAbove: (UInt32) -> UInt32?
@@ -201,7 +202,7 @@ final class NoopGlow: NSObject {
         if glow == nil || changed { place() }
         guard link == nil else { return }
         link = screen(containing: window.frame)?.displayLink(target: self, selector: #selector(tick))
-        // A fade takes half a second: 60 frames a second are smooth, and each is a redraw.
+        // A fade takes half a second: 60 frames a second are smooth, and each only sets the glow's opacity.
         link?.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
         link?.add(to: .main, forMode: .common)
         lastTick = now
@@ -228,29 +229,33 @@ final class NoopGlow: NSObject {
         if MissionControl.shared.active { end() }
     }
 
-    /// One frame: the pulse moves on, and the glow is placed again if it needs to be, or else just drawn again. Moves
-    /// and resizes wait for the frame, so a glide's events cost one placement a frame, not one each.
+    /// One frame: the pulse moves on, and the glow is placed again if it needs to be, or else just faded. Moves and
+    /// resizes wait for the frame, so a glide's events cost one placement a frame, not one each.
     @objc private func tick(_ link: CADisplayLink) {
         lastTick = CACurrentMediaTime()
         guard let presence = pulse?.presence(at: link.targetTimestamp) else { return end() }
         self.presence = presence
-        if needsPlace { place() } else { glow?.redraw(band) }
+        if needsPlace { place() } else { glow?.fade(opacity) }
     }
 
-    /// The look now. The band reaches a quarter of the window's shorter side at most, so its sides never meet.
-    private var band: GlowBand {
+    /// The glow inside the window. It reaches a quarter of the window's shorter side at most, so its sides never meet.
+    private var inside: BorderWindow.Glow {
         let size = window?.frame.size ?? .zero
-        return GlowBand(depth: min(config.noopFlashSpread, Double(min(size.width, size.height)) / 4),
-                        opacity: config.noopFlashOpacity, presence: presence)
+        return BorderWindow.Glow(depth: min(config.noopFlashSpread, Double(min(size.width, size.height)) / 4),
+                                 alpha: config.noopFlashOpacity)
     }
+
+    /// The glow's opacity as a whole now, to 1/256, finer than the eye tells apart: one that stays the same is not set
+    /// again.
+    private var opacity: Double { (presence * 256).rounded() / 256 }
 
     private func place() {
         needsPlace = false
         guard let window else { return }
         let glow = self.glow ?? BorderWindow(target: window.id)
         self.glow = glow
-        glow.glow(window, color: config.noopFlashColor.resolved, width: config.noopFlashWidth, band: band,
-                  above: borderAbove(window.id) ?? window.id)
+        glow.glow(window, color: config.noopFlashColor.resolved, width: config.noopFlashWidth, glow: inside,
+                  opacity: opacity, above: borderAbove(window.id) ?? window.id)
     }
 
     /// A display link whose screen goes away stops firing: the glow goes all the same.

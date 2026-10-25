@@ -69,8 +69,8 @@ extension Config {
     noop-flash = true               # a binding that does nothing makes the focused window's edge glow once
     noop-flash-color = '#d97757'    # '#rrggbb', '#rrggbbaa' or 'accent'
     noop-flash-width = 2            # the ring around the window, 0 to 8 points
-    noop-flash-spread = 12          # points the band inside reaches in, 2 to 64
-    noop-flash-opacity = 0.35       # the band's opacity, 0 to 1
+    noop-flash-spread = 100         # points the glow fades over inside the window, 8 to 160
+    noop-flash-opacity = 0.6        # its opacity at the window's edge, 0 to 1
 
     [focus-follows-mouse]
     enabled = false

@@ -52,21 +52,3 @@ public struct Pulse {
         (1 - cos(.pi * min(max(progress, 0), 1))) / 2
     }
 }
-
-/// The noop glow's look at one moment: the ring around the window, and one band of its colour inside it, `depth`
-/// points in at `opacity`. Both fade in and out with the pulse.
-public struct GlowBand: Equatable, Sendable {
-    /// How far the band reaches into the window, in points.
-    public var depth: Double
-    /// The band's opacity, 0...1, before the colour's own.
-    public var alpha: Double
-    /// The ring's opacity.
-    public var ring: Double
-
-    public init(depth: Double, opacity: Double, presence: Double) {
-        self.depth = depth
-        // To 1/256, finer than the eye tells apart: a look that stays the same is not drawn again.
-        alpha = (opacity * presence * 256).rounded() / 256
-        ring = (presence * 256).rounded() / 256
-    }
-}

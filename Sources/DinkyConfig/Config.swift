@@ -721,10 +721,10 @@ public struct Borders: Equatable {
     public var noopFlashColor = Highlight.color(try! Color(hex: "#d97757"))
     /// The ring around the window, in points; 0 leaves it out.
     public var noopFlashWidth = 2.0
-    /// How far the band inside the window reaches in, in points.
-    public var noopFlashSpread = 12.0
-    /// The band's opacity, as a share of the colour's own; 0 leaves it out.
-    public var noopFlashOpacity = 0.35
+    /// How far the glow inside the window reaches in, fading as it goes, in points.
+    public var noopFlashSpread = 100.0
+    /// The glow's opacity at the window's edge, as a share of the colour's own; 0 leaves it out.
+    public var noopFlashOpacity = 0.6
 
     public init() {}
 
@@ -742,7 +742,7 @@ public struct Borders: Equatable {
         noopFlashWidth = try t.double("noop-flash-width") ?? noopFlashWidth
         guard (0...8).contains(noopFlashWidth) else { throw ConfigError(path: t.path("noop-flash-width"), "must be 0 to 8") }
         noopFlashSpread = try t.double("noop-flash-spread") ?? noopFlashSpread
-        guard (2...64).contains(noopFlashSpread) else { throw ConfigError(path: t.path("noop-flash-spread"), "must be 2 to 64") }
+        guard (8...160).contains(noopFlashSpread) else { throw ConfigError(path: t.path("noop-flash-spread"), "must be 8 to 160") }
         noopFlashOpacity = try t.double("noop-flash-opacity") ?? noopFlashOpacity
         guard (0...1).contains(noopFlashOpacity) else { throw ConfigError(path: t.path("noop-flash-opacity"), "must be 0 to 1") }
         try t.done()
