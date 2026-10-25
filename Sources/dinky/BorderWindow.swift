@@ -11,8 +11,8 @@ final class BorderWindow {
         var cornerRadius: Int
         var color: DinkyConfig.Color
         var width: Double
-        /// The noop glow's bands inside the window, `width` its ring, rather than a plain ring.
-        var glow: GlowBands?
+        /// The noop glow's band inside the window, `width` its ring, rather than a plain ring.
+        var glow: GlowBand?
 
         /// The same shape in another colour.
         func with(color: DinkyConfig.Color) -> Look {
@@ -47,21 +47,20 @@ final class BorderWindow {
         place(window, look: look, order: config.order == .above ? .above : .below)
     }
 
-    /// Place and draw the noop glow over `window`: a `width`-point ring of `color` around it and `bands` inside it,
+    /// Place and draw the noop glow over `window`: a `width`-point ring of `color` around it and `band` inside it,
     /// directly above `above`, the window or its own border when that is drawn above it.
-    func glow(_ window: Window, color: DinkyConfig.Color, width: Double, bands: GlowBands, above: UInt32) {
+    func glow(_ window: Window, color: DinkyConfig.Color, width: Double, band: GlowBand, above: UInt32) {
         let look = Look(size: window.frame.size, cornerRadius: window.cornerRadius,
-                        color: color, width: width, glow: bands)
+                        color: color, width: width, glow: band)
         place(window, look: look, order: .above, above: above)
     }
 
-    /// The noop glow drawn again with `bands` where it is, when they differ from what is drawn: a frame of its breathing.
-    func redraw(_ bands: GlowBands) {
-        guard id != 0, isShown, var look = drawn, look.glow != nil, look.glow != bands else { return }
-        look.glow = bands
-        Self.withGlow(bands, width: look.width) { glow in
-            dinky_glow_draw(id, look.size, Int32(look.cornerRadius), Self.rgba(look.color), glow)
-        }
+    /// The noop glow drawn again with `band` where it is, when that differs from what is drawn: a frame of its fading.
+    func redraw(_ band: GlowBand) {
+        guard id != 0, isShown, var look = drawn, look.glow != nil, look.glow != band else { return }
+        look.glow = band
+        dinky_glow_draw(id, look.size, Int32(look.cornerRadius), Self.rgba(look.color),
+                        Self.dinkyGlow(band, width: look.width))
         drawn = look
     }
 
@@ -76,22 +75,21 @@ final class BorderWindow {
         }
         var shape = drawn
         shape?.glow = look.glow
-        if let bands = look.glow, drawn?.glow?.spread == bands.spread, shape == look {
-            // The same glow a frame further on: moved, then only its bands drawn again, as at a frame of its breathing.
-            // A new spread is drawn whole, as a redraw clears only as far as the bands reach.
+        if let band = look.glow, drawn?.glow?.depth == band.depth, shape == look {
+            // The same glow a frame further on: moved, then only its band drawn again, as at a frame of its fading.
+            // A new depth is drawn whole, as a redraw clears only as far as the band reaches.
             dinky_glow_move(id, target, above, window.frame, look.width)
             isShown = true
-            redraw(bands)
+            redraw(band)
             return
         }
         if look == drawn {
             dinky_border_move(id, target, window.frame, look.width, order)
         } else {
             let rgba = Self.rgba(look.color)
-            if let bands = look.glow {
-                Self.withGlow(bands, width: look.width) { glow in
-                    dinky_glow_update(id, target, above, window.frame, Int32(window.cornerRadius), rgba, glow)
-                }
+            if let band = look.glow {
+                dinky_glow_update(id, target, above, window.frame, Int32(window.cornerRadius), rgba,
+                                  Self.dinkyGlow(band, width: look.width))
             } else {
                 dinky_border_update(id, target, window.frame, Int32(window.cornerRadius), rgba, look.width, order)
             }
@@ -110,14 +108,9 @@ final class BorderWindow {
         DinkyBorderColor(red: color.red, green: color.green, blue: color.blue, alpha: color.alpha)
     }
 
-    /// The bands as the C side takes them, for the length of `body`.
-    private static func withGlow(_ bands: GlowBands, width: Double, _ body: (DinkyGlow) -> Void) {
-        bands.edges.withUnsafeBufferPointer { edges in
-            bands.alphas.withUnsafeBufferPointer { alphas in
-                body(DinkyGlow(width: width, ring: bands.ring, edges: edges.baseAddress!, alphas: alphas.baseAddress!,
-                               count: Int32(alphas.count), extent: bands.spread))
-            }
-        }
+    /// The glow as the C side takes it: `band` inside a `width`-point ring.
+    private static func dinkyGlow(_ band: GlowBand, width: Double) -> DinkyGlow {
+        DinkyGlow(width: width, ring: band.ring, depth: band.depth, alpha: band.alpha)
     }
 
     // JankyBorders sets the resolution once, at creation; a display change gets a new window.

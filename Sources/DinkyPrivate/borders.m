@@ -138,8 +138,8 @@ void dinky_border_update(uint32_t border, uint32_t target, CGRect frame, int cor
     CFRelease(region);
 }
 
-// How round a glow band's edge `depth` points into a window rounding its corners by `radius` is, negative outside it:
-// outside, the ring's outer edge grows the radius by the width as a border's does; inside, each band rounds more the
+// How round a glow edge `depth` points into a window rounding its corners by `radius` is, negative outside it: outside,
+// the ring's outer edge grows the radius by the width as a border's does; inside, the band's inner edge rounds more the
 // deeper it reaches, as the screen's glow does at its corners.
 static double glow_radius(int radius, double depth)
 {
@@ -176,10 +176,10 @@ static void clear_strip(CGContextRef context, CGRect bounds, CGRect frame, int r
     CGPathRelease(strip);
 }
 
-// The glow in a border window of `size`, the target's frame `width` in from its edges. Outermost first, each band
-// reaching a point past where the next one starts: copied over that point, the next band's anti-aliased edge blends
-// into this one rather than into nothing, so neighbours meet without a seam. `whole` clears the whole window, as a new
-// shape needs; a frame of the breathing clears only what a band can reach, not the window's untouched middle.
+// The glow in a border window of `size`, the target's frame `width` in from its edges. The ring first, reaching a point
+// past where the band starts: copied over that point, the band's anti-aliased edge blends into the ring rather than
+// into nothing, so the two meet without a seam. `whole` clears the whole window, as a new shape needs; a frame of the
+// fading clears only what the band can reach, not the window's untouched middle.
 static void draw_glow(uint32_t border, CGSize size, int cornerRadius, DinkyBorderColor color, DinkyGlow glow, bool whole)
 {
     int cid = dinky_connection();
@@ -192,14 +192,13 @@ static void draw_glow(uint32_t border, CGSize size, int cornerRadius, DinkyBorde
     if (whole) {
         CGContextClearRect(context, bounds);
     } else {
-        clear_strip(context, bounds, frame, cornerRadius, glow.extent + 1);
+        clear_strip(context, bounds, frame, cornerRadius, glow.depth + 1);
     }
     if (glow.width > 0) {
-        fill_band(context, frame, cornerRadius, -glow.width, glow.count > 0 ? 1 : 0, color, glow.ring);
+        fill_band(context, frame, cornerRadius, -glow.width, glow.depth > 0 ? 1 : 0, color, glow.ring);
     }
-    for (int i = 0; i < glow.count; i++) {
-        double to = glow.edges[i + 1] + (i + 1 < glow.count ? 1 : 0);
-        fill_band(context, frame, cornerRadius, glow.edges[i], to, color, glow.alphas[i]);
+    if (glow.depth > 0) {
+        fill_band(context, frame, cornerRadius, 0, glow.depth, color, glow.alpha);
     }
 
     CGContextFlush(context);

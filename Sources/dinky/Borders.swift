@@ -155,12 +155,11 @@ final class BorderManager {
     }
 }
 
-/// The noop flash: the window's edge breathes in `noop-flash-color`, the way the screen's edges breathe while Claude uses
-/// the computer. A `noop-flash-width` ring around the window and six bands inside it, reaching `noop-flash-spread` points
-/// in, brighten and dim at an uneven pace (Breathing), `noop-flash-count` times for a press and on for as long as a held
-/// key repeats. Every window gets it, borders on or off, its app excluded or not. It is drawn over the window and its
-/// border and follows it, and goes as soon as the window closes, hides or minimizes, the Space changes or Mission Control
-/// opens.
+/// The noop flash: the window's edge glows once in `noop-flash-color`. A `noop-flash-width` ring around the window and
+/// one band inside it, `noop-flash-spread` points deep at `noop-flash-opacity`, fade in, hold and fade out (Pulse), held
+/// on for as long as a held key repeats. Every window gets it, borders on or off, its app excluded or not. It is drawn
+/// over the window and its border and follows it, and goes as soon as the window closes, hides or minimizes, the Space
+/// changes or Mission Control opens.
 final class NoopGlow: NSObject {
     /// The window's border drawn directly above it, if any, which the glow goes above.
     private let borderAbove: (UInt32) -> UInt32?
@@ -168,8 +167,8 @@ final class NoopGlow: NSObject {
     /// The glowing window as last seen.
     private var window: Window?
     private var config = Borders()
-    private var breathing: Breathing?
-    private var state = Breathing.State(level: 1, presence: 0)
+    private var pulse: Pulse?
+    private var presence = 0.0
     /// The glow needs placing again: its window moved or changed, or another was raised over it.
     private var needsPlace = false
     private var link: CADisplayLink?
@@ -184,7 +183,7 @@ final class NoopGlow: NSObject {
     /// Whether a window id is the glow's.
     func isBorder(_ id: UInt32) -> Bool { id != 0 && glow?.id == id }
 
-    /// Breathes on the window's edge. Again on the same window while it shows keeps it breathing.
+    /// Glows on the window's edge. Again on the same window while it shows holds it.
     func flash(_ id: UInt32, config: Borders, model: WindowModel) {
         guard let window = model.windows[id], Self.shows(window) else { return }
         let now = CACurrentMediaTime()
@@ -192,15 +191,17 @@ final class NoopGlow: NSObject {
         let changed = config != self.config
         self.config = config
         self.window = window
-        if breathing?.press(at: now) != true {
-            breathing = Breathing(count: config.noopFlashCount, at: now)
+        // A held key repeats its press only after the key repeat delay, then at the key repeat rate: each press holds the
+        // glow until the next can come, so a held key shows it once.
+        if pulse?.press(at: now, hold: Self.hold(NSEvent.keyRepeatInterval)) != true {
+            pulse = Pulse(at: now, hold: Self.hold(NSEvent.keyRepeatDelay))
         }
-        state = breathing?.state(at: now) ?? state
+        presence = pulse?.presence(at: now) ?? presence
         // A glow already showing takes the press at its next frame, unless it is to look different.
         if glow == nil || changed { place() }
         guard link == nil else { return }
         link = screen(containing: window.frame)?.displayLink(target: self, selector: #selector(tick))
-        // A breath takes seconds: 60 frames a second are smooth, and each is a redraw.
+        // A fade takes half a second: 60 frames a second are smooth, and each is a redraw.
         link?.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
         link?.add(to: .main, forMode: .common)
         lastTick = now
@@ -227,19 +228,20 @@ final class NoopGlow: NSObject {
         if MissionControl.shared.active { end() }
     }
 
-    /// One frame: the breath moves on, and the glow is placed again if it needs to be, or else just drawn again. Moves
+    /// One frame: the pulse moves on, and the glow is placed again if it needs to be, or else just drawn again. Moves
     /// and resizes wait for the frame, so a glide's events cost one placement a frame, not one each.
     @objc private func tick(_ link: CADisplayLink) {
         lastTick = CACurrentMediaTime()
-        guard let state = breathing?.state(at: link.targetTimestamp) else { return end() }
-        self.state = state
-        if needsPlace { place() } else { glow?.redraw(bands) }
+        guard let presence = pulse?.presence(at: link.targetTimestamp) else { return end() }
+        self.presence = presence
+        if needsPlace { place() } else { glow?.redraw(band) }
     }
 
-    /// The look now. The bands reach a quarter of the window's shorter side at most, so they never meet.
-    private var bands: GlowBands {
+    /// The look now. The band reaches a quarter of the window's shorter side at most, so its sides never meet.
+    private var band: GlowBand {
         let size = window?.frame.size ?? .zero
-        return GlowBands(spread: min(config.noopFlashSpread, Double(min(size.width, size.height)) / 4), state: state)
+        return GlowBand(depth: min(config.noopFlashSpread, Double(min(size.width, size.height)) / 4),
+                        opacity: config.noopFlashOpacity, presence: presence)
     }
 
     private func place() {
@@ -247,7 +249,7 @@ final class NoopGlow: NSObject {
         guard let window else { return }
         let glow = self.glow ?? BorderWindow(target: window.id)
         self.glow = glow
-        glow.glow(window, color: config.noopFlashColor.resolved, width: config.noopFlashWidth, bands: bands,
+        glow.glow(window, color: config.noopFlashColor.resolved, width: config.noopFlashWidth, band: band,
                   above: borderAbove(window.id) ?? window.id)
     }
 
@@ -259,6 +261,9 @@ final class NoopGlow: NSObject {
         }
     }
 
+    /// How long a press holds the glow when the next may come `wait` seconds later, a little late.
+    private static func hold(_ wait: TimeInterval) -> Double { max(Pulse.hold, wait + 0.1) }
+
     private static func shows(_ window: Window) -> Bool {
         window.isOrderedIn && window.isVisible && !window.isMinimized && !MissionControl.shared.active
     }
@@ -268,8 +273,8 @@ final class NoopGlow: NSObject {
         link = nil
         glow = nil
         window = nil
-        breathing = nil
-        state = Breathing.State(level: 1, presence: 0)
+        pulse = nil
+        presence = 0
         needsPlace = false
         generation += 1
     }

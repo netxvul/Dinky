@@ -495,32 +495,33 @@ struct ConfigTests {
         #expect(defaults.noopFlash)
         #expect(defaults.noopFlashColor == .color(try Color(hex: "#d97757")))
         #expect(defaults.noopFlashWidth == 2)
-        #expect(defaults.noopFlashCount == 2)
-        #expect(defaults.noopFlashSpread == 68)
+        #expect(defaults.noopFlashSpread == 12)
+        #expect(defaults.noopFlashOpacity == 0.35)
         let borders = try Config.parse("""
         [borders]
         noop-flash = false
         noop-flash-color = 'accent'
         noop-flash-width = 0
-        noop-flash-count = 5
-        noop-flash-spread = 8
+        noop-flash-spread = 2
+        noop-flash-opacity = 0
         """).borders
         #expect(!borders.noopFlash)
         #expect(borders.noopFlashColor == .accent)
         #expect(borders.noopFlashWidth == 0)
-        #expect(borders.noopFlashCount == 5)
-        #expect(borders.noopFlashSpread == 8)
+        #expect(borders.noopFlashSpread == 2)
+        #expect(borders.noopFlashOpacity == 0)
         #expect(try Config.parse("[hud]\non-noop = true\n").hud.onNoop)
 
         assertError("[borders]\nnoop-flash-width = -1\n", path: "borders.noop-flash-width", line: 2, contains: "0 to 8")
         assertError("[borders]\nnoop-flash-width = 8.5\n", path: "borders.noop-flash-width", line: 2, contains: "0 to 8")
-        assertError("[borders]\nnoop-flash-count = 0\n", path: "borders.noop-flash-count", line: 2, contains: "1 to 5")
-        assertError("[borders]\nnoop-flash-count = 6\n", path: "borders.noop-flash-count", line: 2, contains: "1 to 5")
-        assertError("[borders]\nnoop-flash-spread = 7\n", path: "borders.noop-flash-spread", line: 2, contains: "8 to 160")
-        assertError("[borders]\nnoop-flash-spread = 160.5\n", path: "borders.noop-flash-spread", line: 2, contains: "8 to 160")
+        assertError("[borders]\nnoop-flash-spread = 1.5\n", path: "borders.noop-flash-spread", line: 2, contains: "2 to 64")
+        assertError("[borders]\nnoop-flash-spread = 65\n", path: "borders.noop-flash-spread", line: 2, contains: "2 to 64")
+        assertError("[borders]\nnoop-flash-opacity = -0.1\n", path: "borders.noop-flash-opacity", line: 2, contains: "0 to 1")
+        assertError("[borders]\nnoop-flash-opacity = 1.5\n", path: "borders.noop-flash-opacity", line: 2, contains: "0 to 1")
         assertError("[borders]\nnoop-flash-color = 'pink'\n", path: "borders.noop-flash-color", line: 2, contains: "'pink' is not a colour")
-        // Gone with the glow that held at full between breaths.
+        // Gone with the glow that held at full between breaths, and with the one that breathed more than once.
         assertError("[borders]\nnoop-flash-ms = 80\n", path: "borders.noop-flash-ms", line: 2, contains: "unknown key")
+        assertError("[borders]\nnoop-flash-count = 2\n", path: "borders.noop-flash-count", line: 2, contains: "unknown key")
     }
 
     @Test func `Binding values`() throws {

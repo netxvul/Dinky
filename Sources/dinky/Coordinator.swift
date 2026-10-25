@@ -37,7 +37,7 @@ final class Coordinator {
     private lazy var noopGlow = NoopGlow { [weak self] id in self?.borders?.border(above: id) }
     func isBorderWindow(_ id: WindowID) -> Bool { borders?.isBorder(id) == true || noopGlow.isBorder(id) }
 
-    /// Makes a window's edge breathe, for a binding that did nothing, unless `[borders] noop-flash` is off.
+    /// Makes a window's edge glow once, for a binding that did nothing, unless `[borders] noop-flash` is off.
     func flashBorder(of id: WindowID) {
         guard config.borders.noopFlash, let window = model.windows[id], window.isDocument else { return }
         noopGlow.flash(id, config: config.borders, model: model)

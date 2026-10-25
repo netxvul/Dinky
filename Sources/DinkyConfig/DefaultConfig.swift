@@ -66,11 +66,11 @@ extension Config {
     inactive-color = '#494d64'
     order = 'below'                 # below | above (a click-through ring over the window)
     exclude-apps = []               # bundle IDs whose windows get no border
-    noop-flash = true               # a binding that does nothing makes the focused window's edge breathe
+    noop-flash = true               # a binding that does nothing makes the focused window's edge glow once
     noop-flash-color = '#d97757'    # '#rrggbb', '#rrggbbaa' or 'accent'
     noop-flash-width = 2            # the ring around the window, 0 to 8 points
-    noop-flash-count = 2            # times a press brightens, 1 to 5
-    noop-flash-spread = 68          # points the glow reaches in, 8 to 160
+    noop-flash-spread = 12          # points the band inside reaches in, 2 to 64
+    noop-flash-opacity = 0.35       # the band's opacity, 0 to 1
 
     [focus-follows-mouse]
     enabled = false

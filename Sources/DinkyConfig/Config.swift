@@ -715,16 +715,16 @@ public struct Borders: Equatable {
     public var order = BorderOrder.below
     /// Bundle IDs whose windows get no border.
     public var excludeApps: [String] = []
-    /// Whether a binding that does nothing makes the focused window's edge breathe.
+    /// Whether a binding that does nothing makes the focused window's edge glow once.
     public var noopFlash = true
-    /// The breathing edge's colour: Claude's orange, as the screen's edges glow while Claude uses the computer.
+    /// The glow's colour: Claude's orange, as the screen's edges glow while Claude uses the computer.
     public var noopFlashColor = Highlight.color(try! Color(hex: "#d97757"))
     /// The ring around the window, in points; 0 leaves it out.
     public var noopFlashWidth = 2.0
-    /// How many times a press brightens before it fades.
-    public var noopFlashCount = 2
-    /// How far the glow reaches into the window at its brightest, in points.
-    public var noopFlashSpread = 68.0
+    /// How far the band inside the window reaches in, in points.
+    public var noopFlashSpread = 12.0
+    /// The band's opacity, as a share of the colour's own; 0 leaves it out.
+    public var noopFlashOpacity = 0.35
 
     public init() {}
 
@@ -741,10 +741,10 @@ public struct Borders: Equatable {
         noopFlashColor = try t.highlight("noop-flash-color") ?? noopFlashColor
         noopFlashWidth = try t.double("noop-flash-width") ?? noopFlashWidth
         guard (0...8).contains(noopFlashWidth) else { throw ConfigError(path: t.path("noop-flash-width"), "must be 0 to 8") }
-        noopFlashCount = try t.int("noop-flash-count") ?? noopFlashCount
-        guard (1...5).contains(noopFlashCount) else { throw ConfigError(path: t.path("noop-flash-count"), "must be 1 to 5") }
         noopFlashSpread = try t.double("noop-flash-spread") ?? noopFlashSpread
-        guard (8...160).contains(noopFlashSpread) else { throw ConfigError(path: t.path("noop-flash-spread"), "must be 8 to 160") }
+        guard (2...64).contains(noopFlashSpread) else { throw ConfigError(path: t.path("noop-flash-spread"), "must be 2 to 64") }
+        noopFlashOpacity = try t.double("noop-flash-opacity") ?? noopFlashOpacity
+        guard (0...1).contains(noopFlashOpacity) else { throw ConfigError(path: t.path("noop-flash-opacity"), "must be 0 to 1") }
         try t.done()
     }
 

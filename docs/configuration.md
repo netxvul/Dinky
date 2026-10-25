@@ -249,11 +249,11 @@ gaps.outer.top = 44
 | `inactive-color` | `'#494d64'` | |
 | `order` | `'below'` | `'above'` draws a click-through ring over the window. |
 | `exclude-apps` | `[]` | Bundle IDs that get no border. |
-| `noop-flash` | `true` | Make the focused window's edge breathe, the way the screen's edges do while Claude uses the computer, when a key binding or gesture does nothing: a move at the edge, a resize at its limit, `focus` or `focus-monitor` with nothing that way, `workspace next` on the last workspace or a workspace number past `[workspaces]`, moving a window to where it already is, `fullscreen` on a lone window that already fills its workspace. A ring around the window and six bands inside it, each fainter than the one outside it, brighten and dim at an uneven pace, every breath a little longer or shorter than the last; a press brightens `noop-flash-count` times and fades, twice in about two seconds by default and about 1.4 seconds more for each time beyond that, and holding the key keeps it breathing until it is let go. Drawn over the window and its border, even with `enabled = false` and for windows of `exclude-apps`; it goes as soon as the window hides or minimizes, the Space changes or Mission Control opens. |
-| `noop-flash-color` | `'#d97757'` | Its colour, Claude's orange: `'#rrggbb'`, `'#rrggbbaa'` or `'accent'`. The ring is drawn in it and the bands in it at 60% down to 5%. |
+| `noop-flash` | `true` | Make the focused window's edge glow once when a key binding or gesture does nothing: a move at the edge, a resize at its limit, `focus` or `focus-monitor` with nothing that way, `workspace next` on the last workspace or a workspace number past `[workspaces]`, moving a window to where it already is, `fullscreen` on a lone window that already fills its workspace. A ring around the window and one band inside it fade in, hold until a held key would repeat and fade out, in about a second; holding the key keeps it shown until it is let go, and it fades out once. Drawn over the window and its border, even with `enabled = false` and for windows of `exclude-apps`; it goes as soon as the window hides or minimizes, the Space changes or Mission Control opens. |
+| `noop-flash-color` | `'#d97757'` | Its colour, Claude's orange: `'#rrggbb'`, `'#rrggbbaa'` or `'accent'`. The ring is drawn in it and the band in it at `noop-flash-opacity`. |
 | `noop-flash-width` | `2` | The ring around the window, in points, from `0`, none, to `8`. |
-| `noop-flash-count` | `2` | How many times a press brightens before it fades, from `1` to `5`. |
-| `noop-flash-spread` | `68` | How far the bands reach into the window at their brightest, in points, from `8` to `160`, and at most a quarter of the window's shorter side. Dim, they reach 70% as far. |
+| `noop-flash-spread` | `12` | How far the band reaches into the window, in points, from `2` to `64`, and at most a quarter of the window's shorter side. |
+| `noop-flash-opacity` | `0.35` | The band's opacity, as a share of the colour's own, from `0`, none, to `1`. |
 
 </div>
 
@@ -829,11 +829,11 @@ width = 4
 inactive-color = '#494d64'
 order = 'below'                 # below | above (a click-through ring over the window)
 exclude-apps = []               # bundle IDs whose windows get no border
-noop-flash = true               # a binding that does nothing makes the focused window's edge breathe
+noop-flash = true               # a binding that does nothing makes the focused window's edge glow once
 noop-flash-color = '#d97757'    # '#rrggbb', '#rrggbbaa' or 'accent'
 noop-flash-width = 2            # the ring around the window, 0 to 8 points
-noop-flash-count = 2            # times a press brightens, 1 to 5
-noop-flash-spread = 68          # points the glow reaches in, 8 to 160
+noop-flash-spread = 12          # points the band inside reaches in, 2 to 64
+noop-flash-opacity = 0.35       # the band's opacity, 0 to 1
 
 [focus-follows-mouse]
 enabled = false
