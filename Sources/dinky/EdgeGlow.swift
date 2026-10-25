@@ -115,7 +115,9 @@ final class EdgeGlow: NSObject {
         panel.ignoresMouseEvents = true
         panel.hidesOnDeactivate = false
         panel.animationBehavior = .none
-        panel.level = .popUpMenu
+        // Above the Dock and the menu bar, as the HUD is, but not at a menu's level or a modal panel's, which turn
+        // hover focus off while they show.
+        panel.level = .statusBar
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle, .transient]
         return panel
     }
