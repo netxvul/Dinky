@@ -816,6 +816,12 @@ final class Coordinator {
         followStrip(scroll, in: workspace)
     }
 
+    /// Moves windows to `frames` through Dock's connection, the noop glow over one of them going with it.
+    private func moveThroughDock(_ frames: [WindowID: CGRect]) {
+        ScriptingAddition.move(frames)
+        noopGlow.moved(frames)
+    }
+
     /// The fingers push the strip on past an end, its `last` or its first: the window there glows on that side alone,
     /// as a binding that does nothing makes a window glow all round, held while they push. Unless `[gestures.scroll]
     /// edge-flash` is off, whatever `[borders] noop-flash` says.
@@ -834,7 +840,8 @@ final class Coordinator {
         let starts = Dictionary(uniqueKeysWithValues: targets.map { id, target in (id, previous[id] ?? target) })
         let place = { (frames: [WindowID: CGRect]) in workspace.placeStrip(strip.merging(frames) { $1 }) }
         if scroll.throughDock {
-            animator.follow(scroll.key, from: starts, to: targets, pids: pids, sink: { ScriptingAddition.move(place($0)) })
+            animator.follow(scroll.key, from: starts, to: targets, pids: pids,
+                            sink: { [unowned self] in moveThroughDock(place($0)) })
         } else {
             animator.follow(scroll.key, from: starts, to: targets, pids: pids, place: place)
         }
@@ -1490,7 +1497,7 @@ final class Coordinator {
                         saGlide.glideEnded()
                     }
                 }
-                let slide = { (frames: [WindowID: CGRect]) in ScriptingAddition.move(unfrozen(place(frames))) }
+                let slide = { [unowned self] (frames: [WindowID: CGRect]) in moveThroughDock(unfrozen(place(frames))) }
                 slide(initial)
                 return animator.animate(key, from: starts, to: targets, pids: pids, stretch: stretch, restart: restart,
                                         curve: curve, sink: slide) { [weak self] in

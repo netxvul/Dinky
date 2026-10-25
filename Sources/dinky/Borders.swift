@@ -178,6 +178,10 @@ final class NoopGlow: NSObject {
     private var lastTick = 0.0
     /// Counts glows, so the watch of one that has gone stops.
     private var generation = 0
+    /// Until when its window's moves are dinky's own, through Dock (`moved`): the window server's reports of them come
+    /// back late, from where the window was a frame or more ago.
+    private var movedUntil = 0.0
+    private static let movedEcho = 0.15
 
     init(borderAbove: @escaping (UInt32) -> UInt32?) {
         self.borderAbove = borderAbove
@@ -221,12 +225,25 @@ final class NoopGlow: NSObject {
         guard let changed = event.window else { return }
         if changed.id == window?.id {
             if event.change == .removed || !Self.shows(changed) { return end() }
+            var changed = changed
+            if let window, CACurrentMediaTime() < movedUntil { changed.frame.origin = window.frame.origin }
             window = changed
             needsPlace = true
         } else if event.kind == .windowReorder {
             // A window raised later lands above the glow and may cover it.
             needsPlace = true
         }
+    }
+
+    /// dinky moved windows to `frames` through Dock, as a strip follows the fingers or glides: the glow goes with its
+    /// window at once, in the same frame, not when the window server reports the move, by then a frame or more behind.
+    func moved(_ frames: [UInt32: CGRect]) {
+        guard glow != nil, var window, let frame = frames[window.id] else { return }
+        movedUntil = CACurrentMediaTime() + Self.movedEcho
+        guard frame.origin != window.frame.origin else { return }
+        window.frame.origin = frame.origin
+        self.window = window
+        place()
     }
 
     /// Mission Control came or went.
@@ -286,6 +303,7 @@ final class NoopGlow: NSObject {
         pulse = nil
         presence = 0
         needsPlace = false
+        movedUntil = 0
         generation += 1
     }
 }
