@@ -576,7 +576,8 @@
             "fingers": { "type": "integer", "minimum": 3, "maximum": 5, "default": 4, "description": "How many fingers scroll. Not [gestures.trackpad]'s fingers while it binds swipe-left or swipe-right." },
             "speed": { "type": "number", "minimum": 0.25, "maximum": 5, "default": 1.5, "description": "How many screens the strip moves as the fingers cross the whole trackpad." },
             "show-switcher": { "type": "boolean", "default": true, "description": "Whether the window switcher shows the strip once it rests after the fingers let go, the window taking focus picked." },
-            "switcher-ms": { "type": "integer", "minimum": 100, "maximum": 5000, "default": 1000, "description": "Milliseconds the window switcher shows the strip with show-switcher." }
+            "switcher-ms": { "type": "integer", "minimum": 100, "maximum": 5000, "default": 1000, "description": "Milliseconds the window switcher shows the strip with show-switcher." },
+            "edge-flash": { "type": "boolean", "default": true, "description": "Whether the window at an end of the strip glows on that side as the fingers push on past it, as the noop flash does all round." }
           }
         }
       }

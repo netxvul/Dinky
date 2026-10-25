@@ -88,6 +88,17 @@ extension Workspace {
                 index = spans.count - 1
             }
         }
+        return columnWindow(index)
+    }
+
+    /// The window at an end of the strip, of its first column or its `last`: of a column of several, the one most
+    /// recently focused.
+    public func endWindow(last: Bool) -> WindowID? {
+        root.children.isEmpty ? nil : columnWindow(last ? root.children.count - 1 : 0)
+    }
+
+    /// The window focusing column `index` focuses: of a column of several, the one most recently focused.
+    private func columnWindow(_ index: Int) -> WindowID? {
         switch root.children[index] {
         case .window(let id): return id
         case .container(let c): return c.mostRecentWindow

@@ -937,6 +937,19 @@ struct ScrollingFreeScrollTests {
         #expect(lefts(ws) == [-1550, -750, 50, 850], "it all showed, so left where the fingers left it")
     }
 
+    @Test func `An end of the strip has its column's window, of a column of several the most recently focused`() {
+        var ws = strip(5)
+        #expect(ws.endWindow(last: false) == 1 && ws.endWindow(last: true) == 5)
+        ws.focus(5)
+        ws.join(.left)
+        ws.focus(4)
+        ws.focus(5)
+        #expect(shape(ws.root) == "h[1 2 3 v[4 5]]")
+        #expect(ws.endWindow(last: true) == 5)
+        ws.focus(4)
+        #expect(ws.endWindow(last: true) == 4)
+    }
+
     @Test func `Let go on a column of several, its most recently focused window takes focus`() {
         var ws = strip(5)
         ws.focus(3)

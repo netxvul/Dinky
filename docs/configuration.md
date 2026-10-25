@@ -655,6 +655,12 @@ Space changing or Mission Control close it sooner, or keep it away while the
 strip still glides, as a click, a drag or focus going elsewhere do then too;
 `show-switcher = false` turns it off.
 
+Pushed on past an end of the strip, the window there glows on that side
+alone, its left at the start and its right at the end, as the
+[noop flash](#borders) does all round a window, in its colour, width, spread
+and opacity: lit while the fingers push, fading once they stop.
+`edge-flash = false` turns it off, whatever `[borders] noop-flash` says.
+
 The fingers may rest before they move. With the same fingers as
 `[gestures.trackpad]`, they still swipe up and down soon after they land, but
 `swipe-left` and `swipe-right` can't be bound for them there. Nothing scrolls
@@ -680,6 +686,7 @@ off.
 | `speed` | `1.5` | How many screens the strip moves as the fingers cross the whole trackpad, `0.25` to `5`. |
 | `show-switcher` | `true` | `false` keeps the window switcher from showing the strip once it rests after the fingers let go. |
 | `switcher-ms` | `1000` | How long it shows, the window taking focus picked, `100` to `5000`. |
+| `edge-flash` | `true` | `false` keeps the window at an end of the strip from glowing on that side as the fingers push on past it. |
 
 </div>
 
@@ -993,6 +1000,7 @@ thumbnails = 'windows'          # windows (pictures, need Screen Recording) | ic
 # speed = 1.5                   # screens the strip moves as the fingers cross the trackpad, 0.25 to 5
 # show-switcher = true          # the window switcher shows the strip once it rests
 # switcher-ms = 1000            # for this long, 100 to 5000
+# edge-flash = true             # pushed on past an end, the window there glows on that side
 
 # Which key of each pair bindings answer to: both | left | right. With alt = 'left',
 # right Option still types special characters.

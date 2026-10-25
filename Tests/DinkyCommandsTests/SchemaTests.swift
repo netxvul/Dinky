@@ -232,6 +232,7 @@ struct SchemaTests {
         speed = 2
         show-switcher = false
         switcher-ms = 800
+        edge-flash = false
 
         [floating]
         move-step = 20

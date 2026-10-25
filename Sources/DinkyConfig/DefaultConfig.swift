@@ -157,6 +157,7 @@ extension Config {
     # speed = 1.5                   # screens the strip moves as the fingers cross the trackpad, 0.25 to 5
     # show-switcher = true          # the window switcher shows the strip once it rests
     # switcher-ms = 1000            # for this long, 100 to 5000
+    # edge-flash = true             # pushed on past an end, the window there glows on that side
 
     # Which key of each pair bindings answer to: both | left | right. With alt = 'left',
     # right Option still types special characters.

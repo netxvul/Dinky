@@ -808,9 +808,21 @@ final class Coordinator {
             return flush()
         }
         let delta = -CGFloat(dx * config.gestures.scroll.speed) * workspace.bounds.width
-        guard workspace.scrollFreely(by: delta) != 0 else { return }
+        let moved = workspace.scrollFreely(by: delta)
+        // Pushed on past an end, some or all of the way.
+        if abs(delta - moved) >= 0.5 { flashStripEnd(of: workspace, last: delta > 0) }
+        guard moved != 0 else { return }
         workspaces[scroll.key] = workspace
         followStrip(scroll, in: workspace)
+    }
+
+    /// The fingers push the strip on past an end, its `last` or its first: the window there glows on that side alone,
+    /// as a binding that does nothing makes a window glow all round, held while they push. Unless `[gestures.scroll]
+    /// edge-flash` is off, whatever `[borders] noop-flash` says.
+    private func flashStripEnd(of workspace: Workspace, last: Bool) {
+        guard config.gestures.scroll.edgeFlash, let id = workspace.endWindow(last: last),
+              model.windows[id]?.isDocument == true else { return }
+        noopGlow.flash(id, edge: last ? .right : .left, byKey: false, config: config.borders, model: model)
     }
 
     /// Has the strip's windows follow it to where the fingers have it now: a window already moving bends towards its
