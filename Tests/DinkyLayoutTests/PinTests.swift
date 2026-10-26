@@ -360,11 +360,15 @@ struct PinRoomTests {
         if case .refused = wider.pin(.left) {} else { Issue.record("pinned past a quarter") }
     }
 
-    @Test func `The band keeps room for its widest window`() {
+    @Test func `A band window wider than the band does not stop a pin, it hangs past the band under it`() throws {
         var ws = strip(4)
         ws.minimumSizes[3] = CGSize(width: 800, height: 100)
         ws.focus(1)
-        if case .refused = ws.pin(.left) {} else { Issue.record("pinned past the widest window's room") }
+        #expect(ws.pin(.left) == .changed)
+        ws.focus(3)
+        let layout = ws.layout()
+        #expect(layout.frames[3]!.width >= 800 && layout.frames[3]!.width > ws.stripInset.width)
+        #expect(layout.order.first == 1, "the pin stacks in front")
     }
 
     @Test func `A pin cannot grow past the band's minimum, nor cycle or resize there, but can always shrink`() throws {
@@ -625,7 +629,7 @@ struct PinTreeTests {
     @Test func `Back to scrolling on a narrower display, pins without room are let go`() throws {
         var ws = try pinned(pinned(strip(4, width: 0.35), 1, .left), 4, .right)
         ws.setAlgorithm(.dwindle(.tiles))
-        ws.minimumSizes[2] = CGSize(width: 500, height: 100)
+        ws.minimumSizes[1] = CGSize(width: 450, height: 100)
         ws.setAlgorithm(.scrolling)
         #expect(ws.pinnedWindows.count < 2)
     }
@@ -735,7 +739,7 @@ struct PinSurvivalTests {
 
     @Test func `On a narrower display, pins that leave the band too little room are let go`() throws {
         var ws = try pinned(pinned(strip(4, width: 0.35), 1, .left), 4, .right)
-        ws.minimumSizes[2] = CGSize(width: 500, height: 100)
+        ws.minimumSizes[1] = CGSize(width: 450, height: 100)
         ws.fitPins()
         #expect(ws.pinnedWindows.count < 2)
     }
@@ -747,13 +751,22 @@ struct PinSurvivalTests {
 }
 
 struct PinFitTests {
-    @Test func `A minimum learned after pinning narrows the pin pinned last, never unpinning it`() throws {
+    @Test func `A pin's minimum learned after pinning narrows the pin pinned last, never unpinning it`() throws {
         var ws = try pinned(pinned(strip(4, width: 0.3), 1, .left), 4, .right)
-        ws.minimumSizes[2] = CGSize(width: 500, height: 100)
+        ws.minimumSizes[1] = CGSize(width: 500, height: 100)
+        try #require(!ws.bandHasRoom)
         ws.fitBand()
         #expect(ws.pins.count == 2)
         #expect(ws.width(ofColumn: 3) < 0.3, "the right pin, pinned last, narrowed")
-        #expect(ws.stripInset.width >= 500)
+        #expect(ws.bandHasRoom)
+    }
+
+    @Test func `A band window wider than the band narrows no pin`() throws {
+        var ws = try pinned(pinned(strip(4, width: 0.3), 1, .left), 4, .right)
+        ws.minimumSizes[2] = CGSize(width: 600, height: 100)
+        let before = ws
+        ws.fitBand()
+        #expect(ws == before)
     }
 
     @Test func `With nothing pinned, fitting the band changes nothing`() {
@@ -778,7 +791,7 @@ struct PinFitTests {
 struct PinSwapRoomTests {
     @Test func `With the band already short, a swap within the band still goes through`() throws {
         var ws = try pinned(strip(5), 1, .left)
-        ws.minimumSizes[3] = CGSize(width: 900, height: 100)
+        ws.minimumSizes[1] = CGSize(width: 800, height: 100)
         try #require(!ws.bandHasRoom)
         do { let r = ws.drop(4, onto: 3, .swap); #expect(r) }
         #expect(ws.pins == [.left: 1])
@@ -817,23 +830,22 @@ struct PinDormantTests {
     }
 
     @Test func `Back outside the scrolling layout, a pin keeps its width and the other pin stays`() throws {
-        var ws = try pinned(strip(4, width: 0.3), 1, .left)
+        var ws = try pinned(strip(4, width: 0.4), 1, .left)
         ws.focus(1)
-        do { let r = ws.cycleWidth(through: [0.2]); #expect(r) }
+        do { let r = ws.cycleWidth(through: [0.3]); #expect(r) }
         ws = try pinned(ws, 4, .right)
-        ws.minimumSizes[2] = CGSize(width: 450, height: 100)
         try #require(ws.bandHasRoom)
         ws.depart(1)
         ws.setAlgorithm(.dwindle(.tiles))
         ws.arrive(1)
         ws.setAlgorithm(.scrolling)
         #expect(ws.pins == [.left: 1, .right: 4])
-        #expect(ws.width(ofColumn: 0) == 0.2)
+        #expect(ws.width(ofColumn: 0) == 0.3, "at the default 0.4 the band would be short and a pin let go")
     }
 
     @Test func `Fitting pins lets go of the one pinned last first`() throws {
         var ws = try pinned(pinned(strip(4, width: 0.35), 4, .right), 1, .left)
-        ws.minimumSizes[2] = CGSize(width: 400, height: 100)
+        ws.minimumSizes[4] = CGSize(width: 450, height: 100)
         ws.fitPins()
         #expect(ws.pins == [.right: 4])
     }
@@ -894,7 +906,8 @@ struct PinCleanupTests {
         ws.focus(4)
         do { let r = ws.cycleWidth(through: [0.15]); #expect(r) }
         ws.minimumSizes[4] = CGSize(width: 300, height: 100)
-        ws.minimumSizes[2] = CGSize(width: 650, height: 100)
+        ws.minimumSizes[1] = CGSize(width: 650, height: 100)
+        try #require(!ws.bandHasRoom)
         ws.fitBand()
         #expect(ws.width(ofColumn: 3) <= 0.15, "never wider than it was")
     }

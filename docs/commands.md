@@ -95,9 +95,11 @@ In a [scrolling](configuration.md#scrolling) workspace, `pin left` or `pin right
 holds the focused window's column at that side of the screen, after SlideScroll,
 while the other columns scroll in the band between. Each side holds one column,
 a single window or a stack. A pinned column keeps its width, a share of the
-screen inside the outer gaps, and the band keeps at least a quarter of it and
-room for its widest window; a pin or a resize that would leave less is refused.
-A band left short later, as when an app turns out to need a wider window, takes
+screen inside the outer gaps, and the band keeps at least a quarter of it; a
+pin or a resize that would leave less is refused, with the noop flash. A band
+window wider than the band, as an app's minimum width can make it, hangs past
+the band's edge, under a pin there, the pins staying in front. A band left under
+a quarter later, as when a pinned app turns out to need a wider window, takes
 the room from the pins, the one pinned last first, down to what their windows
 need; they keep the narrower width and are never unpinned for it.
 

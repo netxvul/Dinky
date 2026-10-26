@@ -5,8 +5,8 @@ import CoreGraphics
 // (right), so stacking, joining, the switchers and drops treat it as any column; the workspace only marks which
 // column each side holds, by one of its windows, and the slot rules: a mark whose window has left the end column is
 // dropped, the columns never moved for it (`settlePins`). Each side holds one column at most. Pinned, a column keeps
-// its share of the area inside the outer gaps, the band never narrower than `minimumBandShare` of it nor than its
-// widest window takes. Unpinned, it goes back between the columns it was pinned from. Outside the scrolling layout
+// its share of the area inside the outer gaps, the band never narrower than `minimumBandShare` of it; a band window
+// wider than the band hangs past it, under the pins. Unpinned, it goes back between the columns it was pinned from. Outside the scrolling layout
 // the marks sleep, kept for when it scrolls again.
 
 /// A side of the screen a column can be pinned to.
@@ -92,14 +92,10 @@ extension Workspace {
         return CGRect(x: minX, y: inset.minY, width: max(maxX - minX, 0), height: inset.height)
     }
 
-    /// Whether the band keeps room enough: `minimumBandShare` of the area inside the outer gaps, and its widest column.
+    /// Whether the band keeps room enough: `minimumBandShare` of the area inside the outer gaps. A band window wider
+    /// than that, as an app's minimum width makes it, hangs past the band, under the pins.
     var bandHasRoom: Bool {
-        let gap = gaps.horizontal, band = bandRange
-        let widest = band.map {
-            root.children[$0].minimumExtent(.horizontal, gap: gap, padding: accordionPadding, minimumSizes)
-        }.max() ?? 0
-        let room = stripInset.width
-        return room >= gaps.inset(bounds).width * CGFloat(Self.minimumBandShare) - 0.5 && room >= widest + gap - 0.5
+        stripInset.width >= gaps.inset(bounds).width * CGFloat(Self.minimumBandShare) - 0.5
     }
 
     /// Whether a width step of the column at `index` is refused for the band's room: only a pinned column's, which narrows
@@ -373,22 +369,16 @@ extension Workspace {
 }
 
 extension Workspace {
-    /// A band that is short of room, as once an app's minimum width is learned or a wide window comes in, takes it from
-    /// the pins: the one pinned last narrows first, down to what its windows take and the narrowest column, then the
-    /// other, till the band has room again. Never unpinned for it; what still does not fit stays under the pins. Only
-    /// with a pin.
+    /// A band left less than `minimumBandShare` of the screen, as once a pin's app turns out to need a wider window,
+    /// takes the room from the pins: the one pinned last narrows first, down to what its windows take and the narrowest
+    /// column, then the other, till the band has room again. Never unpinned for it. Only with a pin.
     public mutating func fitBand() {
         guard hasPins, !bandHasRoom else { return }
         let inset = gaps.inset(bounds).width, gap = gaps.horizontal
         let order = [lastPinned ?? .right, lastPinned == .left ? .right : .left]
         for side in order {
             guard !bandHasRoom, let index = pinnedIndex(side), inset > 0 else { continue }
-            let band = bandRange
-            let widest = band.map {
-                root.children[$0].minimumExtent(.horizontal, gap: gap, padding: accordionPadding, minimumSizes)
-            }.max() ?? 0
-            let needed = max(inset * CGFloat(Self.minimumBandShare), widest + gap)
-            let short = needed - stripInset.width
+            let short = inset * CGFloat(Self.minimumBandShare) - stripInset.width
             let own = root.children[index].minimumExtent(.horizontal, gap: gap, padding: accordionPadding, minimumSizes)
             let floor = max(Self.minimumColumnWidth, Double((own + gap / 2) / inset))
             let share = width(ofColumn: index)
