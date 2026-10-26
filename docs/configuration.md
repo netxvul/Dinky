@@ -563,7 +563,8 @@ exclude = [3]
 
 Swipes run commands, as key bindings do: on the trackpad in
 `[gestures.trackpad]`, on a Magic Mouse in `[gestures.mouse]`. Fingers moved
-across the trackpad can scroll a strip instead, in `[gestures.scroll]`.
+across the trackpad can scroll a strip instead, in `[gestures.scroll]`, and so
+can the mouse with a modifier held, in `[gestures.mouse-scroll]`.
 Gestures read both through macOS's private MultitouchSupport framework.
 
 ```toml
@@ -716,6 +717,59 @@ off.
 [gestures.scroll]
 enabled = true
 fingers = 4
+```
+
+### `[gestures.mouse-scroll]`
+
+Off by default: with `enabled = true` and exactly `modifier` held, the mouse
+scrolls the strip under the pointer as [fingers on the trackpad](#gesturesscroll)
+do. Press over one of the strip's windows and drag across: once the pointer
+has gone 4 points, mostly across, the strip follows it, `speed` times as far,
+so at `1` the point you grabbed stays under the pointer. Let go, it coasts on
+at the speed of the pointer's last moves and settles as the fingers' does,
+the column nearest the middle taking focus, the window switcher glancing at
+it, and the display's side glowing while it is pushed past an end. A press let
+go before it holds does nothing.
+
+A swipe on a Magic Mouse or a trackpad, or a wheel that turns smoothly, with
+the modifier held as the stroke begins, holds the strip the same way: it moves
+by the stroke, across, or up and down for a wheel that only turns, along
+whichever the stroke began on, and lets go as the stroke ends. The momentum
+after it is swallowed, so the app under the pointer does not scroll on, the
+modifier released or not. A wheel that clicks focuses the column beside the
+focused one for each notch instead. The strokes follow System Settings'
+scroll direction, as the content of any window does.
+
+The press, its drag and release, and the scrolls go to dinky alone. Without
+the modifier, over a strip whose columns all fit, or on another layout, they
+go to the app as ever. Choose a modifier apps leave alone with the mouse:
+Control-click is a right click, Option-drag selects a column in many editors,
+Command-drag moves files, and Shift-drag extends a selection, so the default
+holds two. It can't be `[drag] mouse-modifier` while `drag` is on, nor a
+switcher's `modifier`. Zoom's "Use scroll gesture with modifier keys to zoom",
+in System Settings, Accessibility, Zoom, Advanced, zooms with Control unless
+changed, and would zoom with this one too; `dinky doctor` says so. A mouse has
+nothing to tap, so it has no haptic.
+
+<div class="wide-table" markdown="1">
+
+| Key | Default | |
+|---|---|---|
+| `enabled` | `false` | `true` scrolls strips with the mouse. |
+| `modifier` | `'ctrl-alt'` | The modifiers held, exactly these, as `alt`, `ctrl`, `cmd` and `shift` joined by `-`; [`[modifiers]`](#modifiers) says which side of each counts. |
+| `drag` | `true` | `false` leaves presses dragged with the modifier to the app. |
+| `wheel` | `true` | `false` leaves swipes and the wheel with the modifier to the app. |
+| `speed` | `1` | How far the strip goes for each point the pointer or the stroke moves, `0.25` to `5`. |
+| `show-switcher` | [`[gestures.scroll]`](#gesturesscroll)'s | `false` keeps the window switcher from showing the strip once it rests. |
+| `switcher-ms` | [`[gestures.scroll]`](#gesturesscroll)'s | How long it shows, `100` to `5000`. |
+| `edge-flash` | [`[gestures.scroll]`](#gesturesscroll)'s | `false` keeps the display's side from glowing as the mouse pushes the strip past that end. |
+
+</div>
+
+```toml
+[gestures.mouse-scroll]
+enabled = true
+modifier = 'ctrl-alt'
 ```
 
 ## `[modifiers]`
@@ -1037,6 +1091,15 @@ thumbnails = 'windows'          # windows (pictures, need Screen Recording) | ic
 # edge-flash = true             # pushed on past an end, the display's side there glows
 # haptic = true                 # the trackpad ticks as each column comes to the middle; unset is the top-level haptic
 # haptic-strength = 'medium'     # unset is the top-level haptic-strength
+# [gestures.mouse-scroll]       # the mouse scrolls a strip with a modifier held, off by default
+# enabled = true
+# modifier = 'ctrl-alt'         # held exactly; not [drag] mouse-modifier or a switcher's modifier
+# drag = true                   # press over a window and drag across
+# wheel = true                  # swipe a Magic Mouse or trackpad, or turn the wheel; a wheel that clicks steps a column
+# speed = 1                     # how far the strip goes for each point, 0.25 to 5; 1 follows the pointer
+# show-switcher = true          # unset is [gestures.scroll]'s
+# switcher-ms = 1000            # unset is [gestures.scroll]'s
+# edge-flash = true             # unset is [gestures.scroll]'s
 
 # Which key of each pair bindings answer to: both | left | right. With alt = 'left',
 # right Option still types special characters.

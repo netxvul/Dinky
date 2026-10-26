@@ -594,6 +594,21 @@
             "haptic": { "type": "boolean", "description": "Whether the trackpad ticks each time the column a let-go would settle on changes under the fingers. Unset, the top-level haptic." },
             "haptic-strength": { "$ref": "#/definitions/hapticStrength", "description": "How strongly. Unset, the top-level haptic-strength." }
           }
+        },
+        "mouse-scroll": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "With the modifier held, the mouse scrolls the strip under the pointer as fingers on the trackpad do: a press dragged across, or a swipe or wheel stroke; a wheel that clicks steps a column per notch.",
+          "properties": {
+            "enabled": { "type": "boolean", "default": false, "description": "true scrolls strips with the mouse." },
+            "modifier": { "type": "string", "pattern": "^(alt|ctrl|cmd|shift)(-(alt|ctrl|cmd|shift))*$", "default": "ctrl-alt", "description": "The modifiers held, exactly these, joined by -. Not [drag] mouse-modifier while drag is on, nor a switcher's modifier." },
+            "drag": { "type": "boolean", "default": true, "description": "Whether a press dragged across with the modifier scrolls the strip." },
+            "wheel": { "type": "boolean", "default": true, "description": "Whether a swipe or wheel stroke with the modifier scrolls the strip, and a wheel that clicks steps a column." },
+            "speed": { "type": "number", "minimum": 0.25, "maximum": 5, "default": 1, "description": "How far the strip goes for each point the pointer or the stroke moves; 1 follows the pointer." },
+            "show-switcher": { "type": "boolean", "description": "Whether the window switcher shows the strip once it rests. Unset, [gestures.scroll]'s." },
+            "switcher-ms": { "type": "integer", "minimum": 100, "maximum": 5000, "description": "Milliseconds the window switcher shows the strip. Unset, [gestures.scroll]'s." },
+            "edge-flash": { "type": "boolean", "description": "Whether the display glows along the side the mouse pushes the strip past. Unset, [gestures.scroll]'s." }
+          }
         }
       }
     },
