@@ -480,6 +480,9 @@ final class Coordinator {
         tree.bounds = display.visibleArea
         tree.gaps = gaps(on: display)
         tree.walls = walls(of: display)
+        // Its pins fitted to the display it is on now, as for a display that changed.
+        tree.fitPins()
+        tree.fitBand()
         workspaces[to] = tree
         for (id, placement) in placements where placement.space == from { placements[id]!.space = to }
     }
@@ -1335,10 +1338,11 @@ final class Coordinator {
         let edge = display.map { $0.visibleArea.maxX < $0.frame.maxX - 0.5 ? $0.visibleArea.maxX : $0.frame.maxX } ?? 0
         let dock = display.map { $0.visibleArea.maxX < $0.frame.maxX - 0.5 } ?? false
         // A right pin is a wall to the band's windows: one growing to the left must not reach past the screen edge under
-        // it, nor be staged over it.
-        let rightPin = workspace.pinFrame(.right)
-        let besidePin = { (id: WindowID) in rightPin != nil && workspace.pinSide(of: id) == nil }
+        // it, nor be staged over it. Not to one shown fullscreen over the strip, the pins too, nor coming back from it.
         let fullscreenNow = Set(workspace.fullscreenWindows), wasFullscreen = lastFullscreen[key] ?? []
+        let shownOver = workspace.pushesFullscreen ? [] : fullscreenNow.union(wasFullscreen)
+        let rightPin = workspace.pinFrame(.right)
+        let besidePin = { (id: WindowID) in rightPin != nil && workspace.pinSide(of: id) == nil && !shownOver.contains(id) }
         // The focused window going fullscreen where macOS's own Fill puts it, or coming back to where Fill took it from,
         // is left to the system's tiling, whose app animates its whole frame on every step (see SystemTiling); this pass,
         // and those until it lands, leave it alone. Columns it pushes follow it as the window server shows it.
@@ -1746,13 +1750,7 @@ final class Coordinator {
         var staging: [WindowID: CGRect] = [:]
         for id in staged {
             guard let current = frameOf(id), let target = layout.frames[id] else { continue }
-            var frame = growOnce.contains(id) ? ResizeOnce.staging(from: current, to: target, edge: edge) : target
-            // A band window is staged within the band, never over a pin.
-            if workspace.pinSide(of: id) == nil, !workspace.pinnedWindows.isEmpty {
-                let band = workspace.bandRect
-                frame.origin.x = max(min(frame.minX, band.maxX - frame.width), band.minX)
-            }
-            staging[id] = frame
+            staging[id] = growOnce.contains(id) ? ResizeOnce.staging(from: current, to: target, edge: edge) : target
         }
         stage(staging, token: token, order: layout.order, front: workspace.focused, pids: pids,
               live: { [weak self] in self?.pushes[key]?.token == token }) { [weak self] in
