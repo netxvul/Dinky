@@ -447,7 +447,7 @@ extension Workspace {
             // In front without overlapping yet, as fingers take hold or a glide sets off, only at the pin's level or
             // lower: one above it stays above whatever is raised.
             let below = { (id: WindowID) in shown[id]!.layer <= me.layer }
-            if over.contains(where: band)
+            if over.contains(where: { band($0) && below($0) })
                 || ahead.contains(where: { band($0) && below($0) && (takingHold || sweeping[pin]?.contains($0) == true) }) {
                 covered.insert(side)
             }

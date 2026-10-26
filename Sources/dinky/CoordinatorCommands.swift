@@ -27,6 +27,13 @@ extension Coordinator {
         placements[id]?.space.flatMap { workspaces[$0]?.isInView(id) } ?? true
     }
 
+    /// Whether the window shows as its strip has it with nothing to scroll for it: wholly in view, or wider than the
+    /// band beside a pin and shown from its start, hanging under the pin.
+    func showsAsFocusing(_ id: WindowID) -> Bool {
+        guard let workspace = placements[id]?.space.flatMap({ workspaces[$0] }) else { return true }
+        return workspace.isInView(id) || workspace.hangsUnderPin(id)
+    }
+
     /// Switches a tiled window's workspace to the scrolling strip, or back to the tree its config gives it
     /// (tiles when that is scrolling too). The choice holds until switched again.
     func setScrolling(_ on: Bool, for id: WindowID) {

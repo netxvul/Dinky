@@ -148,7 +148,8 @@ final class HoverFocus {
         if !config.accordionEdges, let container = coordinator.container(of: id), container.mode == .accordion,
            container.children[container.activeIndex] != .window(id) { return nil }
         // A column scrolled partly or wholly out of view would scroll the strip under the pointer; a click does that.
-        if !coordinator.isInView(id) { return nil }
+        // One wider than the band, hanging under a pin as it shows, would not.
+        if !coordinator.showsAsFocusing(id) { return nil }
         return id
     }
 

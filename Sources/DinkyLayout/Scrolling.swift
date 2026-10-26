@@ -73,6 +73,21 @@ extension Workspace {
         return CGRect(x: minX, y: inset.minY, width: max(maxX - minX, 0), height: inset.height)
     }
 
+    /// Whether band column `index` is wider than the band beside a pin and shown from its start, the rest hanging
+    /// under the pin or past the screen's edge: the column in view there though not wholly on screen.
+    public func hangsUnderPin(column index: Int) -> Bool {
+        guard hasPins, bandRange.contains(index) else { return false }
+        let area = stripArea, spans = columnSpans(in: area)
+        guard spans[index].width > area.width else { return false }
+        let offset = offset(for: spans, in: area)
+        return abs(showing(spans[index], from: offset, in: area) - offset) < 0.5
+    }
+
+    /// `hangsUnderPin(column:)` for the column of window `id`.
+    public func hangsUnderPin(_ id: WindowID) -> Bool {
+        bandIndex(of: id).map { hangsUnderPin(column: $0) } ?? false
+    }
+
     /// Whether a column is pinned to either side.
     var hasPins: Bool { pinnedIndex(.left) != nil || pinnedIndex(.right) != nil }
 
@@ -195,9 +210,11 @@ extension Workspace {
             return (area.minX - inset.minX + (total - inset.width) / 2).rounded()
         }
         // A focused column wider than the band, beside a pin, shows from the band's start though that scrolls the
-        // strip on past its end, the rest of it under the pin.
-        let wide = hasPins && focused.flatMap { bandIndex(of: $0) }.map { spans[$0].width > area.width } == true
-        let upper = wide ? max(limits.upperBound, wanted ?? limits.upperBound) : limits.upperBound
+        // strip on past its end, the rest of it under the pin: whether focus is being shown or the scroll is held, so
+        // the band does not jump as fingers take hold or focus moves to the pin.
+        let shownColumn = focused.flatMap { bandIndex(of: $0) } ?? bandFocus.flatMap { bandIndex(of: $0) }
+        let wide = hasPins ? shownColumn.flatMap { spans[$0].width > area.width ? spans[$0] : nil } : nil
+        let upper = wide.map { max(limits.upperBound, showing($0, from: limits.upperBound, in: area)) } ?? limits.upperBound
         return min(max(wanted ?? scrollOffset, limits.lowerBound), upper)
     }
 
@@ -467,12 +484,11 @@ extension Workspace {
         }
         // A band window as wide as the band or wider, beside a pin, is the one in view there: past a wall it is held
         // off it, hanging under the pin, not hidden behind a column in view.
-        let band = hasPins ? bandRect : .null
-        let spans = { (frame: CGRect) in !band.isNull && frame.minX <= band.minX + 1 && frame.maxX >= band.maxX - 1 }
+        let hanging = Set(bandRange.filter { hangsUnderPin(column: $0) }.flatMap { root.children[$0].windows })
         return Dictionary(uniqueKeysWithValues: frames.map { id, frame in
             let offLeft = frame.minX < bounds.minX - 1, offRight = frame.maxX > bounds.maxX + 1
             if offLeft != offRight, walls.contains(offLeft ? .left : .right), let cover = offLeft ? left : right,
-               pinSide(of: id) != nil || !spans(frame) {
+               !hanging.contains(id) {
                 return (id, hiddenAtWall(id, frame, behind: cover, wall: offLeft ? .left : .right, keepsSize: keepsSize))
             }
             var x = frame.minX

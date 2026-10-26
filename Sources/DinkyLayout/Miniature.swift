@@ -60,8 +60,7 @@ public struct Miniature: Equatable {
                         pinned += zip(ids, frames)
                     } else if workspace.isInView(first) {
                         shown += zip(ids, frames)
-                    } else if !workspace.pinnedWindows.isEmpty, let wide = frames.first,
-                              wide.width > workspace.bandRect.width, wide.intersects(workspace.bandRect) {
+                    } else if workspace.hangsUnderPin(first) {
                         // A column wider than the band, beside a pin, is the one in view there, what of it shows.
                         shown += zip(ids, frames.map { $0.intersection(workspace.bandRect) })
                     } else if strip[first]!.midX < (workspace.pinnedWindows.isEmpty ? workspace.bounds.midX

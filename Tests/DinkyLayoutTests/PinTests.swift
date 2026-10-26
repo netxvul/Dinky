@@ -1120,3 +1120,112 @@ struct HeldTargetTests {
         }
     }
 }
+
+struct PinHangingTests {
+    @Test(arguments: [Gaps.zero, spaced])
+    func `A lone band window wider than the band at a wall hangs under the pin, not hidden behind it`(gaps: Gaps) throws {
+        var ws = try pinned(strip(2, gaps: gaps, walls: [.right]), 1, .left)
+        ws.minimumSizes[2] = CGSize(width: 900, height: 100)
+        let frame = try #require(ws.layout().frames[2])
+        #expect(abs(frame.maxX - ws.bounds.maxX) <= 1)
+        #expect(frame.intersects(ws.bandRect))
+        #expect(!ws.pinRect(0).contains(frame))
+        #expect(ws.hangsUnderPin(2))
+    }
+
+    @Test(arguments: [Gaps.zero, spaced])
+    func `A focused wide band window at a wall hangs under the pin`(gaps: Gaps) throws {
+        var ws = try pinned(strip(4, gaps: gaps, walls: [.right]), 1, .left)
+        ws.minimumSizes[3] = CGSize(width: 800, height: 100)
+        ws.focus(3)
+        let frame = try #require(ws.layout().frames[3])
+        #expect(frame.maxX <= ws.bounds.maxX + 1)
+        #expect(frame.intersects(ws.bandRect))
+        #expect(!ws.pinRect(0).contains(frame))
+    }
+
+    @Test(arguments: [Gaps.zero, spaced])
+    func `Past a left wall beside a right pin it is held at the wall, hanging under nothing it would hide behind`(gaps: Gaps) throws {
+        var ws = try pinned(strip(4, gaps: gaps, walls: [.left]), 4, .right)
+        ws.minimumSizes[2] = CGSize(width: 900, height: 100)
+        ws.focus(2)
+        let frame = try #require(ws.layout().frames[2])
+        let strip = try #require(ws.tiledLayout().frames[2])
+        if strip.minX < ws.bounds.minX { #expect(abs(frame.minX - ws.bounds.minX) <= 1) }
+        #expect(frame.minX >= ws.bounds.minX - 1)
+        #expect(frame.intersects(ws.bandRect))
+        #expect(!ws.pinRect(3).contains(frame))
+    }
+
+    @Test func `Hanging under a pin needs it shown from its start, not scrolled past`() throws {
+        var ws = try pinned(strip(2), 1, .left)
+        ws.minimumSizes[2] = CGSize(width: 900, height: 100)
+        #expect(!ws.isInView(2))
+        #expect(ws.hangsUnderPin(2))
+        do { let r = ws.beginFreeScroll(); #expect(r) }
+        ws.scrollFreely(by: 2000)
+        #expect(!ws.hangsUnderPin(2))
+    }
+
+    @Test func `The band does not jump as fingers take hold or focus goes to the pin`() throws {
+        var ws = try pinned(strip(4, width: 0.3), 1, .left)
+        ws.minimumSizes[4] = CGSize(width: Double(ws.stripArea.width) + 10, height: 100)
+        ws.focus(4)
+        let shown = ws.layout().frames
+        var held = ws
+        do { let r = held.beginFreeScroll(); #expect(r) }
+        #expect(held.layout().frames == shown)
+        var pin = ws
+        pin.focus(1)
+        #expect(pin.layout().frames.filter { $0.key != 1 } == shown.filter { $0.key != 1 })
+    }
+
+    @Test func `The miniature shows a wide column clipped to the band, and one just wider than the area`() throws {
+        var ws = try pinned(strip(5), 5, .right)
+        ws.minimumSizes[4] = CGSize(width: 900, height: 100)
+        ws.focus(1)
+        ws.focus(4)
+        let mini = Miniature(screen: ws.bounds, height: 60, workspace: ws)
+        let tile = try #require(mini.tiles.first { $0.id == 4 })
+        let scale = mini.size.width / ws.bounds.width
+        let band = ws.bandRect
+        #expect(tile.frame.minX >= (band.minX * scale).rounded() - 2 && tile.frame.maxX <= (band.maxX * scale).rounded() + 2)
+        var edge = try pinned(strip(5), 5, .right)
+        edge.minimumSizes[3] = CGSize(width: Double(edge.stripArea.width) + 5, height: 100)
+        edge.focus(3)
+        try #require(edge.hangsUnderPin(3))
+        let card = Miniature(screen: edge.bounds, height: 60, workspace: edge)
+        #expect(card.tiles.map(\.id).contains(3))
+    }
+}
+
+struct PinRingPushTests {
+    @Test func `In push mode the pins keep their rings while a band column fills the band`() throws {
+        var ws = try pinned(strip(5), 1, .left)
+        ws.focus(2)
+        do { let r = ws.join(.left); #expect(r) }
+        ws.focus(4)
+        ws.toggleFullscreen()
+        #expect(Set(ws.ringedPins) == [1, 2])
+        ws.toggleFullscreen()
+        ws.focus(1)
+        ws.toggleFullscreen()
+        #expect(ws.ringedPins == [1])
+    }
+}
+
+struct PinLayerTests {
+    @Test func `A band window above the pin's level never has it raised`() throws {
+        let ws = try pinned(strip(4), 1, .left)
+        let layout = ws.layout()
+        let pin = StackedWindow(id: 1, layer: 0, frame: layout.frames[1]!, pid: 1)
+        let away = StackedWindow(id: 3, layer: 3, frame: rect(900, 0, 50, 600), pid: 3)
+        #expect(ws.pinsToRaise(stack: [away, pin], candidates: [], takingHold: true).isEmpty)
+        #expect(ws.pinsToRaise(stack: [away, pin], candidates: [], sweeping: [1: [3]]).isEmpty)
+        var low = away
+        low.layer = 0
+        #expect(ws.pinsToRaise(stack: [low, pin], candidates: [], takingHold: true) == [1])
+        let over = StackedWindow(id: 3, layer: 3, frame: rect(100, 0, 300, 600), pid: 3)
+        #expect(ws.pinsToRaise(stack: [over, pin], candidates: []).isEmpty)
+    }
+}

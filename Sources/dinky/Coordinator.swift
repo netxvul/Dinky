@@ -370,7 +370,7 @@ final class Coordinator {
             guard let used = lastUsed[pid], used != pin, !raise.contains(used), !fronts.contains(used), !restore.contains(used),
                   let key = placements[used]?.space, !takingHold, stripScroll?.key != key,
                   let workspace = workspaces[key], workspace.pinSide(of: used) == nil,
-                  workspace.isInView(used), let frame = model.windows[used]?.frame,
+                  workspace.isInView(used) || workspace.hangsUnderPin(used), let frame = model.windows[used]?.frame,
                   !PinSide.allCases.contains(where: { workspace.pinFrame($0)?.intersects(frame) == true }),
                   let at = stack.firstIndex(where: { $0.id == used }) else { continue }
             // Nor under anything in front of it at its level or lower, an accordion sibling, a window fullscreen or
