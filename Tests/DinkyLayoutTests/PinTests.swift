@@ -1579,3 +1579,108 @@ struct StackShareTests {
         #expect(abs(ws.layout().frames[3]!.height - before.height / 2) < 1)
     }
 }
+
+struct GlideCarryTests {
+    @Test func `A glide carries on only into the same layout writing the same windows`() {
+        let layout = Layout(frames: [1: rect(0, 0, 100, 100), 2: rect(100, 0, 100, 100)], order: [1, 2])
+        let held = GlideCarry(layout: layout, frozen: [2])
+        #expect(held.carriesOn(into: layout, frozen: [2]), "the drag still has it")
+        #expect(!held.carriesOn(into: layout, frozen: []), "let go: the window the glide left out is written now")
+        var moved = layout
+        moved.frames[1] = rect(0, 0, 90, 100)
+        #expect(!GlideCarry(layout: layout, frozen: []).carriesOn(into: moved, frozen: []))
+        #expect(GlideCarry(layout: layout, frozen: []).carriesOn(into: layout, frozen: []))
+    }
+}
+
+struct HangingDropHitTests {
+    @Test func `Over a pin in front of a band window hanging under it, the pin is hit, not the window's own place`() throws {
+        var ws = try pinned(strip(2, walls: [.right]), 1, .left)
+        ws.minimumSizes[2] = CGSize(width: 900, height: 100)
+        let layout = ws.layout()
+        let pin = try #require(layout.frames[1]), hanging = try #require(layout.frames[2])
+        let both = pin.intersection(hanging)
+        try #require(!both.isEmpty && ws.hangsUnderPin(2))
+        let point = CGPoint(x: both.midX, y: both.minY + 0.05 * both.height)
+        #expect(ws.dropHit(at: point, in: layout, excluding: 2) == .tile(1, .split(.up)), "dragging the hanging window")
+        #expect(ws.dropHit(at: point, in: layout, excluding: 1) == .own, "dragging the pin, in front")
+        let alone = CGPoint(x: hanging.maxX - 10, y: hanging.midY)
+        #expect(ws.dropHit(at: alone, in: layout, excluding: 2) == .own, "where nothing is in front of it")
+    }
+
+    @Test func `The mirror: a right pin in front of a band window hanging under it`() throws {
+        var ws = try pinned(strip(2, walls: [.left]), 2, .right)
+        ws.minimumSizes[1] = CGSize(width: 900, height: 100)
+        ws.focus(1)
+        let layout = ws.layout()
+        let pin = try #require(layout.frames[2]), hanging = try #require(layout.frames[1])
+        let both = pin.intersection(hanging)
+        try #require(!both.isEmpty)
+        let point = CGPoint(x: both.midX, y: both.maxY - 0.05 * both.height)
+        #expect(ws.dropHit(at: point, in: layout, excluding: 1) == .tile(2, .split(.down)))
+        #expect(ws.dropHit(at: point, in: layout, excluding: 2) == .own)
+    }
+}
+
+struct StripJoinTests {
+    @Test func `Up or down in a column of two never splits it into columns`() {
+        var ws = strip(3)
+        ws.focus(2)
+        do { let r = ws.join(.left); #expect(r) }
+        #expect(shape(ws.root) == "h[v[1 2] 3]")
+        let before = ws
+        ws.focus(1)
+        do { let r = ws.join(.down); #expect(!r, "joining down within the column would make two columns") }
+        #expect(shape(ws.root) == shape(before.root))
+    }
+
+    @Test func `Up or down in a pinned stack keeps the pin`() throws {
+        var ws = try pinned(strip(4), 1, .left)
+        ws.focus(2)
+        do { let r = ws.join(.left); #expect(r) }
+        let before = ws
+        ws.focus(2)
+        do { let r = ws.join(.up); #expect(!r) }
+        #expect(shape(ws.root) == shape(before.root) && ws.pins == before.pins)
+        marked(ws, pins: [.left: 1])
+    }
+}
+
+struct PinStackRoomTests {
+    @Test func `Stacking into a pin is refused where the pin would leave the band too little room`() throws {
+        var ws = try pinned(strip(4, width: 0.3), 1, .left)
+        // A window that needs most of the screen widens the pinned column it joins.
+        ws.minimumSizes[3] = CGSize(width: 820, height: 100)
+        var dropped = ws
+        do { let r = dropped.drop(3, onto: 1, .split(.down)); #expect(!r) }
+        #expect(dropped.root == ws.root)
+        var joined = ws
+        joined.focus(2)
+        do { let r = joined.join(.left); #expect(r, "a narrow one still joins") }
+        var wide = ws
+        wide.focus(3)
+        do { let r = wide.join(.left); #expect(r, "3 joins 2 first, beside it") }
+        wide.focus(3)
+        let before = wide.root
+        do { let r = wide.join(.left); #expect(!r, "into the pin it needs too much room") }
+        #expect(wide.root == before)
+    }
+}
+
+struct SwapWidthTests {
+    @Test func `A swap with a stacked column leaves every column one width`() {
+        var ws = strip(4)
+        ws.focus(4)
+        do { let r = ws.drop(2, onto: 1, .split(.down)); #expect(r) }
+        ws.focus(3)
+        _ = ws.resize(by: 200)
+        let shares = (ws.width(ofColumn: 0), ws.width(ofColumn: 1))
+        #expect(shares.0 != shares.1)
+        do { let r = ws.drop(3, onto: 2, .swap); #expect(r) }
+        // 3 is in the stacked column now, 2 alone.
+        let stack = ws.root.path(of: 3)![0], alone = ws.root.path(of: 2)![0]
+        #expect(ws.root.children[stack].windows.count == 2)
+        #expect(ws.width(ofColumn: stack) == shares.0 && ws.width(ofColumn: alone) == shares.1)
+        for id in ws.root.children[stack].windows { #expect(ws.columnWidths[id] == shares.0) }
+    }
+}

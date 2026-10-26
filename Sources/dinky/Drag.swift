@@ -269,16 +269,25 @@ extension Coordinator {
             revealClickedFocus()
             flush()
         }
-        // The drop shown, worked out again on the trees as they are now; when none showed yet, the one the pointer was
-        // asking for; with no feedback at all, the one under the pointer as the button came up. None into a Space out of
+        // The drop shown, worked out again on the trees as they are now, unless the pointer has asked for another for
+        // `DragSession.settle` and still does; when none showed yet, the one the pointer was asking for; with no feedback
+        // at all, the one under the pointer as the button came up. None into a Space out of
         // sight by now, as one switched away from holding the window: that would take the window there.
         func chosen() -> DropPlan? {
+            let pointer = session.held?.pointer ?? CGEvent(source: nil)?.location
             let unshown = config.drag.placeholders ? nil
-                : (session.held?.pointer ?? CGEvent(source: nil)?.location).flatMap { point -> DropPlan? in
+                : pointer.flatMap { point -> DropPlan? in
                     if case .plan(let plan) = asked(by: session, at: point) { return plan }
                     return nil
                 }
-            let plan = (session.shown ?? session.asked?.plan).flatMap({ replan($0, of: session) }) ?? unshown
+            // A drop the pointer has asked for a while and still asks for, though the one shown has not had its time yet
+            // to give way to it: the one let go over.
+            let pending = session.asked.flatMap { asked -> DropPlan? in
+                guard let plan = asked.plan, CACurrentMediaTime() - asked.since >= DragSession.settle, let pointer,
+                      case .plan(let now) = self.asked(by: session, at: pointer), now == plan else { return nil }
+                return plan
+            }
+            let plan = (pending ?? session.shown ?? session.asked?.plan).flatMap({ replan($0, of: session) }) ?? unshown
             return plan.flatMap { inSight($0.key) ? $0 : nil }
         }
         if let space = carried(session) {
@@ -361,7 +370,12 @@ extension Coordinator {
             edit(key) { $0 = tree; $0.keepsScroll = false }
             dirty.insert(key)
         }
-        guard !plan.moving.isEmpty else { return }
+        guard !plan.moving.isEmpty else {
+            // On its own display too, a pass the drop shown left gliding may have skipped it, held out of that glide
+            // while the button was down: it is checked as one taken across is.
+            if let space = placements[id]?.space { for delay in [0.4, 1.0] { checkLanding(of: [id: space], after: delay) } }
+            return
+        }
         for (window, space) in plan.moving {
             placements[window]?.space = space
             arriving[window] = space

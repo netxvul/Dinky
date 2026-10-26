@@ -390,12 +390,32 @@ struct ScrollingClickHoldTests {
         #expect(asIs.layout().frames == dropped.layout().frames)
     }
 
-    @Test func `Never scrolls to a clicked column at once, as before`() {
+    @Test func `Never holds a clicked column where it shows too, till the click lets go`() {
         var held = strip(4), plain = strip(4)
+        let before = held.layout().frames
         held.focus(2, holdingScroll: true)
         plain.focus(2)
-        #expect(held == plain)
-        #expect(!held.holdsScroll)
+        #expect(held.holdsScroll)
+        #expect(held.layout().frames == before, "the tree stays where the screen shows it while the button is down")
+        held.revealFocus()
+        #expect(held.layout().frames == plain.layout().frames, "let go, it scrolls as a plain focus does")
+    }
+
+    @Test func `Beside a pin a clicked column partly in view is held too`() throws {
+        var ws = strip(5)
+        ws.focus(1)
+        do { let r = ws.pin(.left); #expect(r == .changed) }
+        ws.focus(5)
+        let before = ws.layout().frames
+        // The band column next to the pin shows only in part now.
+        var held = ws, plain = ws
+        held.focus(2, holdingScroll: true)
+        plain.focus(2)
+        try #require(plain.layout().frames != before, "focusing it would scroll")
+        #expect(held.holdsScroll)
+        #expect(held.layout().frames == before)
+        held.revealFocus()
+        #expect(held.layout().frames == plain.layout().frames)
     }
 
     @Test func `Revealing with no click held changes nothing`() {

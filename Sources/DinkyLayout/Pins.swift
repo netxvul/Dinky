@@ -344,6 +344,7 @@ extension Workspace {
         guard id != target, let a = root.path(of: id), let b = root.path(of: target) else { return false }
         var swapped = self
         let shares = (width(ofColumn: a[0]), width(ofColumn: b[0]))
+        let stacks = columnShares(id, target)
         let slots = (pinSide(ofColumn: a[0]), pinSide(ofColumn: b[0]))
         swapped.root.modify(at: Array(a.dropLast())) { $0.replace(at: a.last!, with: .window(target)) }
         swapped.root.modify(at: Array(b.dropLast())) { $0.replace(at: b.last!, with: .window(id)) }
@@ -353,6 +354,9 @@ extension Workspace {
         if slots.0 != slots.1 {
             swapped.setWidth(ofColumn: a[0], shares.0)
             swapped.setWidth(ofColumn: b[0], shares.1)
+        } else if let stacks {
+            // A stacked column keeps its width, all its windows alike.
+            swapped.keepColumnShares(stacks)
         }
         swapped.settlePins()
         if let back = swapped.bandFocus, swapped.pinSide(of: back) != nil { swapped.bandFocus = nil }
@@ -462,16 +466,23 @@ extension Workspace {
     /// accordion. None outside the scrolling layout, nor while a window fullscreen over the strip covers the pins.
     public var ringedPins: [WindowID] {
         guard hasPins else { return [] }
-        let layout = self.layout()
-        if let first = layout.order.first, fullscreenWindows.contains(first), !pushesFullscreen || pinSide(of: first) != nil {
+        let pinned = PinSide.allCases.compactMap(pinnedIndex)
+        // Laid out only where the answer depends on the stacking, as it is asked on every pass: a window fullscreen, or
+        // an accordion pinned, whose front window alone is ringed.
+        let stacked = !fullscreenWindows.isEmpty || pinned.contains { index in
+            if case .container(let c) = root.children[index], c.mode == .accordion { return true }
+            return false
+        }
+        let order = stacked ? layout().order : []
+        if let first = order.first, fullscreenWindows.contains(first), !pushesFullscreen || pinSide(of: first) != nil {
             return pinSide(of: first) != nil ? [first] : []
         }
-        return PinSide.allCases.compactMap(pinnedIndex).flatMap { index -> [WindowID] in
+        return pinned.flatMap { index -> [WindowID] in
             switch root.children[index] {
             case .window(let id): return [id]
             case .container(let c) where c.mode == .accordion:
                 let windows = Set(Node.container(c).windows)
-                return layout.order.first(where: windows.contains).map { [$0] } ?? []
+                return order.first(where: windows.contains).map { [$0] } ?? []
             case .container(let c): return Node.container(c).windows
             }
         }

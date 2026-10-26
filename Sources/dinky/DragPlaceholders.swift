@@ -18,6 +18,8 @@ final class DragPlaceholders {
     private lazy var preview = Self.panel()
     private lazy var partner = Self.panel()
     private var style: Drag?
+    /// Whether any panel may be up, since the last `hide()`.
+    private var showing = false
     private var splitLook = PlaceholderLook(stroke: .controlAccentColor, fill: .controlAccentColor.withAlphaComponent(0.3), width: 3)
     private var swapLook = PlaceholderLook(stroke: .controlAccentColor, fill: .controlAccentColor.withAlphaComponent(0.45), width: 3)
     private var homeLook = PlaceholderLook(stroke: .secondaryLabelColor.withAlphaComponent(0.45),
@@ -26,6 +28,7 @@ final class DragPlaceholders {
     /// Show the feedback for the window `dragged`: `preview` where it will be, `partner` where a window it swaps with
     /// from another display will be, and `home` where it goes back to. Each left out is hidden.
     func show(dragged: WindowID, preview previewShape: Shape?, partner partnerShape: Shape?, home homeShape: Shape?, swap: Bool) {
+        showing = true
         let look = swap ? swapLook : splitLook
         // Below the dragged window, as its tile is.
         if let homeShape { place(home, homeShape, homeLook, .below, dragged) } else { hide(home) }
@@ -36,6 +39,9 @@ final class DragPlaceholders {
     }
 
     func hide() {
+        // Called as the pointer moves with nothing to show: nothing to order out, nor panels to make for it.
+        guard showing else { return }
+        showing = false
         for panel in [home, preview, partner] { hide(panel) }
     }
 
