@@ -165,6 +165,9 @@ final class Coordinator {
         var heard: CFTimeInterval
         /// Whether its windows follow the fingers through Dock's connection rather than Accessibility.
         let throughDock: Bool
+        /// The window a let-go would settle on as the trackpad last ticked for it, and when it ticked.
+        var ticked: WindowID? = nil
+        var tickedAt: CFTimeInterval = 0
     }
     private var stripScroll: StripScroll?
     /// By tree, a strip the fingers just let go of, its windows still moving at their speed, and whether through Dock
@@ -174,14 +177,14 @@ final class Coordinator {
     /// them.
     private var stripScrollWatch: Timer?
     private static let stripScrollCheck: TimeInterval = 0.1
+    /// The least time between two of the trackpad's ticks as columns pass under the fingers.
+    private static let stripTickGap: CFTimeInterval = 0.055
     /// How long fingers holding a strip may go unheard before they count as lifted: a trackpad gone, its frames lost.
     private static let stripScrollQuiet: CFTimeInterval = 1
     /// How far a strip coasts once the fingers lift: as far as their speed would take it in this many seconds.
     private static let stripScrollFling = 0.15
     /// Bumped as fingers let go of a strip, so only the last let-go's glance waits for its strip to rest.
     private var stripGlance = 0
-    /// Counts the let-gos, so a tap waiting for a strip to rest knows another took its place (`tapOnceStill`).
-    private var stripTap = 0
 
     init(displays: DisplayModel, config: Config) {
         self.displays = displays
@@ -1034,6 +1037,8 @@ final class Coordinator {
         if throughDock { saGlides[key] = nil }
         workspaces[key] = workspace
         stripScroll = StripScroll(key: key, display: display.uuid, heard: CACurrentMediaTime(), throughDock: throughDock)
+        // The column it would settle on as they take hold is not one they moved to: no tick for it.
+        stripScroll?.ticked = workspaces[key]?.heldTarget
         // The glance the last let-go left up is of where the strip was.
         WindowSwitcher.shared.endGlance()
         // Peeks move with the strip, so a click on one would miss; the pass after the fingers lift notes them again.
@@ -1067,6 +1072,19 @@ final class Coordinator {
         guard moved != 0 else { return }
         workspaces[scroll.key] = workspace
         followStrip(scroll, in: workspace)
+        tickForColumn(workspace.heldTarget)
+    }
+
+    /// With `[gestures.scroll] haptic`, the trackpad ticks as the column a let-go would settle on changes under the
+    /// fingers, as the switchers' picks do: felt only while they touch it, so as the strip moves, not once it rests. One
+    /// tick in `stripTickGap` at most, so a fast stroke across many columns does not buzz.
+    private func tickForColumn(_ target: WindowID?) {
+        guard config.gestures.scroll.haptic, let target, let scroll = stripScroll, target != scroll.ticked else { return }
+        let now = CACurrentMediaTime()
+        stripScroll?.ticked = target
+        guard now - scroll.tickedAt >= Self.stripTickGap else { return }
+        stripScroll?.tickedAt = now
+        tapTrackpad("strip column \(target)")
     }
 
     /// The fingers push the strip on display `uuid` on past an end, its `last` or its first: the display's side there
@@ -1114,7 +1132,6 @@ final class Coordinator {
         dirty.insert(key)
         guard let target else { return flush() }
         if glance { glanceOnceStill(target, in: key, display: scroll.display) }
-        tapOnceStill(target, in: key)
         // As SlideScroll does, the window is focused when it is another than before, or focus was on another Space.
         guard target != before || placements[lastFocused]?.space != key else { return flush() }
         focusing = (target, Date() + 3)
@@ -1289,25 +1306,6 @@ final class Coordinator {
                 return
             }
             activate(id)
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { check() }
-    }
-
-    /// With `[gestures.scroll] haptic`, once the strip on `key` the fingers let go of rests, `target` in view and taking
-    /// focus, the trackpad taps once, as the window is activated: whether or not focus moves, at an end of the strip too.
-    /// Nothing if, before then, fingers take hold again or let go once more, or the Space no longer shows.
-    private func tapOnceStill(_ target: WindowID, in key: UInt64) {
-        stripTap += 1
-        guard config.gestures.scroll.haptic else { return }
-        let began = CACurrentMediaTime(), tap = stripTap
-        func check() {
-            guard tap == stripTap, stripScroll == nil, enabled, isVisible(key) else { return }
-            let moving = saGlides[key] != nil || pushes[key] != nil || animator.isAnimating(target)
-            guard !moving || CACurrentMediaTime() - began > 1.5 else {
-                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { check() }
-                return
-            }
-            tapTrackpad("strip settled")
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { check() }
     }

@@ -559,7 +559,8 @@ public struct ScrollGesture: Equatable {
     public var switcherMs = 1000
     /// Whether the display's side glows, left or right, as the fingers push the strip on past that end.
     public var edgeFlash = true
-    /// Whether the trackpad taps once as the strip the fingers let go of rests, its column taking focus.
+    /// Whether the trackpad ticks, as the switchers' picks do, each time the column a let-go would settle on changes
+    /// under the fingers.
     public var haptic = true
 
     public init() {}

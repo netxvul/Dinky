@@ -1092,3 +1092,31 @@ struct PinMiniatureWideTests {
         #expect(mini.tiles.last?.id == 5, "the pin drawn over it")
     }
 }
+
+struct HeldTargetTests {
+    @Test func `While held, the column a let-go would settle on follows the fingers, none when not held`() {
+        var ws = strip(6)
+        ws.focus(1)
+        #expect(ws.heldTarget == nil)
+        do { let r = ws.beginFreeScroll(); #expect(r) }
+        #expect(ws.heldTarget == 1)
+        var seen: [WindowID] = []
+        for _ in 0..<12 {
+            ws.scrollFreely(by: 120)
+            if let t = ws.heldTarget, seen.last != t { seen.append(t) }
+        }
+        #expect(seen.count >= 3 && seen == seen.sorted(), "one column after the next, left to right")
+        ws.endFreeScroll()
+        #expect(ws.heldTarget == nil)
+    }
+
+    @Test func `Beside a pin it is always a band column`() throws {
+        var ws = try pinned(strip(6), 1, .left)
+        ws.focus(2)
+        do { let r = ws.beginFreeScroll(); #expect(r) }
+        for _ in 0..<20 {
+            ws.scrollFreely(by: -150)
+            #expect(ws.heldTarget != 1)
+        }
+    }
+}

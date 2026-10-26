@@ -68,6 +68,10 @@ extension Workspace {
         freeScrollFrom = nil
     }
 
+    /// While fingers hold the strip, the window a let-go now, with no momentum, would settle on: what the trackpad
+    /// ticks for as it changes. Nil while nothing holds it.
+    public var heldTarget: WindowID? { isScrollingFreely ? snappedWindow : nil }
+
     /// The window to focus as the fingers let go: of the column whose middle shows nearest the middle of the strip's
     /// area, the focused one on a tie, or at an end of the strip, the column there, which the middle cannot reach once
     /// it shows whole; of a column of several, the one most recently focused.

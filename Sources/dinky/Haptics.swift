@@ -5,7 +5,8 @@ import DinkyPrivate
 /// needs, so the trackpad's actuator directly, and the public performer only where that is missing. Logged with
 /// `why`, as `haptic: …`, so a tap felt can be told from the trackpad's own.
 func tapTrackpad(_ why: String) {
-    print("\(stamp()) haptic: \(why)")
+    let tapped = dinky_trackpad_tap(3)
+    if !tapped { NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now) }
+    print("\(stamp()) haptic: \(why)" + (tapped ? "" : ", no actuator: through NSHapticFeedbackManager"))
     fflush(stdout)
-    if !dinky_trackpad_tap(3) { NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now) }
 }
