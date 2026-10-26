@@ -315,14 +315,15 @@ final class Coordinator {
         for pin in raise {
             guard let pid = model.windows[pin]?.pid, pid != frontApp else { continue }
             raisedInBackground.insert(pin)
-            guard let used = lastUsed[pid], used != pin, !raise.contains(used), !restore.contains(used),
+            guard let used = lastUsed[pid], used != pin, !raise.contains(used), !fronts.contains(used), !restore.contains(used),
                   let key = placements[used]?.space, let workspace = workspaces[key], workspace.pinSide(of: used) == nil,
                   let frame = model.windows[used]?.frame,
                   !PinSide.allCases.contains(where: { workspace.pinFrame($0)?.intersects(frame) == true }) else { continue }
             restore.append(used)
         }
-        let ids = raise + fronts + restore
-        let pids = Dictionary(uniqueKeysWithValues: ids.compactMap { id in model.windows[id].map { (id, $0.pid) } })
+        var seen: Set<WindowID> = []
+        let ids = (raise + fronts + restore).filter { seen.insert($0).inserted }
+        let pids = Dictionary(ids.compactMap { id in model.windows[id].map { (id, $0.pid) } }) { first, _ in first }
         applier.raisePins(ids, pids: pids, front: focusedWindow)
     }
 
