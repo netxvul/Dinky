@@ -27,12 +27,16 @@ final class BorderManager {
     /// The focused window: the front app's frontmost, unless that is a pin Dock ordered in front of it; read afresh
     /// when told.
     private let front: (Bool) -> UInt32
+    /// Whether it reads focus again itself 20 ms after an app comes to the front or windows reorder; not where its owner
+    /// does that and calls `refocus` with the read.
+    private let rereads: Bool
 
     init(config: Borders, model: WindowModel, front: @escaping (Bool) -> UInt32 = { _ in dinky_border_focused_window() },
-         isAnimating: @escaping (UInt32) -> Bool) {
+         rereads: Bool = true, isAnimating: @escaping (UInt32) -> Bool) {
         self.config = config
         self.model = model
         self.front = front
+        self.rereads = rereads
         self.isAnimating = isAnimating
         refreshSpaces()
         // Focus borders off, only pins' rings are drawn, which focus does not change: it is not read at all.
@@ -80,13 +84,13 @@ final class BorderManager {
         case .frontApp:
             pending.refocus = true
             // The new app's front window can settle a few ms after the app (JankyBorders waits 20 ms).
-            if config.enabled {
+            if config.enabled, rereads {
                 DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(20)) { [weak self] in self?.refocus(fresh: true) }
             }
         case .windowReorder:
             pending.refocus = true
             // A click between one app's windows can report the previous one in front for a few ms.
-            if config.enabled {
+            if config.enabled, rereads {
                 DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(20)) { [weak self] in self?.refocus(fresh: true) }
             }
         case .windowUpdate, .windowCreate, .windowDestroy, .windowTitle:
@@ -163,7 +167,7 @@ final class BorderManager {
                       moveOnly: isAnimating(window.id))
     }
 
-    private func refocus(fresh: Bool = false) {
+    func refocus(fresh: Bool = false) {
         guard config.enabled else { return }
         let id = front(fresh)
         guard id != focusedID else { return }

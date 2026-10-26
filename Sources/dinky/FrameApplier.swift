@@ -205,17 +205,18 @@ final class FrameApplier {
     /// `done` runs on the main thread once they are, given the ones raised or ordered, none where that was refused:
     /// their rings are placed next to them again then.
     func raisePins(_ ids: [WindowID], pids: [WindowID: pid_t], front: WindowID?, frontPid: pid_t = 0,
-                   ordering: Bool = false, done: @escaping ([WindowID]) -> Void = { _ in }) {
+                   pinned: Set<WindowID> = [], ordering: Bool = false, done: @escaping ([WindowID]) -> Void = { _ in }) {
         raiseQueue.async {
             if ordering {
                 // Ordering moves no focus, but a pin of an app focused now, other than the one dinky has in front, could
                 // read as focused once in front of its window; and one hidden or minimized since it was judged covered
-                // would be ordered back in, its app none the wiser. So those are left out, the rest ordered. Apps are
-                // compared, not windows: a pin of the app in front, ordered already, reads in front itself.
+                // would be ordered back in, its app none the wiser. So those are left out, the rest ordered. Where what
+                // reads in front is itself a pin (`pinned`), as one of the app in front ordered already, only its app is
+                // compared; otherwise the window too, so one focused since the order was asked keeps its app's pins off.
                 // TODO: check SLSWindowIsOrderedIn in the payload's order too, at its next version.
                 let focused = dinky_border_focused_window()
                 let live = focused != 0 ? dinky_window_info(focused).pid : 0
-                let owner = live != frontPid ? live : 0
+                let owner = live != frontPid || (focused != front && !pinned.contains(focused)) ? live : 0
                 let shown = Set(onScreenOrder())
                 let ordered = ids.filter { shown.contains($0) && (owner == 0 || pids[$0] != owner) }
                 if !ordered.isEmpty { dinky_sa_order_batch(ordered, Int32(ordered.count)) }

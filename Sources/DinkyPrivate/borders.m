@@ -274,10 +274,10 @@ uint32_t dinky_border_focused_window(void)
 
         // The iterator yields windows in the input array's order, so the first match is the
         // frontmost. JankyBorders get_front_window relies on the same. A window floating above the normal
-        // level on every Space, as a picture in picture video does in front of every window of its app, is
-        // not the one its app has focused: the frontmost other is, and the floating one only when the app
-        // has no other. One floating on its own Space, as a player kept on top, and a modal panel, an alert
-        // or an Open or Save panel, are focused as they show.
+        // level and tagged sticky, shown on every Space, as a picture in picture video is, is read past: the
+        // frontmost other window of its app is the focused one, the floating one only when the app has no
+        // other. One floating on its own Space, as a player kept on top, and a modal panel, an alert or an
+        // Open or Save panel, are read as they show.
         uint32_t floating = 0;
         while (iterator && SLSWindowIteratorAdvance(iterator)) {
             uint32_t wid = SLSWindowIteratorGetWindowID(iterator);
@@ -287,12 +287,11 @@ uint32_t dinky_border_focused_window(void)
             if (dinky_is_document_kind(parent, tags) && dinky_is_visible(attributes, tags)) {
                 int64_t level = 0;
                 SLSGetWindowLevel(cid, wid, &level);
-                if (level > kCGNormalWindowLevel && level != kCGModalPanelWindowLevel) {
-                    NSArray *on = CFBridgingRelease(SLSCopySpacesForWindows(cid, 0x7, (__bridge CFArrayRef)@[@(wid)]));
-                    if (on.count > 1) {
-                        if (!floating) floating = wid;
-                        continue;
-                    }
+                // The sticky tag, set on a window shown on every Space however many a display has.
+                bool sticky = (tags >> 11) & 1;
+                if (level > kCGNormalWindowLevel && level != kCGModalPanelWindowLevel && sticky) {
+                    if (!floating) floating = wid;
+                    continue;
                 }
                 focused = wid;
                 break;

@@ -1263,6 +1263,12 @@ struct PinRaiseOrderTests {
         #expect(order == [10, 20])
     }
 
+    @Test func `A focused pin listed first among its app's pins still goes last of them`() {
+        #expect(pinRaiseOrder(ownPins: [20, 10], fronts: [], front: 20, keepsFront: true, otherPins: [], restore: []) == [10, 20])
+        #expect(pinRaiseOrder(ownPins: [20, 10], fronts: [5], front: 20, keepsFront: true, otherPins: [30], restore: [40])
+                == [10, 5, 20, 30, 40])
+    }
+
     @Test func `The focused band window goes after its app's pins, before other apps' pins and the windows put back`() {
         let order = pinRaiseOrder(ownPins: [10], fronts: [5, 7], front: 7, keepsFront: true, otherPins: [30], restore: [40])
         #expect(order == [10, 5, 7, 30, 40])

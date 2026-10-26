@@ -84,6 +84,12 @@ final class Coordinator {
     private var raisedInBackground: Set<WindowID> = []
     /// The last pin `frontWindow` read in front, the window its app had focused, and when.
     private var frontRead: (read: WindowID, focused: WindowID, at: CFTimeInterval)?
+    /// Watches the left button come up anywhere, for a click into a pin (see `start`).
+    private var clickMonitor: Any?
+    /// A fresh read of focus is waiting to run after window events.
+    private var focusReadPending = false
+    /// A pin its app said was its focused window, which `frontWindow` may then read straight while it stays focused.
+    private var confirmedPin: WindowID?
     /// Apps that did not answer `frontWindow` in time, till when they are not asked.
     private var frontBackoff: [pid_t: CFTimeInterval] = [:]
     /// Trees `moveTree` took to a display of another size or other gaps, whose pins are fitted once the move holds.
@@ -199,6 +205,18 @@ final class Coordinator {
     func start() {
         // The display focus is on, as dinky tracks focus, not as a pin Dock ordered in front would have it.
         displays.frontWindow = { [weak self] in self?.trackedFront() ?? dinky_border_focused_window() }
+        // A click into a pin of the app in front, ordered in front of its other windows, makes it key with no event to
+        // say so: once the click has landed, focus is read again where the pin is in front.
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(50)) { [weak self] in
+                guard let self else { return }
+                let shown = dinky_border_focused_window()
+                guard shown != lastFocused, let key = placements[shown]?.space, workspaces[key]?.pinSide(of: shown) != nil
+                else { return }
+                syncFocus(fresh: true)
+                flush()
+            }
+        }
         model.observe { [weak self] event in self?.handle(event) }
         // Frames held while an app was not answering are written as a pass of their own, which reports to no one:
         // lay its windows out again, so their landing, stacking and minimum sizes are taken in as after any pass.
@@ -270,6 +288,7 @@ final class Coordinator {
         if config.borders.enabled || config.borders.pinned {
             borders = borders ?? BorderManager(config: config.borders, model: model,
                                                front: { [unowned self] fresh in frontWindow(fresh: fresh) },
+                                               rereads: false,
                                                isAnimating: { [unowned self] id in animator.isAnimating(id) })
             borders?.update(config: config.borders)
         } else {
@@ -375,7 +394,9 @@ final class Coordinator {
             // In front of its own app's windows, a pin of an app in the background is the one that app comes to the
             // front on, as with Cmd-Tab: `syncFocus` takes it back to the window that app had.
             let background = raise.filter { pids[$0] != nil && pids[$0] != shownFront }
-            return applier.raisePins(raise, pids: pids, front: front, frontPid: frontApp ?? 0, ordering: true) { done in
+            let pinned = Set(keys.flatMap { workspaces[$0]?.pinnedWindows ?? [] })
+            return applier.raisePins(raise, pids: pids, front: front, frontPid: frontApp ?? 0, pinned: pinned,
+                                     ordering: true) { done in
                 report(done, background, ", through Dock")
             }
         }
@@ -429,14 +450,20 @@ final class Coordinator {
             if moved { noteSize(of: window.id) }
         }
         // An app come to the front or a new window: what it focuses is read afresh.
-        if [.frontApp, .windowCreate].contains(event.kind) { frontRead = nil }
+        if [.frontApp, .windowCreate].contains(event.kind) { forgetFrontRead() }
         if [.frontApp, .windowReorder, .windowCreate].contains(event.kind) { syncFocus() }
         if [.frontApp, .windowReorder].contains(event.kind) {
             // The front window settles a few ms after the event, as the border manager also knows: Cmd-` or a click
             // between one app's windows can report the previous window still in front.
-            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(20)) { [weak self] in
-                self?.syncFocus(fresh: true)
-                self?.flush()
+            // One read at a time, which the borders take too, rather than one each and one per event.
+            if !focusReadPending {
+                focusReadPending = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(20)) { [weak self] in
+                    self?.focusReadPending = false
+                    self?.syncFocus(fresh: true)
+                    self?.borders?.refocus()
+                    self?.flush()
+                }
             }
         }
         if [.frontApp, .windowReorder, .windowCreate].contains(event.kind) {
@@ -726,7 +753,7 @@ final class Coordinator {
     }
 
     private func forget(_ id: WindowID) {
-        if frontRead.map({ $0.read == id || $0.focused == id }) == true { frontRead = nil }
+        if frontRead.map({ $0.read == id || $0.focused == id }) == true || confirmedPin == id { forgetFrontRead() }
         unpinnedByHand.remove(id)
         raisedInBackground.remove(id)
         lastUsed = lastUsed.filter { $0.value != id }
@@ -766,31 +793,53 @@ final class Coordinator {
     func frontWindow(fresh: Bool = false) -> WindowID {
         let id = dinky_border_focused_window()
         guard ScriptingAddition.orders, let window = model.windows[id], let key = placements[id]?.space,
-              workspaces[key]?.pinSide(of: id) != nil, !(id == lastFocused && focusing == nil) else { return id }
+              workspaces[key]?.pinSide(of: id) != nil, !(id == confirmedPin && id == lastFocused && focusing == nil)
+        else { return id }
         let pid = window.pid
         // Another window of its app it may be in front of: tiled or floating, shown on a Space that shows.
-        guard model.windows.values.contains(where: {
-            $0.pid == pid && $0.id != id && $0.isVisible && !$0.isMinimized && isVisible($0.spaceID)
-        }) else { return id }
+        let shown = { [self] (other: WindowID) -> Bool in
+            guard let w = model.windows[other] else { return false }
+            return w.pid == pid && w.isVisible && !w.isMinimized && isVisible(w.spaceID)
+        }
+        guard model.windows.keys.contains(where: { $0 != id && shown($0) }) else { return id }
         let now = CACurrentMediaTime()
         let sinceDown = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .leftMouseDown)
         if !fresh, let cached = frontRead, cached.read == id, now - cached.at < min(0.2, sinceDown),
            model.windows[cached.focused] != nil { return cached.focused }
-        let known = model.windows[lastFocused]?.pid == pid ? lastFocused : id
-        guard !applier.isBusy(pid), (frontBackoff[pid] ?? 0) <= now else { return known }
+        // Not asked, or no use: the window of its app dinky is focusing, or the one it had last, if one shows and is
+        // no pin; the pin read only failing those. Never taken for confirmed.
+        let fallback = { [self] () -> WindowID in
+            confirmedPin = nil
+            let pinned = { (other: WindowID) in
+                self.placements[other]?.space.flatMap { self.workspaces[$0]?.pinSide(of: other) } != nil
+            }
+            return [focusing?.id, lastUsed[pid], lastFocused].compactMap { $0 }.first { shown($0) && !pinned($0) } ?? id
+        }
+        guard !applier.isBusy(pid), (frontBackoff[pid] ?? 0) <= now else { return fallback() }
         let real = focusedWindowID(of: pid, timeout: 0.1)
         let after = CACurrentMediaTime()
         let focused: WindowID
         if real == 0 || after - now > 0.1 {
             frontBackoff[pid] = after + 2
-            focused = known
-        } else if let shown = model.windows[real], isVisible(shown.spaceID) {
+            focused = fallback()
+        } else if real == id {
+            // The pin is what its app has focused: it may be read straight from now on, till focus moves.
+            confirmedPin = id
+            focused = id
+        } else if let answer = model.windows[real], isVisible(answer.spaceID) {
+            confirmedPin = nil
             focused = real
         } else {
-            focused = id
+            focused = fallback()
         }
         frontRead = (id, focused, after)
         return focused
+    }
+
+    /// Forgets what `frontWindow` last read: the window behind a pin, and a pin it was told is focused.
+    private func forgetFrontRead() {
+        frontRead = nil
+        confirmedPin = nil
     }
 
     /// The front app's frontmost window as `frontWindow` has it, asking no app: a pin read in front of the window dinky
@@ -819,7 +868,7 @@ final class Coordinator {
         if let space = placements[id]?.space { telemetry.command(space, "dinky focused \(id) \(window.appName ?? "?")") }
         // A pin focused on purpose is the user's choice, not one raised in the background.
         raisedInBackground.remove(id)
-        frontRead = nil
+        forgetFrontRead()
         // A band window whose glide in crosses a pin is activated once it rests in the band, as a clicked peek is:
         // activated now, its app would bring it up over the pin as it slides across. Not one already where it goes,
         // which has no glide, though it meets a pin there, as a window fullscreen over the strip does.
@@ -841,13 +890,13 @@ final class Coordinator {
     /// Activates `id`'s app on it, now: `focus` without waiting for a glide.
     private func activate(_ id: WindowID) {
         guard let window = model.windows[id] else { return }
-        frontRead = nil
+        forgetFrontRead()
         // Until the app is activated, which waits on Accessibility calls into it off the main thread (at most about
         // two seconds), and for half a second after.
         focusing = (id, Date() + 3)
         focusWindow(pid: window.pid, id: id) { [weak self] activated in
             guard let self, focusing?.id == id else { return }
-            frontRead = nil
+            forgetFrontRead()
             if activated {
                 focusing = (id, Date() + 0.5)
                 // Activated, its app brought it to the front: over a pin, as one wider than the band hangs, the pin goes
@@ -1014,14 +1063,6 @@ final class Coordinator {
             // (Drag.swift): it is measured against the windows where they are.
             if dragging == nil { revealClickedFocus() }
             flush()
-            // A click into a pin of the app in front may make it key with no event to say so: read it again.
-            let shown = dinky_border_focused_window()
-            if let key = placements[shown]?.space, workspaces[key]?.pinSide(of: shown) != nil {
-                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(50)) { [weak self] in
-                    self?.syncFocus(fresh: true)
-                    self?.flush()
-                }
-            }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { check() }
     }
