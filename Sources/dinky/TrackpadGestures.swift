@@ -68,6 +68,8 @@ final class TrackpadGestures {
         var distance: CGFloat = 15
         var step: CGFloat = 12
         var swipes: [GestureSwipe: [String]] = [:]
+        /// The trackpad's tap as a bound swipe runs, nil for none.
+        var tap: Int32? = nil
         /// How many fingers scroll the strip; nil while `[gestures.scroll]` is off, and on a mouse.
         var scrollFingers: Int? = nil
 
@@ -94,6 +96,7 @@ final class TrackpadGestures {
     func update(config: Gestures, enabled: Bool) {
         let trackpad = Settings(fingers: config.trackpad.fingers, distance: config.trackpad.distance,
                                 step: config.trackpad.step, swipes: config.trackpadSwipes,
+                                tap: config.trackpad.haptic ? config.trackpad.hapticStrength.actuation : nil,
                                 scrollFingers: config.scroll.enabled ? config.scroll.fingers : nil)
         let mouse = Settings(fingers: config.mouse.fingers, distance: config.mouse.distance, step: config.mouse.step,
                              swipes: config.mouseSwipes)
@@ -267,10 +270,8 @@ final class TrackpadGestures {
             case .run(let commands):
                 guard AppState.shared.enabled else { return }
                 // A mouse has nothing to tick; the trackpad would, under the other hand.
-                if !mouse {
-                    print("\(stamp()) haptic: trackpad swipe ran \(commands.joined(separator: ", "))")
-                    fflush(stdout)
-                    _ = dinky_trackpad_tap(4)
+                if !mouse, let tap = self.lock.withLock({ self.trackpad.tap }) {
+                    tapTrackpad("trackpad swipe ran \(commands.joined(separator: ", "))", actuation: tap)
                 }
                 ModifierHold.gesturing = true
                 ModifierHold.fingersOnMouse = mouse

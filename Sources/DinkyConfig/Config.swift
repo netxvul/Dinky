@@ -32,6 +32,11 @@ public struct Config: Equatable {
     /// What every highlight a table leaves unset takes: the switchers' pick, the focused window's border, the noop glow
     /// and a drag's preview. Nil leaves each its own default.
     public var highlightColor: Highlight?
+    /// Whether the trackpad taps for dinky, and how strongly: what every table that leaves its own unset takes, a
+    /// strip's ticks (`[gestures.scroll]`), a bound swipe's tap (`[gestures.trackpad]`) and the switchers' picks
+    /// (`[switcher]`).
+    public var haptic = true
+    public var hapticStrength = HapticStrength.medium
     public var accordion = Accordion()
     public var scrolling = Scrolling()
     public var floating = Floating()
@@ -129,6 +134,8 @@ public struct Config: Equatable {
         hideMenuBarIcon = try t.choice("hide-menu-bar-icon") ?? hideMenuBarIcon
         scriptingAddition = try t.bool("scripting-addition") ?? scriptingAddition
         highlightColor = try t.highlight("highlight-color") ?? highlightColor
+        haptic = try t.bool("haptic") ?? haptic
+        hapticStrength = try t.choice("haptic-strength") ?? hapticStrength
         accordion = try t.table("accordion").map(Accordion.init) ?? accordion
         scrolling = try t.table("scrolling").map(Scrolling.init) ?? scrolling
         floating = try t.table("floating").map(Floating.init) ?? floating
@@ -148,6 +155,8 @@ public struct Config: Equatable {
         switcher = try t.table("switcher").map(SwitcherDefaults.init) ?? switcher
         var shared = switcher
         shared.highlightColor = shared.highlightColor ?? highlightColor
+        shared.haptic = shared.haptic ?? haptic
+        shared.hapticStrength = shared.hapticStrength ?? hapticStrength
         windowSwitcher = try Switcher(t.table("window-switcher"), defaults: shared)
         workspaceSwitcher = try WorkspaceSwitcher(t.table("workspace-switcher"), defaults: shared)
         modifiers = try t.table("modifiers").map(ModifierSides.init) ?? modifiers
@@ -164,6 +173,11 @@ public struct Config: Equatable {
             throw ConfigError(path: "drag.mouse-modifier", "[\(table)] already uses '\(modifier.rawValue)'")
         }
         gestures = try t.table("gestures").map(Gestures.init) ?? gestures
+        // Each haptic left unset takes the top-level one.
+        gestures.scroll.haptic = gestures.scroll.ownHaptic ?? haptic
+        gestures.scroll.hapticStrength = gestures.scroll.ownHapticStrength ?? hapticStrength
+        gestures.trackpad.haptic = gestures.trackpad.ownHaptic ?? haptic
+        gestures.trackpad.hapticStrength = gestures.trackpad.ownHapticStrength ?? hapticStrength
         hooks = try t.table("hooks").map(Hooks.init) ?? hooks
         rules = try t.tables("rules")?.map(WindowRule.init) ?? []
         if let modeTable = try t.table("mode") {
@@ -339,6 +353,10 @@ public struct SwitcherDefaults: Equatable {
     public var letters = SwitcherDefaults.defaultLetters
     /// The pick's ring and glow; nil takes the top-level `highlight-color`.
     public var highlightColor: Highlight?
+    /// Whether the trackpad taps as the pick moves, and how strongly; nil takes the top-level `haptic` and
+    /// `haptic-strength`.
+    public var haptic: Bool?
+    public var hapticStrength: HapticStrength?
 
     /// The home row first, then the rows above and below.
     public static let defaultLetters = Array("asdfgqwertyuiopzxcvbnm")
@@ -382,6 +400,8 @@ public struct SwitcherDefaults: Equatable {
             self.letters = letters
         }
         highlightColor = try t.highlight("highlight-color") ?? highlightColor
+        haptic = try t.bool("haptic") ?? haptic
+        hapticStrength = try t.choice("haptic-strength") ?? hapticStrength
     }
 }
 
@@ -411,6 +431,9 @@ public struct Switcher: Equatable {
     public var position = SwitcherPosition.auto
     /// The pick's ring and glow.
     public var highlightColor = Highlight.accent
+    /// Whether the trackpad taps as the pick moves, and how strongly.
+    public var haptic = true
+    public var hapticStrength = HapticStrength.medium
 
     public init() {}
 
@@ -427,6 +450,8 @@ public struct Switcher: Equatable {
         letterKeys = shared.letterKeys
         letters = shared.letters
         highlightColor = shared.highlightColor ?? .accent
+        haptic = shared.haptic ?? true
+        hapticStrength = shared.hapticStrength ?? .medium
         guard let t else { return }
         modifier = try t.choice("modifier") ?? modifier
         if let names = try t.strings("layouts") {
@@ -497,18 +522,25 @@ public struct TrackpadSwipes: Equatable {
     /// Millimetres the fingers move for each step of a switcher's pick.
     public var step = 12.0
     public var swipes: [GestureSwipe: [String]] = [:]
+    /// Whether the trackpad taps as a bound swipe runs, and how strongly: its own, else the top-level ones.
+    public var haptic = true
+    public var hapticStrength = HapticStrength.medium
+    var ownHaptic: Bool?
+    var ownHapticStrength: HapticStrength?
 
     public init() {}
 
     init(_ t: Table) throws {
         enabled = try t.bool("enabled") ?? enabled
+        ownHaptic = try t.bool("haptic")
+        ownHapticStrength = try t.choice("haptic-strength")
         fingers = try t.int("fingers") ?? fingers
         guard (2...5).contains(fingers) else { throw ConfigError(path: t.path("fingers"), "must be 2 to 5") }
         distance = try t.double("distance") ?? distance
         guard (6...40).contains(distance) else { throw ConfigError(path: t.path("distance"), "must be 6 to 40") }
         step = try t.double("step") ?? step
         guard (4...50).contains(step) else { throw ConfigError(path: t.path("step"), "must be 4 to 50") }
-        swipes = try gestureSwipes(t, besides: ["enabled", "fingers", "distance", "step"])
+        swipes = try gestureSwipes(t, besides: ["enabled", "fingers", "distance", "step", "haptic", "haptic-strength"])
         try t.done()
     }
 }
@@ -544,10 +576,6 @@ public struct MouseSwipes: Equatable {
     }
 }
 
-/// `[gestures.scroll]`: `fingers` fingers moved across the trackpad scroll a strip with them, as SlideScroll's do: let
-/// go, it coasts on at their speed and settles with the column nearest the middle in view, and once it rests the
-/// window switcher shows it for `switcher-ms`, that column's window picked, unless not `show-switcher`. Pushed on past
-/// an end, the display's side there glows, unless not `edge-flash`. Off until `enabled`. Never on a mouse.
 /// How strongly the trackpad taps.
 public enum HapticStrength: String, CaseIterable, Equatable, Sendable {
     case light, medium, strong
@@ -562,6 +590,11 @@ public enum HapticStrength: String, CaseIterable, Equatable, Sendable {
     }
 }
 
+/// `[gestures.scroll]`: `fingers` fingers moved across the trackpad scroll a strip with them, as SlideScroll's do: let
+/// go, it coasts on at their speed and settles with the column nearest the middle in view, and once it rests the
+/// window switcher shows it for `switcher-ms`, that column's window picked, unless not `show-switcher`. Pushed on past
+/// an end, the display's side there glows, unless not `edge-flash`. Off until `enabled`. Never on a mouse.
+
 public struct ScrollGesture: Equatable {
     public var enabled = false
     /// How many fingers scroll, 3 to 5.
@@ -574,10 +607,11 @@ public struct ScrollGesture: Equatable {
     /// Whether the display's side glows, left or right, as the fingers push the strip on past that end.
     public var edgeFlash = true
     /// Whether the trackpad ticks, as the switchers' picks do, each time the column a let-go would settle on changes
-    /// under the fingers.
+    /// under the fingers, and how strongly: its own, else the top-level ones.
     public var haptic = true
-    /// How strongly: the trackpad's actuation, 3 light, 4 medium as a bound swipe's tap, 6 strong.
     public var hapticStrength = HapticStrength.medium
+    var ownHaptic: Bool?
+    var ownHapticStrength: HapticStrength?
 
     public init() {}
 
@@ -589,8 +623,8 @@ public struct ScrollGesture: Equatable {
         guard (0.25...5).contains(speed) else { throw ConfigError(path: t.path("speed"), "must be 0.25 to 5") }
         showSwitcher = try t.bool("show-switcher") ?? showSwitcher
         edgeFlash = try t.bool("edge-flash") ?? edgeFlash
-        haptic = try t.bool("haptic") ?? haptic
-        hapticStrength = try t.choice("haptic-strength") ?? hapticStrength
+        ownHaptic = try t.bool("haptic")
+        ownHapticStrength = try t.choice("haptic-strength")
         switcherMs = try t.int("switcher-ms") ?? switcherMs
         guard (100...5000).contains(switcherMs) else {
             throw ConfigError(path: t.path("switcher-ms"), "must be 100 to 5000")
@@ -682,6 +716,9 @@ public struct WorkspaceSwitcher: Equatable {
     public var letters = SwitcherDefaults.defaultLetters
     /// The pick's ring and glow, and a schematic card's windows once picked.
     public var highlightColor = Highlight.accent
+    /// Whether the trackpad taps as the pick moves, and how strongly.
+    public var haptic = true
+    public var hapticStrength = HapticStrength.medium
 
     public init() {}
 
@@ -698,6 +735,8 @@ public struct WorkspaceSwitcher: Equatable {
         letterKeys = shared.letterKeys
         letters = shared.letters
         highlightColor = shared.highlightColor ?? .accent
+        haptic = shared.haptic ?? true
+        hapticStrength = shared.hapticStrength ?? .medium
         guard let t else { return }
         modifier = try t.choice("modifier") ?? modifier
         displays = try t.choice("displays") ?? displays

@@ -612,6 +612,36 @@ struct ConfigTests {
         assertError("[borders]\npinned-color = 'pink'\n", path: "borders.pinned-color", line: 2, contains: "'pink' is not a colour")
     }
 
+    @Test func `Haptics: one global setting, each table's own winning`() throws {
+        let defaults = try Config.parse("")
+        #expect(defaults.haptic && defaults.hapticStrength == .medium)
+        for (on, strength) in [(defaults.gestures.scroll.haptic, defaults.gestures.scroll.hapticStrength),
+                               (defaults.gestures.trackpad.haptic, defaults.gestures.trackpad.hapticStrength),
+                               (defaults.windowSwitcher.haptic, defaults.windowSwitcher.hapticStrength),
+                               (defaults.workspaceSwitcher.haptic, defaults.workspaceSwitcher.hapticStrength)] {
+            #expect(on && strength == .medium, "medium everywhere with nothing set")
+        }
+        let global = try Config.parse("""
+            haptic-strength = 'strong'
+            [gestures.trackpad]
+            haptic = false
+            [switcher]
+            haptic-strength = 'light'
+            [workspace-switcher]
+            haptic-strength = 'medium'
+            """)
+        #expect(global.gestures.scroll.haptic && global.gestures.scroll.hapticStrength == .strong, "inherits")
+        #expect(!global.gestures.trackpad.haptic && global.gestures.trackpad.hapticStrength == .strong)
+        #expect(global.windowSwitcher.hapticStrength == .light, "[switcher]'s own")
+        #expect(global.workspaceSwitcher.hapticStrength == .medium, "its own table's, over [switcher]'s")
+        let off = try Config.parse("haptic = false\n[gestures.scroll]\nhaptic = true\n")
+        #expect(off.gestures.scroll.haptic && !off.gestures.trackpad.haptic && !off.windowSwitcher.haptic)
+        assertError("haptic-strength = 'loud'\n", path: "haptic-strength", line: 1, contains: "'light'")
+        assertError("haptic = 1\n", path: "haptic", line: 1, contains: "true or false")
+        assertError("[gestures.trackpad]\nhaptic-strength = 'max'\n", path: "gestures.trackpad.haptic-strength", line: 2, contains: "'medium'")
+        assertError("[switcher]\nhaptic-strength = 'max'\n", path: "switcher.haptic-strength", line: 2, contains: "'strong'")
+    }
+
     @Test func `Binding values`() throws {
         let config = try Config.parse("""
         [mode.main]

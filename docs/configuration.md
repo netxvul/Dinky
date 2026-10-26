@@ -33,6 +33,8 @@ permalink: /configuration/
 | `hide-menu-bar-icon` | `'never'` | When to hide dinky's menu bar item. `'single-display'` hides it while only one display is connected and shows it again once a second one is. `'always'` hides it, as `menu-bar-icon = 'none'` does. `'never'` leaves it to `menu-bar-icon`. Hidden, the `dinky` CLI and key bindings still work. |
 | `scripting-addition` | `true` | Whether dinky may use its Dock scripting addition, which needs SIP off. Where it is injected (see [Scripting addition](scripting-addition.md)), a scrolling strip scrolls through it, its windows sliding past the screen edges; without it the strip moves its windows frame by frame. `false` never touches it, even with SIP off and the addition installed: dinky neither checks for it nor injects it, and the strip moves its windows frame by frame. Takes effect on reload. |
 | `highlight-color` | unset | One highlight colour for everything that has one: `'#rrggbb'`, `'#rrggbbaa'`, or `'accent'` for the accent colour in System Settings. Each highlight a table leaves unset takes it: the pick in both switchers ([`[switcher]`](#switcher)), the focused window's border ([`[borders]`](#borders) `active-color`), the glow of a binding that does nothing ([`[borders]`](#borders) `noop-flash-color`), the ring of pinned windows ([`[borders]`](#borders) `pinned-color`) and a drag's preview ([`[drag]`](#drag) `preview-border-color`). A table's own colour always wins, and its `'accent'` keeps the accent colour there. Unset, each keeps its own default. Like every top-level key, it goes above the first `[table]`. |
+| `haptic` | `true` | Whether the trackpad taps for dinky, as macOS's own taps feel. Each haptic a table leaves unset takes it: the strip's ticks as columns pass under the fingers ([`[gestures.scroll]`](#gesturesscroll)), the tap as a bound swipe runs ([`[gestures.trackpad]`](#gesturestrackpad)) and the switchers' picks ([`[switcher]`](#switcher)). A table's own always wins. |
+| `haptic-strength` | `'medium'` | How strongly: `'light'`, `'medium'` or `'strong'`. Each `haptic-strength` a table leaves unset takes it. A light tap is barely felt under moving fingers on a built-in trackpad. |
 
 </div>
 
@@ -398,6 +400,8 @@ alone and wins over this one, wherever the tables are in the file.
 | `letter-keys` | `true` | Whether each window gets a letter, drawn as a key at its title's right (alone where its title would be with `show-titles = false`). Pressing that letter while the capsule is up jumps to the window at once: the window switcher focuses it; the workspace switcher switches to its workspace and focuses it there. The letter works held, double-tapped or from a binding, whatever modifiers are down, and is not passed on to the app. In the workspace switcher only windows in front and big enough for a key get one, and schematic cards none. |
 | `letters` | `'asdfgqwertyuiopzxcvbnm'` | The letters handed out, in order, to the windows as they read: left to right, a column top to bottom; in the workspace switcher card by card. Lowercase `a` to `z`, each once, without `h`, `j`, `k` and `l`, which move the pick. Windows past the last letter get none. Letters go by their place on a US keyboard, as key bindings do. |
 | `highlight-color` | [`highlight-color`](#top-level), else `'accent'` | The ring around the pick and a faint glow of it under the pick, `'#rrggbb'`, `'#rrggbbaa'` or `'accent'`. On the workspace switcher with `thumbnails = 'schematic'`, the picked card's windows too. |
+| `haptic` | [`haptic`](#top-level) | Whether the trackpad taps as the pick moves, by the fingers or the pointer. |
+| `haptic-strength` | [`haptic-strength`](#top-level) | How strongly: `'light'`, `'medium'` or `'strong'`. |
 
 </div>
 
@@ -600,6 +604,8 @@ work alike.
 | `fingers` | `3` | How many fingers swipe, `2` to `5`. |
 | `distance` | `15` | Millimetres the fingers move before it is a swipe, `6` to `40`. |
 | `step` | `12` | Millimetres the fingers move for each step of a switcher's pick, `4` to `50`. |
+| `haptic` | [`haptic`](#top-level) | Whether the trackpad taps as a bound swipe runs. |
+| `haptic-strength` | [`haptic-strength`](#top-level) | How strongly: `'light'`, `'medium'` or `'strong'`. |
 | `swipe-left`, `swipe-right`, `swipe-up`, `swipe-down` | | The command or commands the swipe runs. |
 
 </div>
@@ -700,8 +706,8 @@ off.
 | `show-switcher` | `true` | `false` keeps the window switcher from showing the strip once it rests after the fingers let go. |
 | `switcher-ms` | `1000` | How long it shows, the window taking focus picked, `100` to `5000`. |
 | `edge-flash` | `true` | `false` keeps the display's side from glowing as the fingers push the strip on past that end. |
-| `haptic` | `true` | The trackpad ticks, as the switchers' picks do, each time the column a let-go would settle on changes under the fingers: the next comes to the middle, or an end of the strip shows. Felt only while the fingers touch the trackpad, so only as they move it, one tick in 55 ms at most. `false` keeps it still. |
-| `haptic-strength` | `'medium'` | How strongly it ticks: `'light'`, as the switchers' picks, which a built-in trackpad can barely give under moving fingers; `'medium'`, as a bound swipe's tap; or `'strong'`. |
+| `haptic` | [`haptic`](#top-level) | The trackpad ticks each time the column a let-go would settle on changes under the fingers: the next comes to the middle, or an end of the strip shows. Felt only while the fingers touch the trackpad, so only as they move it, one tick in 55 ms at most. `false` keeps it still. |
+| `haptic-strength` | [`haptic-strength`](#top-level) | How strongly: `'light'`, `'medium'` or `'strong'`. |
 
 </div>
 
@@ -880,6 +886,8 @@ hide-menu-bar-icon = 'never'    # never | always (as menu-bar-icon = 'none') | s
 scripting-addition = true       # scroll strips through the Dock scripting addition where it is injected (SIP off);
                                 # without it, or false, their windows move frame by frame
 # highlight-color = '#7aa2f7'  # what every highlight left unset takes: the switchers' pick, the focused border, the noop glow, a drag's preview
+haptic = true                   # the trackpad taps for dinky; what every haptic left unset takes
+haptic-strength = 'medium'      # light | medium | strong; what every haptic-strength left unset takes
 
 # Example: only tile workspace 2 in a fixed 2x3 template.
 # Empty cells stay empty; a seventh window adds a column by default.
@@ -980,6 +988,8 @@ show-titles = true              # window titles: under each card in the window s
 letter-keys = true              # a letter key beside each title; press the letter to jump to that window
 letters = 'asdfgqwertyuiopzxcvbnm'  # handed out left to right; a to z, each once, not h, j, k, l
 # highlight-color = 'accent'    # the pick's ring and glow; unset is highlight-color, else the accent colour
+# haptic = true                # the trackpad taps as the pick moves; unset is the top-level haptic
+# haptic-strength = 'medium'   # unset is the top-level haptic-strength
 
 # Hold the modifier alone for a glass capsule of the workspace's windows at the pointer; move across to pick
 # one, release to focus it.
@@ -1007,6 +1017,8 @@ thumbnails = 'windows'          # windows (pictures, need Screen Recording) | ic
 # fingers = 3                   # 2 to 5
 # distance = 15                 # millimetres before it is a swipe, 6 to 40
 # step = 12                     # millimetres per step, 4 to 50
+# haptic = true                 # the trackpad taps as a swipe runs; unset is the top-level haptic
+# haptic-strength = 'medium'    # unset is the top-level haptic-strength
 # swipe-right = 'window-switcher'   # also swipe-left, swipe-up, swipe-down
 # swipe-left = 'workspace-switcher'
 # [gestures.mouse]              # the same on a Magic Mouse, off by default
@@ -1022,8 +1034,8 @@ thumbnails = 'windows'          # windows (pictures, need Screen Recording) | ic
 # show-switcher = true          # the window switcher shows the strip once it rests
 # switcher-ms = 1000            # for this long, 100 to 5000
 # edge-flash = true             # pushed on past an end, the display's side there glows
-# haptic = true                 # the trackpad ticks as each column comes to the middle under the fingers
-# haptic-strength = 'medium'     # light | medium (as a bound swipe's tap) | strong
+# haptic = true                 # the trackpad ticks as each column comes to the middle; unset is the top-level haptic
+# haptic-strength = 'medium'     # unset is the top-level haptic-strength
 
 # Which key of each pair bindings answer to: both | left | right. With alt = 'left',
 # right Option still types special characters.

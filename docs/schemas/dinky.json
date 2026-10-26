@@ -84,6 +84,8 @@
       "$ref": "#/definitions/highlight",
       "description": "What every highlight left unset takes: the switchers' pick, the focused window's border, the noop glow and a drag's preview. Unset, each keeps its own default."
     },
+    "haptic": { "type": "boolean", "default": true, "description": "Whether the trackpad taps for dinky: what every haptic left unset takes, the strip's ticks ([gestures.scroll]), a bound swipe's tap ([gestures.trackpad]) and the switchers' picks ([switcher])." },
+    "haptic-strength": { "$ref": "#/definitions/hapticStrength", "description": "How strongly: what every haptic-strength left unset takes." },
     "scrolling": {
       "type": "object",
       "additionalProperties": false,
@@ -350,7 +352,9 @@
         "highlight-color": {
           "$ref": "#/definitions/highlight",
           "description": "The pick's ring and the glow under it. Unset, the top-level highlight-color, or the system accent colour without one."
-        }
+        },
+        "haptic": { "type": "boolean", "description": "Whether the trackpad taps as the pick moves. Unset, the top-level haptic." },
+        "haptic-strength": { "$ref": "#/definitions/hapticStrength", "description": "How strongly. Unset, the top-level haptic-strength." }
       }
     },
     "window-switcher": {
@@ -429,7 +433,9 @@
         "highlight-color": {
           "$ref": "#/definitions/highlight",
           "description": "The pick's ring and the glow under it; [switcher]'s when left out."
-        }
+        },
+        "haptic": { "type": "boolean", "description": "Whether the trackpad taps as the pick moves; [switcher]'s when left out." },
+        "haptic-strength": { "$ref": "#/definitions/hapticStrength", "description": "How strongly; [switcher]'s when left out." }
       }
     },
     "workspace-switcher": {
@@ -517,7 +523,9 @@
         "highlight-color": {
           "$ref": "#/definitions/highlight",
           "description": "The pick's ring, the glow under it and, with schematic thumbnails, the picked card's windows; [switcher]'s when left out."
-        }
+        },
+        "haptic": { "type": "boolean", "description": "Whether the trackpad taps as the pick moves; [switcher]'s when left out." },
+        "haptic-strength": { "$ref": "#/definitions/hapticStrength", "description": "How strongly; [switcher]'s when left out." }
       }
     },
     "hud": {
@@ -549,6 +557,8 @@
             "fingers": { "type": "integer", "minimum": 2, "maximum": 5, "default": 3, "description": "How many fingers swipe. 2 also scrolls." },
             "distance": { "type": "number", "minimum": 6, "maximum": 40, "default": 15, "description": "Millimetres the fingers move, mostly one way, before it is a swipe." },
             "step": { "type": "number", "minimum": 4, "maximum": 50, "default": 12, "description": "Millimetres the fingers move for each step of a switcher's pick." },
+            "haptic": { "type": "boolean", "description": "Whether the trackpad taps as a bound swipe runs. Unset, the top-level haptic." },
+            "haptic-strength": { "$ref": "#/definitions/hapticStrength", "description": "How strongly. Unset, the top-level haptic-strength." },
             "swipe-left": { "$ref": "#/definitions/commands" },
             "swipe-right": { "$ref": "#/definitions/commands" },
             "swipe-up": { "$ref": "#/definitions/commands" },
@@ -581,8 +591,8 @@
             "show-switcher": { "type": "boolean", "default": true, "description": "Whether the window switcher shows the strip once it rests after the fingers let go, the window taking focus picked." },
             "switcher-ms": { "type": "integer", "minimum": 100, "maximum": 5000, "default": 1000, "description": "Milliseconds the window switcher shows the strip with show-switcher." },
             "edge-flash": { "type": "boolean", "default": true, "description": "Whether the display glows along its left or right side as the fingers push the strip on past that end, in the noop flash's look." },
-            "haptic": { "type": "boolean", "default": true, "description": "Whether the trackpad ticks, as the switchers' picks do, each time the column a let-go would settle on changes under the fingers." },
-            "haptic-strength": { "enum": ["light", "medium", "strong"], "default": "medium", "description": "How strongly the trackpad ticks as columns pass: light as the switchers' picks, medium as a bound swipe's tap, or strong." }
+            "haptic": { "type": "boolean", "description": "Whether the trackpad ticks each time the column a let-go would settle on changes under the fingers. Unset, the top-level haptic." },
+            "haptic-strength": { "$ref": "#/definitions/hapticStrength", "description": "How strongly. Unset, the top-level haptic-strength." }
           }
         }
       }
@@ -673,6 +683,7 @@
     }
   },
   "definitions": {
+    "hapticStrength": { "enum": ["light", "medium", "strong"], "default": "medium", "description": "light, medium (as macOS's own taps) or strong." },
     "ruleLayout": { "type": "string", "enum": ["scrolling", "tiles", "dwindle", "accordion", "fixed", "free", "floating"] },
     "gaps": {
       "type": "object",

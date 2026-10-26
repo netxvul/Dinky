@@ -140,6 +140,8 @@ struct SchemaTests {
         hide-menu-bar-icon = 'always'
         scripting-addition = false
         highlight-color = '#59168b'
+        haptic = true
+        haptic-strength = 'medium'
 
         [workspace-to-display]
         1 = 'main'
@@ -171,10 +173,14 @@ struct SchemaTests {
         letter-keys = true
         letters = 'asdfg'
         highlight-color = 'accent'
+        haptic = true
+        haptic-strength = 'light'
 
         [window-switcher]
         enabled = true
         highlight-color = '#ff000080'
+        haptic = false
+        haptic-strength = 'strong'
         modifier = 'alt'
         delay-ms = 200
         trigger = 'hold'
@@ -191,6 +197,8 @@ struct SchemaTests {
         [workspace-switcher]
         enabled = false
         highlight-color = '#00ff00'
+        haptic = true
+        haptic-strength = 'medium'
         modifier = 'ctrl'
         delay-ms = 250
         trigger = 'double-tap'
@@ -211,6 +219,8 @@ struct SchemaTests {
         fingers = 4
         distance = 18
         step = 15
+        haptic = true
+        haptic-strength = 'strong'
         swipe-left = 'workspace-switcher'
         swipe-right = ['window-switcher']
         swipe-up = 'focus up'

@@ -19,6 +19,8 @@ extension Config {
     scripting-addition = true       # scroll strips through the Dock scripting addition where it is injected (SIP off);
                                     # without it, or false, their windows move frame by frame
     # highlight-color = '#7aa2f7'  # what every highlight left unset takes: the switchers' pick, the focused border, the noop glow, a drag's preview
+    haptic = true                   # the trackpad taps for dinky; what every haptic left unset takes
+    haptic-strength = 'medium'      # light | medium | strong; what every haptic-strength left unset takes
 
     # Example: only tile workspace 2 in a fixed 2x3 template.
     # Empty cells stay empty; a seventh window adds a column by default.
@@ -119,6 +121,8 @@ extension Config {
     letter-keys = true              # a letter key beside each title; press the letter to jump to that window
     letters = 'asdfgqwertyuiopzxcvbnm'  # handed out left to right; a to z, each once, not h, j, k, l
     # highlight-color = 'accent'    # the pick's ring and glow; unset is highlight-color, else the accent colour
+    # haptic = true                # the trackpad taps as the pick moves; unset is the top-level haptic
+    # haptic-strength = 'medium'   # unset is the top-level haptic-strength
 
     # Hold the modifier alone for a glass capsule of the workspace's windows at the pointer; move across to pick
     # one, release to focus it.
@@ -146,6 +150,8 @@ extension Config {
     # fingers = 3                   # 2 to 5
     # distance = 15                 # millimetres before it is a swipe, 6 to 40
     # step = 12                     # millimetres per step, 4 to 50
+    # haptic = true                 # the trackpad taps as a swipe runs; unset is the top-level haptic
+    # haptic-strength = 'medium'    # unset is the top-level haptic-strength
     # swipe-right = 'window-switcher'   # also swipe-left, swipe-up, swipe-down
     # swipe-left = 'workspace-switcher'
     # [gestures.mouse]              # the same on a Magic Mouse, off by default
@@ -161,8 +167,8 @@ extension Config {
     # show-switcher = true          # the window switcher shows the strip once it rests
     # switcher-ms = 1000            # for this long, 100 to 5000
     # edge-flash = true             # pushed on past an end, the display's side there glows
-    # haptic = true                 # the trackpad ticks as each column comes to the middle under the fingers
-    # haptic-strength = 'medium'     # light | medium (as a bound swipe's tap) | strong
+    # haptic = true                 # the trackpad ticks as each column comes to the middle; unset is the top-level haptic
+    # haptic-strength = 'medium'     # unset is the top-level haptic-strength
 
     # Which key of each pair bindings answer to: both | left | right. With alt = 'left',
     # right Option still types special characters.
