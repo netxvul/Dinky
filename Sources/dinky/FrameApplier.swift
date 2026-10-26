@@ -410,10 +410,11 @@ final class FrameApplier {
 
 /// On-screen windows, front to back.
 /// The windows on screen front to back, each with its level (`kCGWindowLayer`).
-func onScreenStack() -> [(id: WindowID, layer: Int)] {
+func onScreenStack() -> [(id: WindowID, layer: Int, frame: CGRect?)] {
     let info = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
     return info.compactMap { window in
-        (window[kCGWindowNumber as String] as? WindowID).map { ($0, window[kCGWindowLayer as String] as? Int ?? 0) }
+        let frame = (window[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0) }
+        return (window[kCGWindowNumber as String] as? WindowID).map { ($0, window[kCGWindowLayer as String] as? Int ?? 0, frame) }
     }
 }
 

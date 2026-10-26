@@ -281,10 +281,11 @@ final class Coordinator {
             (only.map { $0 == key } ?? isVisible(key)) && !(workspaces[key]?.pinnedWindows.isEmpty ?? true)
         }
         guard !keys.isEmpty else { return }
-        // The windows shown, front to back, as the window model has them.
+        // The windows shown, front to back, where the window server shows them: the window model hears late of moves
+        // through Dock, which a strip's glides and the fingers' scrolls make.
         let stack = onScreenStack().compactMap { shown -> StackedWindow? in
             guard let window = model.windows[shown.id], window.isVisible else { return nil }
-            return StackedWindow(id: shown.id, layer: shown.layer, frame: window.frame, pid: window.pid)
+            return StackedWindow(id: shown.id, layer: shown.layer, frame: shown.frame ?? window.frame, pid: window.pid)
         }
         // Dock's scripting addition orders pins in front of any window, the active app's too, and leaves every app's
         // main and key window as they were. Accessibility cannot put one in front of the active app's windows, and makes
@@ -735,6 +736,9 @@ final class Coordinator {
             guard let self, focusing?.id == id else { return }
             if activated {
                 focusing = (id, Date() + 0.5)
+                // Activated, its app brought it to the front: over a pin, as one wider than the band hangs, the pin goes
+                // back over it now, not only once the window events come.
+                if let key = placements[id]?.space, workspaces[key]?.pinnedWindows.isEmpty == false { raiseCoveredPins(in: key) }
             } else {
                 // Something else came to the front first: it has focus, and the trees follow it.
                 focusing = nil
