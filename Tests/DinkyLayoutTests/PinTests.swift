@@ -28,8 +28,10 @@ private func pinned(_ ws: Workspace, _ id: WindowID, _ side: PinSide,
 /// The strip's frames, before parking.
 private func frames(_ ws: Workspace) -> [WindowID: CGRect] { ws.tiledLayout().frames }
 
-/// Checks each pin mark names a window of its end column, as every edit must leave it, so no settle is needed.
-private func marked(_ ws: Workspace, sourceLocation: SourceLocation = #_sourceLocation) {
+/// Checks each pin mark names a window of its end column, as every edit must leave it, so no settle is needed; and,
+/// given `pins`, that they are the marks.
+private func marked(_ ws: Workspace, pins: [PinSide: WindowID]? = nil, sourceLocation: SourceLocation = #_sourceLocation) {
+    if let pins { #expect(ws.pins == pins, sourceLocation: sourceLocation) }
     var settled = ws
     do { let r = settled.settlePins(); #expect(r == 0, "a pinned column left its end", sourceLocation: sourceLocation) }
     for side in ws.pins.keys { #expect(ws.pinnedIndex(side) != nil, sourceLocation: sourceLocation) }
@@ -246,7 +248,10 @@ struct PinScrollTests {
     }
 
     @Test func `A strip of only pins does not scroll`() throws {
-        let ws = try pinned(pinned(strip(2, width: 0.3), 1, .left), 2, .right)
+        var ws = strip(2, width: 0.3)
+        ws.columnWidths[1] = 0.45
+        ws = try pinned(pinned(ws, 1, .left), 2, .right)
+        #expect(ws.pinSpan(0) > ws.stripInset.width, "the left pin wider than the band")
         #expect(!ws.canScrollFreely)
     }
 }
@@ -262,14 +267,14 @@ struct PinFullscreenTests {
     }
 
     @Test func `A pin fullscreen covers the screen inside the outer gaps, the band columns' widths left alone`() throws {
-        var ws = try pinned(strip(5, gaps: spaced), 1, .left)
+        var ws = try pinned(strip(3, gaps: spaced), 1, .left)
         ws.focus(3)
         let before = frames(ws).mapValues(\.width)
         ws.focus(1)
         ws.toggleFullscreen()
         #expect(ws.layout().frames[1] == rect(8, 8, 984, 584))
         #expect(ws.layout().order.first == 1)
-        for id: WindowID in [2, 3, 4, 5] { #expect(frames(ws)[id]!.width == before[id]) }
+        for id: WindowID in [2, 3] { #expect(frames(ws)[id]!.width == before[id]) }
     }
 
     @Test func `With a pin, fullscreen does not fill over it`() throws {
@@ -438,8 +443,9 @@ struct PinOriginTests {
     @Test func `A neighbour replaced, as by a tab, still marks where it goes back`() throws {
         var ws = try pinned(strip(5), 3, .right)
         ws.replace(2, with: 9)
+        ws.remove(4)
         do { let r = ws.unpin(.right); #expect(r == .changed) }
-        #expect(shape(ws.root) == "h[1 9 3 4 5]")
+        #expect(shape(ws.root) == "h[1 9 3 5]")
     }
 
     @Test func `Pinning a taken side sends the old pin back where it came from`() throws {
@@ -481,6 +487,14 @@ struct PinTreeTests {
         #expect(right.focused == 2)
     }
 
+    @Test func `Closing a focused right pin with no band window focused yet focuses the band column nearest it`() throws {
+        var ws = try pinned(strip(4), 4, .right)
+        ws.remove(try #require(ws.bandFocus))
+        ws.focus(4)
+        ws.remove(4)
+        #expect(ws.focused == 2)
+    }
+
     @Test func `Closing the band's last column focuses its band neighbour, not the pin`() throws {
         var ws = try pinned(strip(4), 4, .right)
         ws.focus(3)
@@ -505,7 +519,7 @@ struct PinTreeTests {
         do { let r = ws.move(.left); #expect(!r, "the band's first column does not swap into the pin") }
         do { let r = ws.move(.right); #expect(r) }
         #expect(shape(ws.root) == "h[1 3 2 4]")
-        marked(ws)
+        marked(ws, pins: [.left: 1])
     }
 
     @Test func `A window of a pinned stack moving inwards becomes the band's first column`() throws {
@@ -526,7 +540,7 @@ struct PinTreeTests {
         ws.focus(2)
         do { let r = ws.join(.left); #expect(r) }
         #expect(ws.width(ofColumn: 0) == 0.4)
-        marked(ws)
+        marked(ws, pins: [.left: 1])
         var lone = try pinned(strip(4), 1, .left)
         lone.focus(1)
         do { let r = lone.join(.right); #expect(r) }
@@ -542,7 +556,7 @@ struct PinTreeTests {
         #expect(ws.pins == [.left: 3])
         #expect(ws.width(ofColumn: 0) == 0.4 && ws.width(ofColumn: 2) == 0.25)
         #expect(ws.bandFocus.map { ws.pinSide(of: $0) == nil } ?? true)
-        marked(ws)
+        marked(ws, pins: [.left: 3])
     }
 
     @Test func `Swapping within a pinned stack keeps the pin's width`() throws {
@@ -553,7 +567,18 @@ struct PinTreeTests {
         do { let r = ws.join(.left); #expect(r) }
         do { let r = ws.drop(2, onto: 1, .swap); #expect(r) }
         #expect(ws.width(ofColumn: 0) == 0.4)
-        marked(ws)
+        marked(ws, pins: [.left: 2])
+    }
+
+    @Test func `Swapping a band window onto one joined into a pin keeps both widths and the mark`() throws {
+        var ws = try pinned(strip(4), 1, .left)
+        ws.focus(1)
+        do { let r = ws.cycleWidth(through: [0.4]); #expect(r) }
+        ws.focus(2)
+        do { let r = ws.join(.left); #expect(r) }
+        do { let r = ws.drop(3, onto: 2, .swap); #expect(r) }
+        #expect(ws.width(ofColumn: 0) == 0.4 && ws.width(ofColumn: 1) == 0.25)
+        marked(ws, pins: [.left: 1])
     }
 
     @Test func `Dropped beside a pin, a window goes into the band`() throws {
@@ -578,9 +603,13 @@ struct PinTreeTests {
         var ws = try pinned(strip(4), 4, .right)
         ws.setAlgorithm(.dwindle(.tiles))
         #expect(ws.pinSide(of: 4) == nil)
+        ws.focus(4)
+        ws.insert(9)
+        try #require(shape(ws.root).hasSuffix("v[4 9]]"), "the last child is 4's and 9's")
         ws.setAlgorithm(.scrolling)
         #expect(ws.pinSide(of: 4) == .right)
         #expect(ws.root.children.last == .window(4))
+        #expect(ws.root.path(of: 9).map { ws.bandRange.contains($0[0]) } == true)
     }
 
     @Test func `A pinned window closed outside the scrolling layout leaves no mark`() throws {
@@ -621,6 +650,27 @@ struct PinVisualTests {
         #expect(mini.tiles.last?.id == 1, "drawn last, over the band")
         #expect(!mini.tiles.map(\.id).contains(2), "under the pin, out of view")
         #expect(mini.parkedLeft >= 1)
+    }
+
+    @Test func `The miniature parks a column under a pin by the band's middle, not the screen's`() throws {
+        var left = strip(6, width: 0.3)
+        left.columnWidths[1] = 0.5
+        left = try pinned(left, 1, .left)
+        left.focus(2)
+        left.focus(3)
+        let under = try #require(left.stripFrames[2])
+        try #require(!left.isInView(2) && under.midX > left.bounds.midX && under.midX < left.bandRect.midX)
+        let mini = Miniature(screen: left.bounds, height: 60, workspace: left)
+        #expect(mini.parkedLeft == 1 && mini.parkedRight == 3)
+        var right = strip(6, width: 0.3)
+        right.columnWidths[6] = 0.5
+        right = try pinned(right, 6, .right)
+        right.focus(5)
+        right.focus(4)
+        let over = try #require(right.stripFrames[5])
+        try #require(!right.isInView(5) && over.midX < right.bounds.midX && over.midX > right.bandRect.midX)
+        let mirror = Miniature(screen: right.bounds, height: 60, workspace: right)
+        #expect(mirror.parkedRight == 1 && mirror.parkedLeft == 3)
     }
 
     @Test func `A long scroll's shortcut leaves pins where they are`() throws {

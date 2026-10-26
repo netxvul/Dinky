@@ -100,12 +100,13 @@ room for its widest window; a pin or a resize that would leave less is refused.
 
 - Focusing a pin never scrolls. From the band's first column, focusing towards
   the pin focuses it; from the pin, focusing inwards goes back to the band window
-  focused last. Outwards from a pin there is nothing.
+  focused last. Outwards from a pin, focus goes on as at the workspace's edge:
+  to the next display, or around the workspace with `wrap-around-the-workspace`.
 - Columns scrolled out of the band slide under the pin and park at the screen's
   edge with only a sliver showing. The pin is raised in front of them as they
   slide under it, after a focus change, Cmd-Tab, a click in the Dock or a new
-  window; only the focused window of the pin's own app can show over it while
-  sliding past, since raising the pin would take its app's focus.
+  window. The focused window of the pin's own app is raised after the pin, to
+  keep its app's focus, so it can show over the pin while sliding past.
 - `move` leaves a pinned column where it is; `join-with` into a pin stacks the
   window there, and out of a pin of one window unpins it. A window dragged beside
   a pin goes into the band, swapped onto it takes its place.
