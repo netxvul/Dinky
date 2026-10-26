@@ -347,7 +347,13 @@ final class Coordinator {
             let pids = Dictionary(raise.compactMap { id in model.windows[id].map { (id, $0.pid) } }) { first, _ in first }
             // Their rings go back next to them from here once Dock has ordered them, where they are then: one hidden
             // meanwhile, as in Mission Control, stays hidden.
-            return applier.raisePins(raise, pids: pids, front: front, ordering: true) { ran in report(ran, ", through Dock") }
+            // In front of its own app's windows, a pin of an app in the background is the one that app comes to the
+            // front on, as with Cmd-Tab: `syncFocus` takes it back to the window that app had.
+            let background = raise.filter { pids[$0] != nil && pids[$0] != shownFront }
+            return applier.raisePins(raise, pids: pids, front: front, ordering: true) { [weak self] ran in
+                if ran { self?.raisedInBackground.formUnion(background) }
+                report(ran, ", through Dock")
+            }
         }
         // A pin of an app in the background becomes its main window as it is raised: the window of that app the user
         // had goes back on top of its app's after it, where it covers no pin, so the app comes to the front on it. Not
