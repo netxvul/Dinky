@@ -57,14 +57,16 @@ final class StripTelemetry {
         passed[key] = nil
         let columns = workspace.stripColumns
         var view: [WindowID] = [], left: [WindowID] = [], right: [WindowID] = []
-        for id in columns.joined() {
+        let pinned = workspace.pinnedWindows
+        for id in columns.joined() where !pinned.contains(id) {
             guard let frame = layout.frames[id] else { continue }
-            if Self.shown(frame, on: screen) > Self.inView { view.append(id) }
+            if Self.shown(frame, on: screen) > Self.inView, workspace.isInView(id) { view.append(id) }
             else if frame.midX < screen.midX { left.append(id) }
             else { right.append(id) }
         }
         let focus = workspace.focused.map(name) ?? "none"
         let line = "view \(names(view)), focus \(focus), left \(left.count), right \(right.count)"
+            + (pinned.isEmpty ? "" : ", pinned \(names(pinned))")
         let cause = causes.removeValue(forKey: key)
         guard views[key] != line else { return }
         views[key] = line

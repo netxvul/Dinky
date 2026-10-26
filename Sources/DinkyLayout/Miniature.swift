@@ -50,12 +50,15 @@ public struct Miniature: Equatable {
                 tiles = [Tile(id: id, frame: map(frame), behind: false)]
             } else if workspace.isScrolling {
                 let strip = workspace.tiledLayout().frames
-                var shown: [(WindowID, CGRect)] = []
+                var shown: [(WindowID, CGRect)] = [], pinned: [(WindowID, CGRect)] = []
                 for column in workspace.root.children {
                     let ids = column.windows.filter { known($0) && strip[$0] != nil }
                     guard let first = ids.first else { continue }
                     let frames = ids.map { strip[$0]! }
-                    if frames.allSatisfy({ $0.minX >= workspace.bounds.minX - 1 && $0.maxX <= workspace.bounds.maxX + 1 }) {
+                    // Pins in place, over the band; a band column under one is out of view.
+                    if workspace.pinSide(of: first) != nil {
+                        pinned += zip(ids, frames)
+                    } else if workspace.isInView(first) {
                         shown += zip(ids, frames)
                     } else if strip[first]!.midX < workspace.bounds.midX {
                         parkedLeft += 1
@@ -66,7 +69,7 @@ public struct Miniature: Equatable {
                 let parked = parkedLeft + parkedRight > 0
                 let inset = parked ? (size.width * Self.parkedInset).rounded() : 0
                 let xScale = parked && screen.width > 0 ? (size.width - inset * 2) / screen.width : scale
-                tiles = shown.map { Tile(id: $0.0, frame: map($0.1, x0: inset, xScale: xScale), behind: false) }
+                tiles = (shown + pinned).map { Tile(id: $0.0, frame: map($0.1, x0: inset, xScale: xScale), behind: false) }
             } else {
                 var roomy = workspace
                 roomy.accordionPadding = max(workspace.accordionPadding, Self.minimumPeek / scale)

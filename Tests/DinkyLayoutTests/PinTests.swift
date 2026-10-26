@@ -365,3 +365,26 @@ struct PinTreeTests {
         #expect(columns(ws).last == [4])
     }
 }
+
+struct PinVisualTests {
+    @Test func `The miniature draws a pin in place over the band, band columns under it parked`() {
+        var ws = pinned(strip(8), 1, .left)
+        ws.focus(8)
+        let mini = Miniature(screen: ws.bounds, height: 60, workspace: ws)
+        #expect(mini.tiles.last?.id == 1, "drawn last, over the band")
+        #expect(!mini.tiles.map(\.id).contains(2), "under the pin, out of view")
+        #expect(mini.parkedLeft >= 1)
+    }
+
+    @Test func `A long scroll's shortcut leaves pins where they are`() {
+        var ws = pinned(strip(8), 1, .left)
+        ws.focus(2)
+        let starts = ws.stripFrames
+        ws.focus(8)
+        let targets = ws.stripFrames
+        if let shortcut = ws.scrollShortcut(from: starts, to: targets) {
+            #expect(shortcut.starts[1] == starts[1] && shortcut.targets[1] == targets[1])
+        }
+        #expect(starts[1] == targets[1], "the pin does not move")
+    }
+}
