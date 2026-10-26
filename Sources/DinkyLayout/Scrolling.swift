@@ -80,7 +80,9 @@ extension Workspace {
         let area = stripArea, spans = columnSpans(in: area)
         guard spans[index].width > area.width else { return false }
         let offset = offset(for: spans, in: area)
-        return abs(showing(spans[index], from: offset, in: area) - offset) < 0.5
+        // Shown from its start as far as the strip goes: a first column waits at the gutter before it.
+        let lower = heldLimits(for: spans, in: area)?.lowerBound ?? -.infinity
+        return abs(max(showing(spans[index], from: offset, in: area), lower) - offset) < 0.5
     }
 
     /// `hangsUnderPin(column:)` for the column of window `id`.
@@ -205,17 +207,22 @@ extension Workspace {
         let wanted = showingFocus && !holdsScroll && freeScrollFrom == nil
             ? focused.flatMap { bandIndex(of: $0) }.map { showing(spans[$0], from: scrollOffset, in: area) } : nil
         if keepsScroll { return wanted ?? scrollOffset }
-        guard let limits = scrollLimits(for: spans, in: area) else {
+        guard let limits = heldLimits(for: spans, in: area) else {
             let total = bandEnd(of: spans), inset = stripInset
             return (area.minX - inset.minX + (total - inset.width) / 2).rounded()
         }
-        // A focused column wider than the band, beside a pin, shows from the band's start though that scrolls the
-        // strip on past its end, the rest of it under the pin: whether focus is being shown or the scroll is held, so
-        // the band does not jump as fingers take hold or focus moves to the pin.
+        return min(max(wanted ?? scrollOffset, limits.lowerBound), limits.upperBound)
+    }
+
+    /// `scrollLimits`, but past the end as far as a focused band column wider than the band, beside a pin, takes to
+    /// show from the band's start, the rest of it under the pin; or the band window focused last while a pin has focus.
+    /// What the offset, the fingers' scroll and a let-go keep to, so none of them jumps for it.
+    func heldLimits(for spans: [(start: CGFloat, width: CGFloat)], in area: CGRect) -> ClosedRange<CGFloat>? {
+        guard let limits = scrollLimits(for: spans, in: area) else { return nil }
         let shownColumn = focused.flatMap { bandIndex(of: $0) } ?? bandFocus.flatMap { bandIndex(of: $0) }
         let wide = hasPins ? shownColumn.flatMap { spans[$0].width > area.width ? spans[$0] : nil } : nil
         let upper = wide.map { max(limits.upperBound, showing($0, from: limits.upperBound, in: area)) } ?? limits.upperBound
-        return min(max(wanted ?? scrollOffset, limits.lowerBound), upper)
+        return limits.lowerBound...upper
     }
 
     /// How far the strip scrolls, from its first column at its start to its last at its end; nil for a strip that fits
@@ -484,7 +491,21 @@ extension Workspace {
         }
         // A band window as wide as the band or wider, beside a pin, is the one in view there: past a wall it is held
         // off it, hanging under the pin, not hidden behind a column in view.
-        let hanging = Set(bandRange.filter { hangsUnderPin(column: $0) }.flatMap { root.children[$0].windows })
+        // A band window wider than the band beside a pin, the one in view there: as it rests (`hangsUnderPin`), and on
+        // the way, glided or scrolled by the fingers, wherever its frame spans the band, half a gap in from a
+        // neighbour on either side allowed.
+        var hanging = Set(bandRange.filter { hangsUnderPin(column: $0) }.flatMap { root.children[$0].windows })
+        if hasPins {
+            let area = stripArea, spans = columnSpans(in: area), band = bandRect, half = gaps.horizontal / 2
+            let beside = bandNeighbours, range = bandRange
+            for i in range where spans[i].width > area.width {
+                let left = min(band.minX, area.minX) + (i > range.lowerBound || beside.left ? half : 0) + 1
+                let right = max(band.maxX, area.maxX) - (i < range.upperBound - 1 || beside.right ? half : 0) - 1
+                for id in root.children[i].windows {
+                    if let frame = frames[id], frame.minX <= left, frame.maxX >= right { hanging.insert(id) }
+                }
+            }
+        }
         return Dictionary(uniqueKeysWithValues: frames.map { id, frame in
             let offLeft = frame.minX < bounds.minX - 1, offRight = frame.maxX > bounds.maxX + 1
             if offLeft != offRight, walls.contains(offLeft ? .left : .right), let cover = offLeft ? left : right,

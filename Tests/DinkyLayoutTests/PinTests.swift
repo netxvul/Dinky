@@ -1171,16 +1171,17 @@ struct PinHangingTests {
     }
 
     @Test(arguments: [Gaps.zero, spaced])
-    func `Past a left wall beside a right pin it is held at the wall, hanging under nothing it would hide behind`(gaps: Gaps) throws {
+    func `Past a left wall beside a right pin it is held at the wall, whole`(gaps: Gaps) throws {
         var ws = try pinned(strip(4, gaps: gaps, walls: [.left]), 4, .right)
         ws.minimumSizes[2] = CGSize(width: 900, height: 100)
         ws.focus(2)
-        let frame = try #require(ws.layout().frames[2])
-        let strip = try #require(ws.tiledLayout().frames[2])
-        if strip.minX < ws.bounds.minX { #expect(abs(frame.minX - ws.bounds.minX) <= 1) }
-        #expect(frame.minX >= ws.bounds.minX - 1)
-        #expect(frame.intersects(ws.bandRect))
-        #expect(!ws.pinRect(3).contains(frame))
+        var frames = ws.stripFrames
+        let strip = try #require(frames[2])
+        frames[2] = strip.offsetBy(dx: ws.bounds.minX - 150 - strip.minX, dy: 0)
+        let placed = try #require(ws.placeStrip(frames)[2])
+        #expect(abs(placed.minX - ws.bounds.minX) <= 1)
+        #expect(placed.width == strip.width && placed.height == strip.height, "whole, not hidden behind a column")
+        #expect(placed.intersection(ws.bandRect).width > 0)
     }
 
     @Test func `Hanging under a pin needs it shown from its start, not scrolled past`() throws {
@@ -1314,5 +1315,81 @@ struct StripTickerTests {
         #expect(still.moved(to: 2, offset: 5, at: 1.000) == .none)
         #expect(still.moved(to: 1, offset: 1, at: 1.010) == .none)
         #expect(still.moved(to: 2, offset: 6, at: 1.100) == .none)
+    }
+}
+
+struct PinHangingMotionTests {
+    @Test func `Gliding from one band column to the next, a wide window at a wall is never hidden behind the pin`() throws {
+        var ws = try pinned(strip(4, walls: [.right]), 1, .left)
+        ws.minimumSizes[3] = CGSize(width: 800, height: 100)
+        ws.focus(3)
+        let from = ws.stripFrames
+        ws.focus(4)
+        let to = ws.stripFrames
+        let band = ws.bandRect, pin = ws.pinRect(0)
+        for step in 1..<10 {
+            let t = CGFloat(step) / 10
+            var frames: [WindowID: CGRect] = [:]
+            for (id, end) in to {
+                let start = from[id] ?? end
+                frames[id] = CGRect(x: start.minX + (end.minX - start.minX) * t, y: end.minY, width: end.width, height: end.height)
+            }
+            let placed = ws.placeStrip(frames)
+            if let three = frames[3], three.minX <= band.minX + 1, three.maxX >= band.maxX - 1 {
+                let shown = placed[3]!
+                #expect(!pin.contains(shown), "step \(step)")
+                #expect(shown.intersection(band).width > 0 && shown.height == three.height,
+                        "in the band at its height, not hidden behind a column: step \(step)")
+                #expect(shown.maxX <= ws.bounds.maxX + 1, "held off the wall: step \(step)")
+            }
+        }
+    }
+
+    @Test func `Scrolled by the fingers, a lone wide window at a wall is never hidden behind the pin`() throws {
+        var ws = try pinned(strip(2, walls: [.right]), 1, .left)
+        ws.minimumSizes[2] = CGSize(width: 900, height: 100)
+        do { let r = ws.beginFreeScroll(); #expect(r) }
+        for _ in 0..<5 {
+            ws.scrollFreely(by: 10)
+            let placed = ws.placeStrip(ws.stripFrames)
+            #expect(!ws.pinRect(0).contains(placed[2]!))
+            #expect(placed[2]!.intersection(ws.bandRect).width > 0 && placed[2]!.height == ws.stripArea.height,
+                    "in the band at its height")
+            #expect(placed[2]!.maxX <= ws.bounds.maxX + 1, "held off the wall")
+        }
+    }
+
+    @Test(arguments: [Gaps.zero, spaced])
+    func `A wide first band column at the gutter hangs under a right pin, focused or with the pin focused`(gaps: Gaps) throws {
+        var ws = try pinned(strip(5, gaps: gaps), 5, .right)
+        ws.minimumSizes[1] = CGSize(width: 900, height: 100)
+        ws.focus(1)
+        #expect(ws.hangsUnderPin(1))
+        let mini = Miniature(screen: ws.bounds, height: 60, workspace: ws)
+        #expect(mini.tiles.map(\.id).contains(1))
+        #expect(mini.parkedRight == 3)
+        ws.focus(5)
+        #expect(ws.hangsUnderPin(1))
+    }
+
+    @Test func `At a right wall a first column wider than the screen keeps its height`() throws {
+        var ws = try pinned(strip(5, walls: [.right]), 5, .right)
+        ws.minimumSizes[1] = CGSize(width: 1100, height: 100)
+        ws.focus(1)
+        let frame = try #require(ws.layout().frames[1])
+        #expect(frame.height == ws.stripArea.height)
+    }
+
+    @Test func `The fingers move the band a point for a point from where it held a wide column`() throws {
+        var ws = try pinned(strip(4, width: 0.3), 1, .left)
+        ws.minimumSizes[4] = CGSize(width: Double(ws.stripArea.width) + 10, height: 100)
+        ws.focus(4)
+        let before = ws.layout().frames
+        do { let r = ws.beginFreeScroll(); #expect(r) }
+        do { let r = ws.scrollFreely(by: -1); #expect(r == -1) }
+        let after = ws.layout().frames
+        for id: WindowID in [2, 3, 4] where after[id] != nil && before[id] != nil {
+            #expect(abs(after[id]!.minX - before[id]!.minX - 1) < 0.01 || before[id]!.minX < 0, "\(id)")
+        }
     }
 }

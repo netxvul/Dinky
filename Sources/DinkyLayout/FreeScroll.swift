@@ -38,7 +38,7 @@ extension Workspace {
     public mutating func scrollFreely(by delta: CGFloat) -> CGFloat {
         guard freeScrollFrom != nil else { return 0 }
         let area = stripArea
-        guard let limits = scrollLimits(for: columnSpans(in: area), in: area) else { return 0 }
+        guard let limits = heldLimits(for: columnSpans(in: area), in: area) else { return 0 }
         let from = min(max(scrollOffset, limits.lowerBound), limits.upperBound)
         scrollOffset = min(max(from + delta, limits.lowerBound), limits.upperBound)
         return scrollOffset - from
@@ -83,7 +83,7 @@ extension Workspace {
         let away = { (i: Int) in abs(spans[i].start + spans[i].width / 2 - offset - area.width / 2) }
         var index = focused.flatMap { bandIndex(of: $0) } ?? first
         for i in band where away(i) < away(index) { index = i }
-        if let limits = scrollLimits(for: spans, in: area) {
+        if let limits = heldLimits(for: spans, in: area) {
             let stays = { (i: Int) in
                 min(max(showing(spans[i], from: offset, in: area), limits.lowerBound), limits.upperBound) == offset
             }
