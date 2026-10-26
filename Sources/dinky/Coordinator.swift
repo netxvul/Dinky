@@ -259,37 +259,53 @@ final class Coordinator {
     // MARK: Events
 
     /// Raises the pins of the strips on screen that a band window of their own is in front of, where they overlap:
-    /// macOS stacks windows by focus, and a band window focused last would cover the pin it slides under. All of them,
-    /// covered or not, with `all`, as fingers take hold of a strip and its windows are about to slide under. Never over
-    /// a window outside the tree in front of a pin, a dialog or a floating window in use, nor while a click, a drag or
-    /// a press is under way, or a window fullscreen over the strip; never a pin of the focused window's app, which a
-    /// raise would take focus to.
-    func raiseCoveredPins(in only: UInt64? = nil, all: Bool = false) {
+    /// macOS stacks windows by focus, and a band window focused last would cover the pin it slides under. So also for a
+    /// band window in front of a pin that is about to sweep across it (`sweeping`), as a glide sets off, and for any band
+    /// window in front of one as fingers take hold of the strip (`takingHold`). Never over a window outside the tree at
+    /// the pin's level or lower in front of it, a dialog or a floating window in use, nor while a click, a drag or a
+    /// press is under way, or a window is fullscreen over the pins. A pinned accordion is raised as it stacks, its window
+    /// shown last; and a window of a raised pin's app that has focus, or that the tree is focusing, is raised after
+    /// them, so it keeps its app's focus.
+    func raiseCoveredPins(in only: UInt64? = nil, sweeping: Set<WindowID> = [], takingHold: Bool = false) {
         guard enabled, !clickHold, drag == nil, windowPress == nil else { return }
-        let order = onScreenOrder(), position = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
-        let focusedApp = model.windows[focusedWindow]?.pid
-        var raise: [WindowID] = []
-        for (key, workspace) in workspaces where (only.map { $0 == key } ?? isVisible(key)) {
-            let pins = workspace.pinnedWindows
-            guard !pins.isEmpty, workspace.layout().order.first.map({ !workspace.fullscreenWindows.contains($0) }) ?? true
-            else { continue }
+        let keys = workspaces.keys.filter { key in
+            (only.map { $0 == key } ?? isVisible(key)) && !(workspaces[key]?.pinnedWindows.isEmpty ?? true)
+        }
+        guard !keys.isEmpty else { return }
+        let stack = onScreenStack()
+        let position = Dictionary(stack.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let level = Dictionary(stack.map { ($0.id, $0.layer) }, uniquingKeysWith: { a, _ in a })
+        var raise: [WindowID] = [], fronts: [WindowID] = []
+        for key in keys {
+            let workspace = workspaces[key]!, layout = workspace.layout()
+            // Only a fullscreen window that covers the pins stands in the way: one pushing in the band covers none.
+            if let first = layout.order.first, workspace.fullscreenWindows.contains(first),
+               !workspace.pushesFullscreen || workspace.pinSide(of: first) != nil { continue }
             let tree = Set(workspace.windows)
-            // Nor of the app of the window the tree is focusing, which dinky may be about to activate: raised, the pin
-            // would be that app's front window and take focus as it activates.
-            let focusingApp = workspace.focused.flatMap { model.windows[$0]?.pid }
-            for pin in pins where model.windows[pin]?.pid != focusedApp && model.windows[pin]?.pid != focusingApp {
+            // Back to front, as the layout stacks them: a pinned accordion's shown window last.
+            let pins = layout.order.filter { workspace.pinSide(of: $0) != nil }.reversed()
+            var raised: [WindowID] = []
+            for pin in pins {
                 guard let frame = model.windows[pin]?.frame, let at = position[pin] else { continue }
-                let over = order.prefix(at).filter { id in
-                    id != pin && model.windows[id].map { $0.frame.intersects(frame) && $0.isVisible } ?? false
+                let ahead = stack.prefix(at).map(\.id).filter { $0 != pin && model.windows[$0]?.isVisible == true }
+                let over = ahead.filter { model.windows[$0]!.frame.intersects(frame) }
+                // Something of its own over the pin, at its level or lower, is left there: it is in use.
+                guard !over.contains(where: { !tree.contains($0) && (level[$0] ?? 0) <= (level[pin] ?? 0) }) else { continue }
+                let band = { (id: WindowID) in tree.contains(id) && workspace.pinSide(of: id) == nil }
+                if over.contains(where: band) || ahead.contains(where: { band($0) && (takingHold || sweeping.contains($0)) }) {
+                    raised.append(pin)
                 }
-                // Something of its own over the pin is left there: it is in use, or the pin would bury it.
-                guard !over.contains(where: { !tree.contains($0) }) else { continue }
-                if all || over.contains(where: { workspace.pinSide(of: $0) == nil }) { raise.append(pin) }
             }
+            guard !raised.isEmpty else { continue }
+            raise += raised
+            let apps = Set(raised.compactMap { model.windows[$0]?.pid })
+            for id in [workspace.focused, focusedWindow].compactMap({ $0 }) where !raise.contains(id) && !fronts.contains(id)
+                && model.windows[id].map({ apps.contains($0.pid) }) == true { fronts.append(id) }
         }
         guard !raise.isEmpty else { return }
-        let pids = Dictionary(uniqueKeysWithValues: raise.compactMap { id in model.windows[id].map { (id, $0.pid) } })
-        applier.raisePins(raise, pids: pids, front: focusedWindow)
+        let ids = raise + fronts
+        let pids = Dictionary(uniqueKeysWithValues: ids.compactMap { id in model.windows[id].map { (id, $0.pid) } })
+        applier.raisePins(ids, pids: pids, front: focusedWindow)
     }
 
     private func handle(_ event: WindowEvent) {
@@ -301,7 +317,11 @@ final class Coordinator {
         }
         borders?.handle(event)
         noopGlow.handle(event)
-        if event.kind == .spaceChange { edgeGlow.dismiss() }
+        if event.kind == .spaceChange {
+            edgeGlow.dismiss()
+            // Peeks of a Space no longer shown would catch clicks on the one shown now.
+            for key in workspaces.keys where !isVisible(key) { PeekClicks.shared.update([], space: key) }
+        }
         if let window = event.window {
             // A drag first, then the Space: macOS moves a window dragged over another display to its Space, often in
             // the first move dinky hears of, and the drag keeps it in its tree (Drag.swift) only once it is one.
@@ -382,10 +402,12 @@ final class Coordinator {
     private func fitToDisplays() {
         for key in workspaces.keys {
             guard let display = displays.display(containingSpace: key) else { continue }
+            let (bounds, gaps) = (workspaces[key]!.bounds, workspaces[key]!.gaps)
             workspaces[key]!.bounds = display.visibleArea
-            workspaces[key]!.gaps = gaps(on: display)
+            workspaces[key]!.gaps = self.gaps(on: display)
             workspaces[key]!.walls = walls(of: display)
-            workspaces[key]!.fitPins()
+            // Only as the display or the gaps change: pins dropped at any other pass would never come back.
+            if workspaces[key]!.bounds != bounds || workspaces[key]!.gaps != gaps { workspaces[key]!.fitPins() }
         }
     }
 
@@ -516,6 +538,10 @@ final class Coordinator {
         // A window coming from another Space's tree is moving, not switching tabs: tabs share a Space.
         if let new, old == nil, holdAsTab(window, in: new) { return }
         if let new {
+            // Back in another tree, it is no pin away from the one it left.
+            for key in workspaces.keys where key != new && workspaces[key]!.departedPins.values.contains(window.id) {
+                edit(key) { $0.forgetPinned(window.id) }
+            }
             edit(new) { $0.arrive(window.id) }
             telemetry.member(new, workspaces[new], window.id, joined: true, old.map { "from Space \($0)" } ?? "shown")
         }
@@ -563,7 +589,9 @@ final class Coordinator {
         if let space = placements[id]?.space {
             telemetry.member(space, workspaces[space], id, joined: false,
                              freed ? "floated, on a free workspace" : "floated, Accessibility cannot read it")
-            edit(space) { $0.depart(id) }
+            // Only a window floated while it cannot be read is pinned again as it tiles back: on a free workspace it was
+            // taken there.
+            edit(space) { freed ? $0.remove(id) : $0.depart(id) }
         }
         heldTabs[id] = nil
         placements[id] = Placement(floating: true, space: nil, freed: freed)
@@ -571,6 +599,10 @@ final class Coordinator {
 
     private func forget(_ id: WindowID) {
         unpinnedByHand.remove(id)
+        // A pin away when it closed: no tree remembers it, its id free for another window.
+        for key in workspaces.keys where workspaces[key]!.departedPins.values.contains(id) {
+            edit(key) { $0.forgetPinned(id) }
+        }
         stagingWindows[id] = nil
         systemTiling[id] = nil
         systemFilled[id] = nil
@@ -840,7 +872,7 @@ final class Coordinator {
         PeekClicks.shared.update([], space: key)
         applier.assume(sizes, pids: pids)
         // Dock's moves leave the stacking as it is, so the pins go on top now, before anything slides under them.
-        raiseCoveredPins(in: key, all: true)
+        raiseCoveredPins(in: key, takingHold: true)
         telemetry.fingers(key, "took hold" + (throughDock ? ", through Dock" : ""))
         stripScrollWatch?.invalidate()
         stripScrollWatch = Timer.scheduledTimer(withTimeInterval: Self.stripScrollCheck, repeats: true) { [weak self] _ in
@@ -1013,23 +1045,28 @@ final class Coordinator {
 
     /// Tells `PeekClicks` which of the strip's windows only peek in at a screen edge as this pass lays them out, and
     /// where. None on a workspace without a strip.
-    private func notePeeks(_ key: UInt64, frames: [WindowID: CGRect], strip: [WindowID: CGRect]) {
+    private func notePeeks(_ key: UInt64, frames: [WindowID: CGRect], strip: [WindowID: CGRect],
+                           fullscreen: Set<WindowID> = []) {
         guard !strip.isEmpty, let screen = displays.display(containingSpace: key)?.frame else {
             return PeekClicks.shared.update([], space: key)
         }
-        // A band window partly under a pin counts as peeking with the part beside it: clicked there, macOS would bring it
-        // up over the pin before dinky heard, so it glides into the band first, as a peek does.
+        // A band window partly under a pin counts as peeking with the part beside it in the band: clicked there, macOS
+        // would bring it up over the pin before dinky heard, so it glides into the band first, as a peek does. Not one
+        // shown fullscreen, the focused one, nor one whose part beside the pin spans the whole band: it is in view.
         let workspace = workspaces[key]
-        let pins = workspace.map { ws in ws.pinnedWindows.compactMap { frames[$0] } } ?? []
+        let band = workspace?.bandRect
+        let pins = PinSide.allCases.compactMap { side in workspace?.pinFrame(side).map { (side, $0) } }
         let peeks = strip.keys.compactMap { id -> PeekClicks.Peek? in
             guard let frame = frames[id] else { return nil }
-            var shown = frame.intersection(screen)
+            let shown = frame.intersection(screen)
             guard !shown.isNull, shown.width > 0 else { return nil }
-            if workspace?.pinSide(of: id) == nil, let pin = pins.first(where: { $0.intersects(shown) }) {
-                shown = pin.midX < shown.midX
-                    ? CGRect(x: pin.maxX, y: shown.minY, width: shown.maxX - pin.maxX, height: shown.height)
-                    : CGRect(x: shown.minX, y: shown.minY, width: pin.minX - shown.minX, height: shown.height)
-                return shown.width > 0 ? PeekClicks.Peek(id: id, rect: shown) : nil
+            if let workspace, let band, workspace.pinSide(of: id) == nil,
+               let (side, pin) = pins.first(where: { $0.1.intersects(shown) }) {
+                guard !fullscreen.contains(id), workspace.focused != id else { return nil }
+                let minX = max(side == .left ? pin.maxX : shown.minX, band.minX)
+                let maxX = min(side == .left ? shown.maxX : pin.minX, band.maxX)
+                guard maxX - minX > 0, maxX - minX < band.width - 1 else { return nil }
+                return PeekClicks.Peek(id: id, rect: CGRect(x: minX, y: shown.minY, width: maxX - minX, height: shown.height))
             }
             guard shown.width <= PeekClicks.widest, shown.width < frame.width else { return nil }
             return PeekClicks.Peek(id: id, rect: shown)
@@ -1220,6 +1257,10 @@ final class Coordinator {
         }
         let edge = display.map { $0.visibleArea.maxX < $0.frame.maxX - 0.5 ? $0.visibleArea.maxX : $0.frame.maxX } ?? 0
         let dock = display.map { $0.visibleArea.maxX < $0.frame.maxX - 0.5 } ?? false
+        // A right pin is a wall to the band's windows: one growing to the left must not reach past the screen edge under
+        // it, nor be staged over it.
+        let rightPin = workspace.pinFrame(.right)
+        let besidePin = { (id: WindowID) in rightPin != nil && workspace.pinSide(of: id) == nil }
         let fullscreenNow = Set(workspace.fullscreenWindows), wasFullscreen = lastFullscreen[key] ?? []
         // The focused window going fullscreen where macOS's own Fill puts it, or coming back to where Fill took it from,
         // is left to the system's tiling, whose app animates its whole frame on every step (see SystemTiling); this pass,
@@ -1229,11 +1270,12 @@ final class Coordinator {
         // Only once the tree has caught up with macOS's focus, as after a focus command it has not yet: the menu item
         // acts on the app's key window. Not for an app that is not answering.
         if animates, let display, systemTiling[focusedNow] == nil, workspace.focused == focusedNow,
-           workspace.pinnedWindows.isEmpty,
            let target = layout.frames[focusedNow], let pid = pids[focusedNow], !applier.isBusy(pid),
            let current = frameOf(focusedNow) {
             let fill = SystemTiling.fillFrame(on: display)
-            if fullscreenNow.contains(focusedNow), !wasFullscreen.contains(focusedNow), target.isClose(to: fill, within: 1),
+            // Not Fill with a column pinned, which it would cover; putting a window back from it goes on all the same.
+            if workspace.pinnedWindows.isEmpty, fullscreenNow.contains(focusedNow), !wasFullscreen.contains(focusedNow),
+               target.isClose(to: fill, within: 1),
                !current.isClose(to: fill, within: 1) {
                 systemTiles[focusedNow] = SystemTiling.fill
             } else if !fullscreenNow.contains(focusedNow), systemTiled.contains(focusedNow) {
@@ -1250,7 +1292,9 @@ final class Coordinator {
                   let frame = frameOf(id), !applier.isBusy(window.pid), !animator.rests(id, at: frame, askedFor: target),
                   ResizeOnce.resizes(frame, target) else { return .none }
             let fits = (strip[id] == nil || workspace.isInView(id) && workspace.columns(around: id).own.count == 1)
-                && ResizeOnce.applies(from: frame, to: target, edge: edge, wall: workspace.walls.contains(.right), dock: dock)
+                && ResizeOnce.applies(from: frame, to: target,
+                                      edge: besidePin(id) ? rightPin!.minX - workspace.gaps.horizontal : edge,
+                                      wall: workspace.walls.contains(.right) || besidePin(id), dock: dock)
             if fits, pushing || ResizeOnce.movesAndResizes(frame, target) { return .once }
             return pushing ? .whole : .none
         }
@@ -1260,11 +1304,11 @@ final class Coordinator {
         }
         let growsLeft = { (id: WindowID) -> Bool in
             guard let frame = frameOf(id), let target = layout.frames[id] else { return false }
-            return ResizeOnce.growsLeft(frame, target) && !workspace.walls.contains(.right) && !dock
+            return ResizeOnce.growsLeft(frame, target) && !workspace.walls.contains(.right) && !dock && !besidePin(id)
         }
         let changing = Dictionary(uniqueKeysWithValues: fullscreenNow.map { ($0, change($0, pushed.contains($0))) })
         let leavingChange = Dictionary(uniqueKeysWithValues: wasFullscreen.subtracting(fullscreenNow).map {
-            ($0, change($0, workspace.pushesFullscreen && strip[$0] != nil))
+            ($0, change($0, workspace.pushesFullscreen && strip[$0] != nil && workspace.pinSide(of: $0) == nil))
         })
         // Any other window changing size and moving, as a column or tile `cycle-size` widens or narrows: one growing to
         // the left grows by its left edge as one going fullscreen does, one narrowing from the left glides at its size
@@ -1333,7 +1377,7 @@ final class Coordinator {
             let filling = systemTiles[id].map { $0 == SystemTiling.fill } ?? systemTiling[id]?.filling ?? false
             if filling { lastFullscreen[key]?.insert(id) } else { lastFullscreen[key]?.remove(id) }
         }
-        notePeeks(key, frames: layout.frames, strip: strip)
+        notePeeks(key, frames: layout.frames, strip: strip, fullscreen: fullscreen)
         if !systemTiles.isEmpty { settleGlide() }
         for id in wasFullscreen.subtracting(fullscreenNow) where !leftAlone.contains(id) { systemFilled[id] = nil }
         for (id, identifier) in systemTiles {
@@ -1360,10 +1404,11 @@ final class Coordinator {
         // not once it ends there.
         applier.raiseIntoOrder(layout, pids: pids, front: workspace.focused)
         let pinFrames = workspace.pinnedWindows.compactMap { layout.frames[$0] }
-        if !pinFrames.isEmpty, layout.frames.contains(where: { id, target in
-            guard workspace.pinSide(of: id) == nil, let now = model.windows[id]?.frame else { return false }
-            return pinFrames.contains { $0.intersects(now.union(target)) }
-        }) { raiseCoveredPins(in: key, all: true) }
+        let sweeping = pinFrames.isEmpty ? [] : Set(layout.frames.compactMap { id, target -> WindowID? in
+            guard workspace.pinSide(of: id) == nil, let now = model.windows[id]?.frame else { return nil }
+            return pinFrames.contains { $0.intersects(now.union(target)) } ? id : nil
+        })
+        if !sweeping.isEmpty { raiseCoveredPins(in: key, sweeping: sweeping) }
         let sized = staged.union(shrinkOnce), special = sized.union(held).union(growLeft)
         // Where the window server has those changing size, or that just went fullscreen or came back, which the system's
         // own tiling can have moved without the window model hearing of it yet.
@@ -1588,6 +1633,10 @@ final class Coordinator {
             for (lead, beside) in leads where growLeft.contains(lead) {
                 for id in (beside.left + beside.right).joined() { slower[id] = ResizeOnce.drawn }
             }
+            // A right pin growing to the left is drawn out as slowly, and so are the band's columns it pushes.
+            for pin in growLeft where workspace.pinSide(of: pin) == .right {
+                for id in workspace.columns(around: pin).left.joined() { slower[id] = ResizeOnce.drawn }
+            }
             // The columns a window going fullscreen through the system pushes off take longer than its animation, so
             // they never get ahead of it and finish where it shows: they follow it, under it.
             let followers = max(SystemTiling.followTime * 1000 / Double(max(config.animations.durationMs, 1)), 1)
@@ -1617,7 +1666,13 @@ final class Coordinator {
         var staging: [WindowID: CGRect] = [:]
         for id in staged {
             guard let current = frameOf(id), let target = layout.frames[id] else { continue }
-            staging[id] = growOnce.contains(id) ? ResizeOnce.staging(from: current, to: target, edge: edge) : target
+            var frame = growOnce.contains(id) ? ResizeOnce.staging(from: current, to: target, edge: edge) : target
+            // A band window is staged within the band, never over a pin.
+            if workspace.pinSide(of: id) == nil, !workspace.pinnedWindows.isEmpty {
+                let band = workspace.bandRect
+                frame.origin.x = max(min(frame.minX, band.maxX - frame.width), band.minX)
+            }
+            staging[id] = frame
         }
         stage(staging, token: token, order: layout.order, front: workspace.focused, pids: pids,
               live: { [weak self] in self?.pushes[key]?.token == token }) { [weak self] in

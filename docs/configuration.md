@@ -124,8 +124,8 @@ layout = 'scrolling'
 `pin left` and `pin right` hold the focused window's column at a side of the
 screen while the others scroll in the band between, after SlideScroll; see
 [Pins](commands.md#pins). Pins are not kept across a restart of dinky: a
-[rule](#rules) such as `run = 'pin right'` pins a window again, and with nothing
-pinned on that side, a rule's `pin` takes only a free side.
+[rule](#rules) such as `run = 'pin right'` pins a window again: a rule's `pin`
+takes only a free side and leaves a window you unpinned alone.
 
 `layout scrolling` switches the focused window's workspace to scrolling on the fly, and
 `layout tiles` or `accordion` switches it back to its tree. The switch holds
@@ -746,8 +746,11 @@ screen float too while `float-windows-without-fullscreen` is on, unless a
 whatever its rules say.
 
 Windows already open when dinky starts are not new: `layout floating`,
-`layout tiling` and `grid` still float or tile them, but no other command runs,
-so restarting dinky moves, resizes and follows nothing.
+`layout tiling` and `grid` still float or tile them, and `pin` and `unpin` still
+run, since pins are not kept across a restart, but no other command runs, so
+restarting dinky moves, resizes and follows nothing else. A rule's `pin` takes
+only a free side, never moves or unpins a pinned column, and leaves a window you
+unpinned alone.
 
 A rule that is exactly `layout floating` or `layout tiling` decides before the
 window is placed, the last one winning. A `grid` rule floats the window too, so

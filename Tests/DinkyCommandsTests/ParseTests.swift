@@ -98,6 +98,21 @@ struct ParseTests {
         #expect(throws: CommandError.self) { try parse(input) }
     }
 
+    @Test func `Pins`() throws {
+        #expect(try parse("pin left") == .pin(.left))
+        #expect(try parse("pin left --toggle") == .pin(.left, toggle: true))
+        #expect(try parse("pin --toggle right") == .pin(.right, toggle: true))
+        #expect(try parse("unpin") == .unpin(nil))
+        #expect(try parse("unpin right") == .unpin(.right))
+        #expect(try parse("focus-pin left") == .focusPin(.left))
+    }
+
+    @Test(arguments: ["pin", "pin up", "pin --toggle", "pin left right", "pin left --toggle --toggle", "unpin up",
+                      "unpin left right", "unpin --toggle", "focus-pin", "focus-pin up", "focus-pin left right"])
+    func `Pins on no side`(input: String) {
+        #expect(throws: CommandError.self) { try parse(input) }
+    }
+
     @Test func `Cycle size`() throws {
         #expect(try parse("cycle-size 50% 30% 60%") == .cycleSize([50, 30, 60]))
         #expect(try parse("cycle-size 50 100") == .cycleSize([50, 100]))

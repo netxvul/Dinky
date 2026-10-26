@@ -148,11 +148,8 @@ extension Workspace {
         guard id != target, contains(id), contains(target) else { return false }
         endFullscreen()
         guard case .split(let side) = zone, splitsOnDrop else {
-            // Swapped with a pin, the dropped window takes its slot, and the two their widths.
-            let pinned = isScrolling ? PinSide.allCases.filter { pins[$0] == id || pins[$0] == target } : []
+            if isScrolling, hasPins { return swapBesidePins(id, target) }
             guard swap(id, target) else { return false }
-            for side in pinned { pins[side] = pins[side] == id ? target : id }
-            if !pinned.isEmpty { (columnWidths[id], columnWidths[target]) = (columnWidths[target], columnWidths[id]) }
             focus(id)
             return true
         }

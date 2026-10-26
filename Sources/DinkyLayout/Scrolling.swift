@@ -59,24 +59,38 @@ extension Workspace {
     /// side pinned. The whole area inside the outer gaps when nothing is pinned.
     var stripInset: CGRect {
         var inset = gaps.inset(bounds)
+        // A pin's span holds its half of the gap to the band; the band's end column there keeps the other half, as
+        // beside any neighbour.
         if let left = pinnedIndex(.left) {
-            let taken = pinSpan(left) + gaps.horizontal / 2
+            let taken = pinSpan(left)
             inset.origin.x += taken
             inset.size.width -= taken
         }
-        if let right = pinnedIndex(.right) { inset.size.width -= pinSpan(right) + gaps.horizontal / 2 }
+        if let right = pinnedIndex(.right) { inset.size.width -= pinSpan(right) }
         inset.size.width = max(inset.width, 0)
-        return inset
+        guard hasPins else { return inset }
+        let minX = inset.minX.rounded(), maxX = inset.maxX.rounded()
+        return CGRect(x: minX, y: inset.minY, width: max(maxX - minX, 0), height: inset.height)
     }
 
     /// Whether a column is pinned to either side.
     var hasPins: Bool { pinnedIndex(.left) != nil || pinnedIndex(.right) != nil }
 
+    /// Whether the band's end column on each side has a pin beside it, which it keeps half a gap from, as from any
+    /// neighbour.
+    var bandNeighbours: (left: Bool, right: Bool) { (pinnedIndex(.left) != nil, pinnedIndex(.right) != nil) }
+
+    /// The band's area on screen: inside the outer gaps, beside the pinned columns. The whole area inside the outer
+    /// gaps when nothing is pinned.
+    public var bandRect: CGRect { stripInset }
+
     /// The width a column's share is of: the strip's area as it is with nothing pinned, so pinning leaves the other
     /// columns' widths alone.
     var shareWidth: CGFloat {
         guard hasPins else { return stripArea.width }
+        // Without the pins, and so without a pin's fullscreen, which would count as pushing the strip.
         var plain = self
+        plain.fullscreenWindows.removeAll { pinSide(of: $0) != nil }
         plain.pins = [:]
         return plain.stripArea.width
     }
@@ -135,18 +149,20 @@ extension Workspace {
     /// `pushed` is as wide as `area`, so with its half gaps it stays a whole gap from the gutters either side; at
     /// an end of the strip, where nothing is parked, it reaches on through the gutter out to the outer gap.
     func columnSpans(in area: CGRect, pushed: Set<Int> = []) -> [(start: CGFloat, width: CGFloat)] {
-        let band = bandRange, gap = gaps.horizontal
+        let band = bandRange, gap = gaps.horizontal, pinned = hasPins, beside = bandNeighbours
         // With a column pinned, the others keep the widths they have without: shares of the unpinned strip, as wide
         // as the band at most.
-        let base = hasPins ? shareWidth : area.width
+        let base = pinned ? shareWidth : area.width
         var start: CGFloat = 0
         return root.children.indices.map { i in
             // A pinned column has a place of its own (`pinRect`), not along the band.
             guard band.contains(i) else { return (0, pinSpan(i)) }
-            let insets = (i > band.lowerBound ? gap / 2 : 0) + (i < band.upperBound - 1 ? gap / 2 : 0)
+            let insets = (i > band.lowerBound || beside.left ? gap / 2 : 0)
+                + (i < band.upperBound - 1 || beside.right ? gap / 2 : 0)
             let minimum = root.children[i].minimumExtent(.horizontal, gap: gap, padding: accordionPadding, minimumSizes)
+            let wide = (base * CGFloat(width(ofColumn: i))).rounded()
             let share = pushed.contains(i) ? area.width + endGutters(of: i, area).left + endGutters(of: i, area).right
-                : min((base * CGFloat(width(ofColumn: i))).rounded(), area.width)
+                : pinned ? min(wide, area.width) : wide
             let width = band.count == 1 ? area.width : max(share, minimum + insets)
             defer { start += width }
             return (start, width)
@@ -193,7 +209,8 @@ extension Workspace {
 
     /// Where the band ends along the strip: the end of its last column, 0 with none.
     func bandEnd(of spans: [(start: CGFloat, width: CGFloat)]) -> CGFloat {
-        spans[safe: bandRange.upperBound - 1].map { $0.start + $0.width } ?? 0
+        let band = bandRange
+        return band.isEmpty ? 0 : spans[safe: band.upperBound - 1].map { $0.start + $0.width } ?? 0
     }
 
     /// The offset that puts `column` in the middle of the area.
@@ -272,9 +289,11 @@ extension Workspace {
                 && fullscreenWindows.contains(id)
         }
         let unpushed = pushed.isEmpty ? spans : columnSpans(in: area)
+        let beside = bandNeighbours
         let edges = spans.indices.map { i -> (left: CGFloat, right: CGFloat) in
             let x = area.minX + spans[i].start - offset
-            return ((x + (i > first ? gap / 2 : 0)).rounded(), (x + spans[i].width - (i < last ? gap / 2 : 0)).rounded())
+            return ((x + (i > first || beside.left ? gap / 2 : 0)).rounded(),
+                    (x + spans[i].width - (i < last || beside.right ? gap / 2 : 0)).rounded())
         }
         // Not while fingers scroll the strip freely: a column would change width under them as it came to the wall.
         let reaching: (left: Int?, right: Int?) = pushed.isEmpty && freeScrollFrom == nil ? reachingWalls(edges, in: area)
@@ -282,7 +301,7 @@ extension Workspace {
         result.containerRects[[]] = inset
         let reach = stripInset
         for i in stripStackingOrder {
-            let trail = i < last ? gap / 2 : 0
+            let trail = i < last || beside.right ? gap / 2 : 0
             let x = area.minX + spans[i].start - offset
             let a = i == reaching.left ? reach.minX : edges[i].left
             let b = i == reaching.right ? reach.maxX : edges[i].right
@@ -414,7 +433,7 @@ extension Workspace {
             frontColumn = column
             for id in ids {
                 let frame = frames[id]!, width = shownWidth(of: id, frame)
-                let shows = tucked.left ? Self.tuck : untuckable.contains(id) ? Self.peek : shows
+                let shows = untuckable.contains(id) ? Self.peek : tucked.left ? Self.tuck : shows
                 let limit = (bounds.minX + shows - width).rounded(.up)
                 leftLimit[id] = limit
                 front = max(front, max(frame.minX, limit) + width - bounds.minX)
@@ -428,7 +447,7 @@ extension Workspace {
             frontColumn = column
             for id in ids {
                 let frame = frames[id]!
-                let shows = tucked.right ? Self.tuck : untuckable.contains(id) ? Self.peek : shows
+                let shows = untuckable.contains(id) ? Self.peek : tucked.right ? Self.tuck : shows
                 let limit = (bounds.maxX - shows).rounded(.down)
                 rightLimit[id] = limit
                 front = max(front, bounds.maxX - min(frame.minX, limit))
@@ -535,13 +554,15 @@ extension Workspace {
     mutating func resizeColumn(by delta: CGFloat) -> Bool {
         guard let focused, let column = root.path(of: focused)?.first else { return false }
         let old = width(ofColumn: column)
-        let (before, offset) = (tiledLayout(), scrollOffset)
+        let (before, offset, room) = (tiledLayout(), scrollOffset, stripInset.width)
         let pinned = pinSide(ofColumn: column) != nil
-        setWidth(ofColumn: column, old + Double(delta / (pinned ? gaps.inset(bounds).width : shareWidth)))
+        // A band column as wide as the band steps from the width it shows, not its share past it.
+        let shown = pinned || !hasPins ? old : min(old, Double(stripArea.width / shareWidth))
+        setWidth(ofColumn: column, shown + Double(delta / (pinned ? gaps.inset(bounds).width : shareWidth)))
         reveal(focused)
         // A step a lone column or the minimum sizes swallow whole is undone, so the width does not drift out of sight;
-        // so is one that leaves the band too little room.
-        guard tiledLayout() == before || !bandHasRoom else { return true }
+        // so is a pin's that leaves the band too little room.
+        if tiledLayout() != before, !narrowsBand(column, from: room) { return true }
         setWidth(ofColumn: column, old)
         scrollOffset = offset
         return false

@@ -102,12 +102,16 @@ room for its widest window; a pin or a resize that would leave less is refused.
   the pin focuses it; from the pin, focusing inwards goes back to the band window
   focused last. Outwards from a pin there is nothing.
 - Columns scrolled out of the band slide under the pin and park at the screen's
-  edge with only a sliver showing. The pin is kept in front of them.
+  edge with only a sliver showing. The pin is raised in front of them as they
+  slide under it, after a focus change, Cmd-Tab, a click in the Dock or a new
+  window; only the focused window of the pin's own app can show over it while
+  sliding past, since raising the pin would take its app's focus.
 - `move` leaves a pinned column where it is; `join-with` into a pin stacks the
   window there, and out of a pin of one window unpins it. A window dragged beside
   a pin goes into the band, swapped onto it takes its place.
 - A window in the band filling the workspace with [`fullscreen`](#commands) fills
-  the band; a pinned one covers the screen.
+  the band with `[fullscreen] scrolling = 'push'`, the default, or covers the
+  screen with `'over'`; a pinned one covers the screen either way.
 - `pin left` again changes nothing, so a rule can run it safely; `--toggle`
   unpins. Pinning a side another column holds sends that column back to where it
   was pinned from, and pinning the other side's column moves it across.
@@ -190,7 +194,7 @@ alt-c = 'cycle-size 50% 30% 60%'
 |---|---|
 | Floating | Centred on its display at that share of the visible area's width and height, inside the outer gaps. |
 | Tile | Its width, along the nearest container whose tiles sit side by side; its siblings give or take the difference as `resize width` has them. A window with no side-by-side neighbour has nothing to resize. |
-| Scrolling column | The column's width, as a share of the screen. A lone column always fills the screen. |
+| Scrolling column | The column's width, as a share of the screen. A lone column always fills the screen, or the band beside a pin. |
 
 Heights of tiles and columns stay. A window stays floating or tiled.
 

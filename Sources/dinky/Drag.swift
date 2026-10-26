@@ -354,6 +354,9 @@ extension Coordinator {
     private func commit(_ plan: DropPlan, of id: WindowID) {
         for (key, tree) in plan.trees {
             if let display = displays.display(containingSpace: key) { makeWorkspace(key, on: display) }
+            // A pin the drop took apart was unpinned by hand: its rule leaves it so.
+            let before = Set(workspaces[key]?.pinnedWindows ?? [])
+            unpinnedByHand.formUnion(before.subtracting(tree.pinnedWindows))
             // Dropped, the strip scrolls back within its ends, the column under the pointer with it.
             edit(key) { $0 = tree; $0.keepsScroll = false }
             dirty.insert(key)

@@ -19,9 +19,12 @@ extension Workspace {
             guard abs(delta) >= 0.5 else { continue }
             if isScrolling, axis == .horizontal, let column = root.path(of: id)?.first, pinSide(ofColumn: column) != nil {
                 // A pinned column takes the width as a share of the area inside the outer gaps, the band keeping room.
-                let old = width(ofColumn: column)
+                let old = width(ofColumn: column), room = stripInset.width
                 setWidth(ofColumn: column, Double((pinSpan(column) + delta) / gaps.inset(bounds).width))
-                if bandHasRoom { changed = true } else { setWidth(ofColumn: column, old) }
+                if narrowsBand(column, from: room) { setWidth(ofColumn: column, old) } else { changed = true }
+            } else if isScrolling, axis == .horizontal, hasPins, bandRange.count <= 1 {
+                // A lone band column beside a pin fills the band whatever its width.
+                continue
             } else if isScrolling, axis == .horizontal, let column = bandIndex(of: id), bandRange.count > 1 {
                 // The column takes the width; its neighbours keep theirs and move along.
                 let share = Double((columnSpans(in: stripArea)[column].width + delta) / shareWidth)

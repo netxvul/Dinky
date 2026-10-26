@@ -40,13 +40,13 @@ extension Workspace {
         if isScrolling {
             guard let column = root.path(of: focused)?.first else { return false }
             let old = width(ofColumn: column)
-            let (before, offset) = (tiledLayout(), scrollOffset)
+            let (before, offset, room) = (tiledLayout(), scrollOffset, stripInset.width)
             for share in SizeCycle.upcoming(after: old, in: shares) {
                 setWidth(ofColumn: column, share)
                 reveal(focused)
                 // A lone column fills the screen whatever its width, so the step is undone, as `resizeColumn` does; so is
                 // one that leaves the band too little room.
-                if tiledLayout() != before, bandHasRoom { return true }
+                if tiledLayout() != before, !narrowsBand(column, from: room) { return true }
                 setWidth(ofColumn: column, old)
                 scrollOffset = offset
             }

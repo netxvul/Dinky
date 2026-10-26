@@ -60,7 +60,8 @@ public struct Miniature: Equatable {
                         pinned += zip(ids, frames)
                     } else if workspace.isInView(first) {
                         shown += zip(ids, frames)
-                    } else if strip[first]!.midX < workspace.bounds.midX {
+                    } else if strip[first]!.midX < (workspace.pinnedWindows.isEmpty ? workspace.bounds.midX
+                                                     : workspace.bandRect.midX) {
                         parkedLeft += 1
                     } else {
                         parkedRight += 1

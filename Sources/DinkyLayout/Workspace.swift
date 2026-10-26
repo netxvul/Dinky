@@ -86,6 +86,8 @@ public struct Workspace: Equatable, Sendable {
     /// Scrolling: pinned windows away for a while, minimized, hidden or floated, pinned again as they come back to a
     /// side still free.
     public var departedPins: [PinSide: WindowID] = [:]
+    /// Scrolling: the width each departed pin had, which it takes again as it comes back.
+    var departedWidths: [WindowID: Double] = [:]
     /// Scrolling: how far the strip is scrolled, in points from its start. The layout clamps it.
     var scrollOffset: CGFloat = 0
     /// Scrolling: the layout keeps `scrollOffset` past the strip's ends, as `scroll(columnOf:to:pastEnds:)` leaves it.
@@ -165,14 +167,15 @@ public struct Workspace: Equatable, Sendable {
     /// Remove a window. Its share goes to its siblings, redundant containers collapse.
     /// If it was focused, focus moves to the window that took its place.
     public mutating func remove(_ id: WindowID) {
+        // What the pins remember of it goes, in any layout and whether it is in the tree or away: its id may come back as
+        // another window's.
+        forgetPinned(id)
         guard let path = root.path(of: id) else { return }
         // A pinned column it closes is unpinned, focus going back to the band; the last band column closing, to the
         // one beside it in the band rather than to the pin the root's focus would land on.
-        let column = path[0], inBand = bandIndex(of: id) != nil, wasPinned = pinSide(of: id) != nil
+        let column = path[0], inBand = bandIndex(of: id) != nil, pinnedSide = pinSide(of: id)
         let lone = root.children[column].windows.count == 1
         rekeyPins(leaving: id)
-        departedPins = departedPins.filter { $0.value != id }
-        if bandFocus == id { bandFocus = nil }
         if case .fixed = algorithm, isFixedTree {
             removeFixedWindow(at: path)
             trimEmptyOverflow()
@@ -190,7 +193,7 @@ public struct Workspace: Equatable, Sendable {
         if focused == id {
             focused = nil
             let band = bandRange
-            let next: WindowID? = if wasPinned && lone, let back = bandReturn(from: .left) {
+            let next: WindowID? = if let pinnedSide, lone, let back = bandReturn(from: pinnedSide) {
                 back
             } else if isScrolling, inBand, lone, !band.isEmpty {
                 Node.container(root).windows.isEmpty ? nil : {
@@ -312,12 +315,14 @@ public struct Workspace: Equatable, Sendable {
     /// Switch algorithms. Changing the template deliberately rearranges the existing windows once.
     public mutating func setAlgorithm(_ new: TilingAlgorithm) {
         guard algorithm != new else { return }
+        let wasStrip = isScrolling
         algorithm = new
-        rebuild()
+        rebuild(fromStrip: wasStrip)
     }
 
     /// Lay the windows out afresh in the configured layout, keeping their order and focus.
-    private mutating func rebuild() {
+    private mutating func rebuild(fromStrip: Bool? = nil) {
+        let fromStrip = fromStrip ?? isScrolling
         let ids = isFixedTree ? fixedWindows : windows
         switch algorithm {
         case .dwindle(let mode):
@@ -330,12 +335,15 @@ public struct Workspace: Equatable, Sendable {
             // column of its own window there.
             let ends = PinSide.allCases.map { side -> Node? in
                 guard let id = pins[side], ids.contains(id) else { return nil }
-                return pinnedIndex(side).map { root.children[$0] } ?? .window(id)
+                return fromStrip ? pinnedIndex(side).map { root.children[$0] } ?? .window(id) : .window(id)
             }
             let pinned = Set(ends.compactMap { $0?.windows }.joined())
             let band = ids.filter { !pinned.contains($0) }.map(Node.window)
             root = Container(.horizontal, .tiles, [ends[0]].compactMap { $0 } + band + [ends[1]].compactMap { $0 })
             for id in ids { columnWidths[id] = columnWidths[id] ?? columnWidth }
+            settlePins()
+            // Back from another layout, the pins it kept may leave too little room on this display now.
+            if !fromStrip { fitPins() }
         }
         if let focused { focus(focused) }
     }
@@ -347,7 +355,12 @@ public struct Workspace: Equatable, Sendable {
         root.modify(at: Array(path.dropLast())) { $0.replace(at: path.last!, with: .window(new)) }
         if focused == old { focused = new }
         if bandFocus == old { bandFocus = new }
-        for side in PinSide.allCases where pins[side] == old { pins[side] = new }
+        for side in PinSide.allCases {
+            if pins[side] == old { pins[side] = new }
+            if departedPins[side] == old { departedPins[side] = new }
+            if pinOrigins[side]?.before == old { pinOrigins[side]?.before = new }
+            if pinOrigins[side]?.after == old { pinOrigins[side]?.after = new }
+        }
         fullscreenWindows = fullscreenWindows.map { $0 == old ? new : $0 }
         if pendingFullscreen == old { pendingFullscreen = new }
         minimumSizes[old] = nil
@@ -369,6 +382,10 @@ public struct Workspace: Equatable, Sendable {
         // Pinned where the strip shows before focus moves, which can be past `scrollOffset`: the layout scrolls on from
         // there to show the focused column whole.
         let held: CGFloat? = holdingScroll && canHoldScroll ? shownOffset : nil
+        // From the band to a pin, the band stays where it shows: the layout no longer scrolls to a focused column there.
+        if isScrolling, let from = focused, from != id, bandIndex(of: from) != nil, pinSide(of: id) != nil {
+            scrollOffset = shownOffset
+        }
         if focused != id, !fullscreenWindows.isEmpty || pendingFullscreen != nil {
             pendingFullscreen = nil
             switch fullscreenFocus {
@@ -398,11 +415,20 @@ public struct Workspace: Equatable, Sendable {
     @discardableResult
     public mutating func focus(_ direction: Direction, wrapping: Bool = false) -> Bool {
         guard let focused else { return false }
-        // From a pin: outwards nothing, inwards back to the band window focused last.
+        // From a pin, its own windows first, as across a pinned accordion; past them, outwards nothing, or with
+        // `wrapping` the far end, and inwards back to the band window focused last.
         if isScrolling, let side = pinSide(of: focused), let across = PinSide(direction) {
-            guard across != side, let back = bandReturn(from: side) else {
-                return across != side && focusOtherPin(than: side)
+            let column = root.path(of: focused)?.first
+            if let within = neighbor(of: focused, direction), root.path(of: within)?.first == column {
+                focus(within)
+                return true
             }
+            if across == side {
+                guard wrapping, let far = edgeWindow(direction.opposite), far != focused else { return false }
+                focus(far)
+                return true
+            }
+            guard let back = bandReturn(from: side) else { return focusOtherPin(than: side) }
             focus(back)
             return true
         }
@@ -466,7 +492,10 @@ public struct Workspace: Equatable, Sendable {
     public mutating func balanceSizes() {
         endFullscreen()
         root.balance()
+        // Pins too, so long as the band keeps room; else they keep their widths.
+        let kept = pinnedWindows.map { ($0, columnWidths[$0]) }
         for id in columnWidths.keys { columnWidths[id] = columnWidth }
+        if !bandHasRoom { for (id, share) in kept { columnWidths[id] = share } }
         if let focused { reveal(focused) }
     }
 

@@ -403,6 +403,14 @@ final class FrameApplier {
 }
 
 /// On-screen windows, front to back.
+/// The windows on screen front to back, each with its level (`kCGWindowLayer`).
+func onScreenStack() -> [(id: WindowID, layer: Int)] {
+    let info = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
+    return info.compactMap { window in
+        (window[kCGWindowNumber as String] as? WindowID).map { ($0, window[kCGWindowLayer as String] as? Int ?? 0) }
+    }
+}
+
 func onScreenOrder() -> [WindowID] {
     let info = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
     return info.compactMap { $0[kCGWindowNumber as String] as? WindowID }

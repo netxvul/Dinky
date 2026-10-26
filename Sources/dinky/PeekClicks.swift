@@ -74,9 +74,11 @@ final class PeekClicks {
             let modifiers: CGEventFlags = [.maskCommand, .maskControl, .maskAlternate, .maskShift]
             guard event.flags.intersection(modifiers).isEmpty else { break }
             let point = event.location
-            let hit = peeks.withLock { $0.values.lazy.flatMap { $0 }.first { $0.rect.contains(point) } }
-            // Only where the peeking window is the one on top: a floating window can cover the edge.
-            guard let hit, Self.frontWindow(at: point) == hit.id else { break }
+            let hits = peeks.withLock { $0.values.flatMap { $0 }.filter { $0.rect.contains(point) } }
+            // Only where the peeking window is the one on top: a floating window can cover the edge, and peeks can
+            // overlap, as an accordion's windows do.
+            guard !hits.isEmpty, let front = Self.frontWindow(at: point), let hit = hits.first(where: { $0.id == front })
+            else { break }
             swallowUp = true
             DispatchQueue.main.async { [self] in onClick?(hit.id) }
             return false

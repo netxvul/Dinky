@@ -145,7 +145,9 @@ enum Dispatcher {
             }
             return focus(window: id)
         case .unpin(let side):
-            return pin("unpin" + (side.map { " \($0.rawValue)" } ?? ""), window: window) { $0.unpin(side, window: window) }
+            return pin("unpin" + (side.map { " \($0.rawValue)" } ?? ""), window: window, unpinning: command) {
+                $0.unpin(side, window: window)
+            }
         case .flattenWorkspaceTree:
             return tree("flatten-workspace-tree", wholeSpace: true) { $0.flatten(); return true }
         case .balanceSizes:
@@ -319,15 +321,19 @@ enum Dispatcher {
         let id = coordinator.focusedWindow
         // A command can change the layout before finding nothing to do, as move ends fullscreen first: that is no noop.
         var moved = false
+        // A pin a move or a join took apart was unpinned by hand: its rule leaves it so.
+        var unpinned: Set<WindowID> = []
         func watched(_ workspace: inout Workspace) -> Bool {
-            let before = workspace.layout()
+            let before = workspace.layout(), pinned = Set(workspace.pinnedWindows)
             let done = change(&workspace)
             moved = !done && workspace.layout() != before
+            unpinned = pinned.subtracting(workspace.pinnedWindows)
             return done
         }
         let result = wholeSpace && coordinator.isFloating(id) == true
             ? coordinator.spaceKey(of: id).flatMap { coordinator.command(onSpace: $0, watched) }
             : coordinator.command(watched)
+        coordinator.unpinnedByHand.formUnion(unpinned)
         switch result {
         case nil: return .error("\(name): the focused window is not tiled")
         case false?: return moved ? .error("\(name): nothing to do") : .nothing("\(name): nothing to do", ok: false)
@@ -337,15 +343,24 @@ enum Dispatcher {
 
     /// `pin` and `unpin` on the focused window's tree, or for a rule on its window's, which is not focused for it. Done
     /// already, it answers so; refused, it does nothing and says why, as a binding that does nothing.
-    private static func pin(_ name: String, window: WindowID?, _ change: (inout Workspace) -> PinChange) -> Reply {
+    private static func pin(_ name: String, window: WindowID?, unpinning: Command? = nil,
+                            _ change: (inout Workspace) -> PinChange) -> Reply {
         guard let coordinator = AppState.shared.coordinator else { return .error("tiling is not running") }
         let id = window ?? coordinator.focusedWindow
-        if coordinator.isFloating(id) == true { return .nothing("\(name): the window floats", ok: false) }
         let result: PinChange?
-        if let window, let key = coordinator.placements[window]?.space {
-            // A rule leaves a window the user unpinned alone.
+        if let window {
+            // A rule's window is pinned in its own tree or not at all, and one the user unpinned is left so.
+            guard let key = coordinator.placements[window]?.space else { return .nothing("\(name): the window is not tiled", ok: false) }
             if coordinator.unpinnedByHand.contains(window) { return .ok("\(name): unpinned by hand, left so") }
             result = coordinator.command(onSpace: key) { $0.contains(window) ? change(&$0) : .refused("the window is not tiled") }
+        } else if coordinator.isFloating(id) == true {
+            // A side named unpins on the floating window's workspace; anything else needs a tiled window.
+            guard case .unpin(let side?)? = unpinning, let key = coordinator.spaceKey(of: id) else {
+                return .nothing("\(name): the window floats", ok: false)
+            }
+            let before = coordinator.workspaces[key]?.pinnedWindows ?? []
+            result = coordinator.command(onSpace: key) { $0.unpin(side) }
+            coordinator.unpinnedByHand.formUnion(Set(before).subtracting(coordinator.workspaces[key]?.pinnedWindows ?? []))
         } else {
             let key = coordinator.placements[id]?.space
             let before = key.flatMap { coordinator.workspaces[$0]?.pinnedWindows } ?? []

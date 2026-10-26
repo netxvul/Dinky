@@ -58,10 +58,12 @@ final class StripTelemetry {
         let columns = workspace.stripColumns
         var view: [WindowID] = [], left: [WindowID] = [], right: [WindowID] = []
         let pinned = workspace.pinnedWindows
+        // With a pin, a band window under it is out of view, and its side is the band's.
+        let middle = pinned.isEmpty ? screen.midX : workspace.bandRect.midX
         for id in columns.joined() where !pinned.contains(id) {
             guard let frame = layout.frames[id] else { continue }
-            if Self.shown(frame, on: screen) > Self.inView, workspace.isInView(id) { view.append(id) }
-            else if frame.midX < screen.midX { left.append(id) }
+            if Self.shown(frame, on: screen) > Self.inView, pinned.isEmpty || workspace.isInView(id) { view.append(id) }
+            else if frame.midX < middle { left.append(id) }
             else { right.append(id) }
         }
         let focus = workspace.focused.map(name) ?? "none"
