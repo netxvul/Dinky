@@ -233,6 +233,7 @@ struct SchemaTests {
         show-switcher = false
         switcher-ms = 800
         edge-flash = false
+        haptic = false
 
         [floating]
         move-step = 20

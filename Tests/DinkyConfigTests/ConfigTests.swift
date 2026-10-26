@@ -471,6 +471,7 @@ struct ConfigTests {
         #expect(defaults.speed == 1.5)
         #expect(defaults.showSwitcher)
         #expect(defaults.edgeFlash)
+        #expect(defaults.haptic)
         #expect(defaults.switcherMs == 1000)
         let config = try Config.parse("""
             [gestures.trackpad]
@@ -482,6 +483,7 @@ struct ConfigTests {
             show-switcher = false
             switcher-ms = 600
             edge-flash = false
+            haptic = false
             """)
         #expect(config.gestures.scroll.enabled)
         #expect(config.gestures.scroll.fingers == 4)
@@ -489,6 +491,7 @@ struct ConfigTests {
         #expect(!config.gestures.scroll.showSwitcher)
         #expect(config.gestures.scroll.switcherMs == 600)
         #expect(!config.gestures.scroll.edgeFlash)
+        #expect(!config.gestures.scroll.haptic)
         assertError("[gestures.scroll]\nfingers = 2\n", path: "gestures.scroll.fingers", line: 2, contains: "3 to 5")
         assertError("[gestures.scroll]\nspeed = 0\n", path: "gestures.scroll.speed", line: 2, contains: "0.25 to 5")
         assertError("[gestures.scroll]\nswitcher-ms = 0\n", path: "gestures.scroll.switcher-ms", line: 2, contains: "100 to 5000")

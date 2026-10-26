@@ -161,6 +161,7 @@ extension Config {
     # show-switcher = true          # the window switcher shows the strip once it rests
     # switcher-ms = 1000            # for this long, 100 to 5000
     # edge-flash = true             # pushed on past an end, the display's side there glows
+    # haptic = true                 # the trackpad taps once as the strip let go of rests
 
     # Which key of each pair bindings answer to: both | left | right. With alt = 'left',
     # right Option still types special characters.

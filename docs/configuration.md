@@ -670,6 +670,9 @@ colour, width, spread and opacity, fading out towards the top and bottom: lit
 while the fingers push, fading once they stop. `edge-flash = false` turns it
 off, whatever `[borders] noop-flash` says.
 
+Once the strip the fingers let go of rests, its column taking focus, the
+trackpad taps once, as the switchers' picks do. `haptic = false` turns it off.
+
 The fingers may rest before they move. With the same fingers as
 `[gestures.trackpad]`, they still swipe up and down soon after they land, but
 `swipe-left` and `swipe-right` can't be bound for them there. Nothing scrolls
@@ -696,6 +699,7 @@ off.
 | `show-switcher` | `true` | `false` keeps the window switcher from showing the strip once it rests after the fingers let go. |
 | `switcher-ms` | `1000` | How long it shows, the window taking focus picked, `100` to `5000`. |
 | `edge-flash` | `true` | `false` keeps the display's side from glowing as the fingers push the strip on past that end. |
+| `haptic` | `true` | The trackpad taps once as the strip the fingers let go of rests, its column taking focus: whether focus moves or not, at an end of the strip too. Not when fingers take hold again first, nor when the Space changes. `false` keeps it still. |
 
 </div>
 
@@ -1016,6 +1020,7 @@ thumbnails = 'windows'          # windows (pictures, need Screen Recording) | ic
 # show-switcher = true          # the window switcher shows the strip once it rests
 # switcher-ms = 1000            # for this long, 100 to 5000
 # edge-flash = true             # pushed on past an end, the display's side there glows
+# haptic = true                 # the trackpad taps once as the strip let go of rests
 
 # Which key of each pair bindings answer to: both | left | right. With alt = 'left',
 # right Option still types special characters.

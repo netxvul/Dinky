@@ -580,7 +580,8 @@
             "speed": { "type": "number", "minimum": 0.25, "maximum": 5, "default": 1.5, "description": "How many screens the strip moves as the fingers cross the whole trackpad." },
             "show-switcher": { "type": "boolean", "default": true, "description": "Whether the window switcher shows the strip once it rests after the fingers let go, the window taking focus picked." },
             "switcher-ms": { "type": "integer", "minimum": 100, "maximum": 5000, "default": 1000, "description": "Milliseconds the window switcher shows the strip with show-switcher." },
-            "edge-flash": { "type": "boolean", "default": true, "description": "Whether the display glows along its left or right side as the fingers push the strip on past that end, in the noop flash's look." }
+            "edge-flash": { "type": "boolean", "default": true, "description": "Whether the display glows along its left or right side as the fingers push the strip on past that end, in the noop flash's look." },
+            "haptic": { "type": "boolean", "default": true, "description": "Whether the trackpad taps once as the strip the fingers let go of rests, its column taking focus." }
           }
         }
       }

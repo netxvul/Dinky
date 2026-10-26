@@ -180,6 +180,8 @@ final class Coordinator {
     private static let stripScrollFling = 0.15
     /// Bumped as fingers let go of a strip, so only the last let-go's glance waits for its strip to rest.
     private var stripGlance = 0
+    /// Counts the let-gos, so a tap waiting for a strip to rest knows another took its place (`tapOnceStill`).
+    private var stripTap = 0
 
     init(displays: DisplayModel, config: Config) {
         self.displays = displays
@@ -1112,6 +1114,7 @@ final class Coordinator {
         dirty.insert(key)
         guard let target else { return flush() }
         if glance { glanceOnceStill(target, in: key, display: scroll.display) }
+        tapOnceStill(target, in: key)
         // As SlideScroll does, the window is focused when it is another than before, or focus was on another Space.
         guard target != before || placements[lastFocused]?.space != key else { return flush() }
         focusing = (target, Date() + 3)
@@ -1286,6 +1289,25 @@ final class Coordinator {
                 return
             }
             activate(id)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { check() }
+    }
+
+    /// With `[gestures.scroll] haptic`, once the strip on `key` the fingers let go of rests, `target` in view and taking
+    /// focus, the trackpad taps once, as the window is activated: whether or not focus moves, at an end of the strip too.
+    /// Nothing if, before then, fingers take hold again or let go once more, or the Space no longer shows.
+    private func tapOnceStill(_ target: WindowID, in key: UInt64) {
+        stripTap += 1
+        guard config.gestures.scroll.haptic else { return }
+        let began = CACurrentMediaTime(), tap = stripTap
+        func check() {
+            guard tap == stripTap, stripScroll == nil, enabled, isVisible(key) else { return }
+            let moving = saGlides[key] != nil || pushes[key] != nil || animator.isAnimating(target)
+            guard !moving || CACurrentMediaTime() - began > 1.5 else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { check() }
+                return
+            }
+            tapTrackpad("strip settled")
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { check() }
     }
