@@ -1526,3 +1526,56 @@ struct BesideDropStackingTests {
         #expect(!DropHit.tile(3, .split(.up)).stacks(overBeside: .split(.right), shows: .tile(4, .swap)))
     }
 }
+
+struct StackShareTests {
+    /// The ratios of the column holding `id`.
+    private func column(_ ws: Workspace, of id: WindowID) -> [Double] {
+        ws.root.container(at: [ws.root.path(of: id)![0]]).ratios
+    }
+
+    @Test func `A third window stacked into a column of two takes a third`() {
+        var ws = strip(4, width: 0.3)
+        do { let r = ws.drop(2, onto: 1, .split(.down)); #expect(r) }
+        #expect(column(ws, of: 1) == [0.5, 0.5])
+        do { let r = ws.drop(3, onto: 1, .split(.up)); #expect(r) }
+        #expect(shape(ws.root) == "h[v[3 1 2] 4]")
+        for share in column(ws, of: 1) { #expect(abs(share - 1.0 / 3) < 1e-9) }
+    }
+
+    @Test func `The others keep their proportions`() {
+        var ws = strip(4, width: 0.3)
+        do { let r = ws.drop(2, onto: 1, .split(.down)); #expect(r) }
+        ws.root.modify(at: [0]) { $0.setRatios([0.7, 0.3]) }
+        do { let r = ws.drop(3, onto: 2, .split(.down)); #expect(r) }
+        let shares = column(ws, of: 1)
+        #expect(abs(shares[2] - 1.0 / 3) < 1e-9)
+        #expect(abs(shares[0] / shares[1] - 0.7 / 0.3) < 1e-9)
+    }
+
+    @Test func `Dropping a stacked window back where it is changes nothing`() {
+        var ws = strip(4, width: 0.3)
+        do { let r = ws.drop(2, onto: 1, .split(.down)); #expect(r) }
+        do { let r = ws.drop(3, onto: 1, .split(.up)); #expect(r) }
+        var again = ws
+        do { let r = again.drop(3, onto: 1, .split(.up)); #expect(r) }
+        #expect(again.root == ws.root)
+    }
+
+    @Test func `Into a pinned stack too, the pin kept`() throws {
+        var ws = try pinned(strip(5, width: 0.3), 1, .left)
+        ws.focus(2)
+        do { let r = ws.join(.left); #expect(r) }
+        do { let r = ws.drop(3, onto: 1, .split(.up)); #expect(r) }
+        #expect(shape(ws.root) == "h[v[3 1 2] 4 5]")
+        for share in column(ws, of: 1) { #expect(abs(share - 1.0 / 3) < 1e-9) }
+        marked(ws, pins: [.left: 1])
+    }
+
+    @Test func `Other layouts still split the tile in half`() {
+        var ws = Workspace(bounds: rect(0, 0, 1000, 600), gaps: .zero, algorithm: .dwindle(.tiles))
+        for id in 1...3 { ws.insert(WindowID(id)) }
+        let before = ws.layout().frames[1]!
+        do { let r = ws.drop(3, onto: 1, .split(.down)); #expect(r) }
+        #expect(abs(ws.layout().frames[3]!.height - before.height / 2) < 1)
+    }
+}

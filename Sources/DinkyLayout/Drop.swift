@@ -174,6 +174,7 @@ extension Workspace {
             let share = isScrolling ? root.path(of: target).map { width(ofColumn: $0[0]) } : nil
             splitTile(of: target, with: id, side)
             normalize()
+            if isScrolling { shareStack(with: id, besides: target) }
             if let share, let column = root.path(of: id)?.first { setWidth(ofColumn: column, share) }
         }
         focus(id)
@@ -231,6 +232,26 @@ extension Workspace {
         let pair: [Node] = side.isForward ? [.window(target), .window(id)] : [.window(id), .window(target)]
         root.modify(at: Array(at.dropLast())) {
             $0.replace(at: at.last!, with: .container(Container(ContainerOrientation(side.orientation), .tiles, pair)))
+        }
+    }
+
+    /// In a strip, `id` just stacked beside `target` in a column, the two sharing what `target` had: `id` takes its
+    /// share of the column instead, 1/n of n, and the others keep theirs among themselves, scaled to the rest, so a
+    /// column of thirds stays thirds, and dropping a window back where it already is changes nothing. Only where the two
+    /// sit one over the other in the same container.
+    private mutating func shareStack(with id: WindowID, besides target: WindowID) {
+        guard let path = root.path(of: id), let other = root.path(of: target), path.count > 1,
+              Array(path.dropLast()) == Array(other.dropLast()) else { return }
+        let parent = Array(path.dropLast())
+        root.modify(at: parent) { column in
+            guard column.orientation == .vertical, column.children.count > 2 else { return }
+            let n = Double(column.children.count), mine = path.last!, theirs = other.last!
+            var ratios = column.ratios
+            ratios[theirs] += ratios[mine]
+            ratios[mine] = 0
+            ratios = ratios.map { $0 * (n - 1) / n }
+            ratios[mine] = 1 / n
+            column.setRatios(ratios)
         }
     }
 
