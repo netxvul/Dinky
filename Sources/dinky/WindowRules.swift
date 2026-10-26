@@ -37,7 +37,8 @@ extension Coordinator {
         var floats: Bool?
         var runsRules = false
         // Only a new window runs the other commands. One open before dinky started, as on a restart, is where
-        // they left it, and running them again would move it, resize it and follow it about.
+        // they left it, and running them again would move it, resize it and follow it about. `pin` and `unpin` run
+        // for it all the same: pins are not kept across a restart, and a rule is how they come back.
         let isNew = window.identity.firstSeen > model.seededAt
         for rule in config.rules(for: window, kind: kind, title: title, element: element) {
             let holdsNow = !rule.asksWorkspace || matchesWorkspace(rule, space: window.spaceID)
@@ -47,7 +48,7 @@ extension Coordinator {
                 case .layout([.tiling]): if holdsNow { floats = false }
                 default:
                     if holdsNow, case .grid = command { floats = true }
-                    guard isNew else { continue }
+                    guard isNew || command.isPin else { continue }
                     if holdsNow { runsRules = true }
                     DispatchQueue.main.async { [weak self] in
                         guard let self else { return }
@@ -150,3 +151,13 @@ private func axString(_ element: AXUIElement, _ attribute: String) -> String? {
     return value as? String
 }
 
+
+private extension Command {
+    /// `pin` or `unpin`, which rules run for windows open before dinky started too.
+    var isPin: Bool {
+        switch self {
+        case .pin, .unpin: true
+        default: false
+        }
+    }
+}

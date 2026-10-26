@@ -388,3 +388,40 @@ struct PinVisualTests {
         #expect(starts[1] == targets[1], "the pin does not move")
     }
 }
+
+struct PinSurvivalTests {
+    @Test func `A pin minimized or floated comes back pinned while its side is free`() {
+        var ws = pinned(strip(4), 2, .left)
+        ws.depart(2)
+        #expect(ws.pins.isEmpty && ws.departedPins[.left] == 2)
+        ws.arrive(2)
+        #expect(ws.pins[.left] == 2)
+        #expect(columns(ws).first == [2])
+    }
+
+    @Test func `One that comes back to a side another pin took stays in the band`() {
+        var ws = pinned(strip(4), 2, .left)
+        ws.depart(2)
+        ws = pinned(ws, 3, .left)
+        ws.arrive(2)
+        #expect(ws.pins[.left] == 3)
+        #expect(ws.contains(2) && ws.pinSide(of: 2) == nil)
+        #expect(ws.departedPins.isEmpty)
+    }
+
+    @Test func `Closed, a departed pin is forgotten`() {
+        var ws = pinned(strip(4), 2, .left)
+        ws.depart(2)
+        ws.arrive(2)
+        ws.remove(2)
+        #expect(ws.pins.isEmpty && ws.departedPins.isEmpty)
+    }
+
+    @Test func `On a narrower display, pins that leave the band too little room are let go`() {
+        var ws = pinned(pinned(strip(4, width: 0.35), 1, .left), 4, .right)
+        ws.bounds = rect(0, 0, 1000, 600)
+        ws.minimumSizes[2] = CGSize(width: 500, height: 100)
+        ws.fitPins()
+        #expect(ws.pins.count < 2)
+    }
+}

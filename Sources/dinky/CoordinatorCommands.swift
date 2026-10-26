@@ -93,7 +93,8 @@ extension Coordinator {
     func setFloating(_ id: WindowID, _ floating: Bool) -> Bool {
         guard let placement = placements[id], let window = model.windows[id] else { return false }
         if floating, placement.floating { return true }
-        if let space = placement.space { edit(space) { $0.remove(id) } }
+        // Floated, a pin is pinned again as it is tiled back.
+        if let space = placement.space { edit(space) { floating ? $0.depart(id) : $0.remove(id) } }
         heldTabs[id] = nil
         filledFrom[id] = nil
         griddedFrom[id] = nil

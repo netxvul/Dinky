@@ -215,3 +215,31 @@ extension Workspace {
         }
     }
 }
+
+extension Workspace {
+    /// `remove` for a window going away for a while, minimized, hidden or floated: a pin of its own is remembered, so
+    /// it is pinned again as it comes back (`arrive`).
+    public mutating func depart(_ id: WindowID) {
+        let side = pinSide(of: id)
+        let lone = side.flatMap { pinnedIndex($0) }.map { root.children[$0].windows.count == 1 } ?? false
+        remove(id)
+        if let side, lone { departedPins[side] = id }
+    }
+
+    /// `insert` for a window coming back: one that went away pinned is pinned again, to the side it had while that
+    /// side is still free and the band keeps room, else it stays in the band.
+    public mutating func arrive(_ id: WindowID) {
+        insert(id)
+        guard let side = departedPins.first(where: { $0.value == id })?.key else { return }
+        departedPins[side] = nil
+        if pinnedIndex(side) == nil { _ = pin(side, window: id) }
+    }
+}
+
+extension Workspace {
+    /// After the display or the gaps changed: pins that leave the band too little room now are unpinned, the right one
+    /// first, till it has room again.
+    public mutating func fitPins() {
+        for side in [PinSide.right, .left] where !bandHasRoom && pinnedIndex(side) != nil { _ = unpin(side) }
+    }
+}

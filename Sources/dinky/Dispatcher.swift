@@ -337,9 +337,16 @@ enum Dispatcher {
         if coordinator.isFloating(id) == true { return .nothing("\(name): the window floats", ok: false) }
         let result: PinChange?
         if let window, let key = coordinator.placements[window]?.space {
+            // A rule leaves a window the user unpinned alone.
+            if coordinator.unpinnedByHand.contains(window) { return .ok("\(name): unpinned by hand, left so") }
             result = coordinator.command(onSpace: key) { $0.contains(window) ? change(&$0) : .refused("the window is not tiled") }
         } else {
+            let key = coordinator.placements[id]?.space
+            let before = key.flatMap { coordinator.workspaces[$0]?.pinnedWindows } ?? []
             result = coordinator.command { change(&$0) }
+            let after = key.flatMap { coordinator.workspaces[$0]?.pinnedWindows } ?? []
+            coordinator.unpinnedByHand.formUnion(Set(before).subtracting(after))
+            coordinator.unpinnedByHand.subtract(after)
         }
         switch result {
         case nil: return .error("\(name): the focused window is not tiled")

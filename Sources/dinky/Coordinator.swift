@@ -75,6 +75,8 @@ final class Coordinator {
     /// The tiled window the mouse button is down on, from the first frame change the press brings till the window has
     /// gone from where it was pressed, which makes the press a drag, or the button comes up. See Drag.swift.
     var windowPress: WindowPress?
+    /// Windows the user unpinned, which their rules do not pin again as they run once more (see `retryUnreachable`).
+    var unpinnedByHand: Set<WindowID> = []
     /// Windows a drop took to another Space's tree, by that Space, until they are on it: macOS can report one on the
     /// Space it left for a moment, which must not take it out of its new tree.
     var arriving: [WindowID: UInt64] = [:]
@@ -380,6 +382,7 @@ final class Coordinator {
             workspaces[key]!.bounds = display.visibleArea
             workspaces[key]!.gaps = gaps(on: display)
             workspaces[key]!.walls = walls(of: display)
+            workspaces[key]!.fitPins()
         }
     }
 
@@ -500,12 +503,17 @@ final class Coordinator {
             let why = window.isMinimized ? "minimized, or its app hidden" : !window.isOrderedIn ? "ordered out"
                 : new.map { "moved to Space \($0)" } ?? "on Space \(window.spaceID), which dinky does not tile"
             telemetry.member(old, workspaces[old], window.id, joined: false, why)
-            edit(old) { $0.remove(window.id) }
+            // Minimized or hidden, a pin is pinned again as it comes back; moved to another Space, it is unpinned.
+            if new == nil, window.isMinimized || !window.isOrderedIn {
+                edit(old) { $0.depart(window.id) }
+            } else {
+                edit(old) { $0.remove(window.id) }
+            }
         }
         // A window coming from another Space's tree is moving, not switching tabs: tabs share a Space.
         if let new, old == nil, holdAsTab(window, in: new) { return }
         if let new {
-            edit(new) { $0.insert(window.id) }
+            edit(new) { $0.arrive(window.id) }
             telemetry.member(new, workspaces[new], window.id, joined: true, old.map { "from Space \($0)" } ?? "shown")
         }
         placements[window.id]!.space = new
@@ -552,13 +560,14 @@ final class Coordinator {
         if let space = placements[id]?.space {
             telemetry.member(space, workspaces[space], id, joined: false,
                              freed ? "floated, on a free workspace" : "floated, Accessibility cannot read it")
-            edit(space) { $0.remove(id) }
+            edit(space) { $0.depart(id) }
         }
         heldTabs[id] = nil
         placements[id] = Placement(floating: true, space: nil, freed: freed)
     }
 
     private func forget(_ id: WindowID) {
+        unpinnedByHand.remove(id)
         stagingWindows[id] = nil
         systemTiling[id] = nil
         systemFilled[id] = nil
