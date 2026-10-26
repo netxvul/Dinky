@@ -80,6 +80,16 @@ struct PinGeometryTests {
 }
 
 struct PinScrollTests {
+    @Test func `Pinning shows the band whole, the window focus goes back to in view`() {
+        var ws = strip(6, width: 0.5)
+        ws.focus(4)
+        #expect(ws.pin(.left) == .changed)
+        let back = try! #require(ws.bandFocus)
+        #expect(ws.isInView(back))
+        let frame = ws.tiledLayout().frames[back]!
+        #expect(frame.minX >= ws.stripInset.minX - 1)
+    }
+
     @Test func `Focusing a pin scrolls nothing`() {
         var ws = pinned(strip(8), 1, .left)
         ws.focus(6)

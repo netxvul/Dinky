@@ -274,7 +274,10 @@ final class Coordinator {
             guard !pins.isEmpty, workspace.layout().order.first.map({ !workspace.fullscreenWindows.contains($0) }) ?? true
             else { continue }
             let tree = Set(workspace.windows)
-            for pin in pins where model.windows[pin]?.pid != focusedApp {
+            // Nor of the app of the window the tree is focusing, which dinky may be about to activate: raised, the pin
+            // would be that app's front window and take focus as it activates.
+            let focusingApp = workspace.focused.flatMap { model.windows[$0]?.pid }
+            for pin in pins where model.windows[pin]?.pid != focusedApp && model.windows[pin]?.pid != focusingApp {
                 guard let frame = model.windows[pin]?.frame, let at = position[pin] else { continue }
                 let over = order.prefix(at).filter { id in
                     id != pin && model.windows[id].map { $0.frame.intersects(frame) && $0.isVisible } ?? false

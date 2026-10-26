@@ -141,6 +141,8 @@ extension Workspace {
         }
         guard pinned.bandHasRoom else { return .refused("the band would be left too little room") }
         self = pinned
+        // The band narrowed under its scroll: it shows the window focus goes back to from the pin, whole.
+        if let back = bandFocus, bandIndex(of: back) != nil { reveal(back) }
         if let shown = self.focused { focus(shown) }
         return .changed
     }
