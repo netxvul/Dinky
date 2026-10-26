@@ -77,6 +77,11 @@ final class Coordinator {
     var windowPress: WindowPress?
     /// Windows the user unpinned, which their rules do not pin again as they run once more (see `retryUnreachable`).
     var unpinnedByHand: Set<WindowID> = []
+    /// Each app's window the user focused last, by process.
+    private var lastUsed: [pid_t: WindowID] = [:]
+    /// Pins dinky raised while their app was in the background: raising made each its app's main window, so the app
+    /// coming to the front would open on it rather than on the window the user had (see `syncFocus`).
+    private var raisedInBackground: Set<WindowID> = []
     /// Windows a drop took to another Space's tree, by that Space, until they are on it: macOS can report one on the
     /// Space it left for a moment, which must not take it out of its new tree.
     var arriving: [WindowID: UInt64] = [:]
@@ -303,7 +308,20 @@ final class Coordinator {
                 && model.windows[id].map({ apps.contains($0.pid) }) == true { fronts.append(id) }
         }
         guard !raise.isEmpty else { return }
-        let ids = raise + fronts
+        // A pin of an app in the background becomes its main window as it is raised: the window of that app the user
+        // had goes back on top of its app's after it, where it covers no pin, so the app comes to the front on it.
+        let frontApp = model.windows[focusedWindow]?.pid
+        var restore: [WindowID] = []
+        for pin in raise {
+            guard let pid = model.windows[pin]?.pid, pid != frontApp else { continue }
+            raisedInBackground.insert(pin)
+            guard let used = lastUsed[pid], used != pin, !raise.contains(used), !restore.contains(used),
+                  let key = placements[used]?.space, let workspace = workspaces[key], workspace.pinSide(of: used) == nil,
+                  let frame = model.windows[used]?.frame,
+                  !PinSide.allCases.contains(where: { workspace.pinFrame($0)?.intersects(frame) == true }) else { continue }
+            restore.append(used)
+        }
+        let ids = raise + fronts + restore
         let pids = Dictionary(uniqueKeysWithValues: ids.compactMap { id in model.windows[id].map { (id, $0.pid) } })
         applier.raisePins(ids, pids: pids, front: focusedWindow)
     }
@@ -599,6 +617,8 @@ final class Coordinator {
 
     private func forget(_ id: WindowID) {
         unpinnedByHand.remove(id)
+        raisedInBackground.remove(id)
+        lastUsed = lastUsed.filter { $0.value != id }
         // A pin away when it closed: no tree remembers it, its id free for another window.
         for key in workspaces.keys where workspaces[key]!.departedPins.values.contains(id) {
             edit(key) { $0.forgetPinned(id) }
@@ -642,6 +662,15 @@ final class Coordinator {
     func focus(_ id: WindowID) {
         guard let window = model.windows[id] else { return }
         if let space = placements[id]?.space { telemetry.command(space, "dinky focused \(id) \(window.appName ?? "?")") }
+        // A band window still under a pin is activated once it rests in the band, as a clicked peek is: activated now,
+        // its app would bring it up over the pin as it slides out.
+        if let key = placements[id]?.space, let workspace = workspaces[key], workspace.pinSide(of: id) == nil,
+           PinSide.allCases.contains(where: { workspace.pinFrame($0)?.intersects(window.frame) == true }) {
+            focusing = (id, Date() + 3)
+            edit(key) { $0.focus(id) }
+            flush()
+            return focusOnceStill(id, in: key)
+        }
         // Until the app is activated, which waits on Accessibility calls into it off the main thread (at most about
         // two seconds), and for half a second after.
         focusing = (id, Date() + 3)
@@ -668,6 +697,17 @@ final class Coordinator {
         if applier.echoesRaise(id) {
             if let key = placements[id]?.space, let workspace = workspaces[key] { telemetry.passedOver(key, workspace, id) }
             return
+        }
+        if id != lastFocused, let pid = model.windows[id]?.pid {
+            // Its app came to the front on a pin dinky raised meanwhile, not one the user chose: back to the window they
+            // had. A click on the pin is theirs.
+            if raisedInBackground.contains(id), !clickUnderWay(within: 0.3), let used = lastUsed[pid], used != id,
+               model.windows[used] != nil, placements[used]?.space != nil {
+                raisedInBackground = raisedInBackground.filter { model.windows[$0]?.pid != pid }
+                return focus(used)
+            }
+            raisedInBackground = raisedInBackground.filter { model.windows[$0]?.pid != pid }
+            if placements[id]?.space != nil { lastUsed[pid] = id }
         }
         if id != lastFocused {
             // Before the override goes: a new window can take focus before it shows. See Adoption.swift.
@@ -1179,6 +1219,8 @@ final class Coordinator {
         guard var workspace = shownByDrag ?? workspaces[key] else { return }
         workspace.minimumSizes = minimumSizes(in: workspace)
         workspace.observedWidths = observedWidths(in: workspace)
+        // A minimum learned since the pins were made, or a wide window come in, narrows them so the band fits it.
+        workspace.fitBand()
         // Pushing, a fullscreen window fills where macOS's own Fill puts it, over its neighbours' peeks, when that is
         // the area inside the outer gaps: the system can then animate it there itself (see SystemTiling).
         // Not with a column pinned: Fill would cover it.

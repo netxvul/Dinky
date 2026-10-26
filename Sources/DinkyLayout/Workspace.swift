@@ -88,6 +88,10 @@ public struct Workspace: Equatable, Sendable {
     public var departedPins: [PinSide: WindowID] = [:]
     /// Scrolling: the width each departed pin had, which it takes again as it comes back.
     var departedWidths: [WindowID: Double] = [:]
+    /// Scrolling: where each departed pin was pinned from, which unpinning it goes back to once it is pinned again.
+    var departedOrigins: [WindowID: PinOrigin] = [:]
+    /// Scrolling: the side pinned last, whose pin narrows first where the band needs room (see `fitBand`).
+    var lastPinned: PinSide?
     /// Scrolling: how far the strip is scrolled, in points from its start. The layout clamps it.
     var scrollOffset: CGFloat = 0
     /// Scrolling: the layout keeps `scrollOffset` past the strip's ends, as `scroll(columnOf:to:pastEnds:)` leaves it.

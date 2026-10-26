@@ -157,6 +157,7 @@ extension Workspace {
         root.insert(node, at: side == .left ? 0 : root.children.count)
         pins[side] = id
         pinOrigins[side] = origin
+        lastPinned = side
     }
 
     /// Unpin the column pinned to `side`, or with nil the focused window's column: it goes back between the columns it
@@ -207,6 +208,7 @@ extension Workspace {
             if departedPins[side] == id { departedPins[side] = nil }
         }
         departedWidths[id] = nil
+        departedOrigins[id] = nil
         if bandFocus == id { bandFocus = nil }
     }
 
@@ -250,11 +252,12 @@ extension Workspace {
     public mutating func depart(_ id: WindowID) {
         let side = pinSide(of: id)
         let lone = side.flatMap { pinnedIndex($0) }.map { root.children[$0].windows.count == 1 } ?? false
-        let share = columnWidths[id]
+        let share = columnWidths[id], origin = side.flatMap { pinOrigins[$0] }
         remove(id)
         if let side, lone {
             departedPins[side] = id
             departedWidths[id] = share
+            departedOrigins[id] = origin
         }
     }
 
@@ -264,7 +267,7 @@ extension Workspace {
         insert(id)
         guard let side = departedPins.first(where: { $0.value == id })?.key else { return }
         departedPins[side] = nil
-        let share = departedWidths.removeValue(forKey: id)
+        let share = departedWidths.removeValue(forKey: id), origin = departedOrigins.removeValue(forKey: id)
         // Outside the scrolling layout, a mark asleep till it scrolls again, for a side still free.
         guard isScrolling else {
             if pins[side] == nil { pins[side] = id }
@@ -274,7 +277,12 @@ extension Workspace {
         // At the width it had, so it fits where it did.
         let old = width(ofColumn: column)
         if let share { setWidth(ofColumn: column, share) }
-        if pin(side, window: id) != .changed { setWidth(ofColumn: column, old) }
+        if pin(side, window: id) != .changed {
+            setWidth(ofColumn: column, old)
+        } else if let origin {
+            // Unpinned later, it goes back to where it was first pinned from.
+            pinOrigins[side] = origin
+        }
     }
 }
 
@@ -336,4 +344,29 @@ extension Workspace {
 extension Workspace {
     /// Where the column pinned to `side` is, nil with none.
     public func pinFrame(_ side: PinSide) -> CGRect? { pinnedIndex(side).map(pinRect) }
+}
+
+extension Workspace {
+    /// A band that is short of room, as once an app's minimum width is learned or a wide window comes in, takes it from
+    /// the pins: the one pinned last narrows first, down to what its windows take and the narrowest column, then the
+    /// other, till the band has room again. Never unpinned for it; what still does not fit stays under the pins. Only
+    /// with a pin.
+    public mutating func fitBand() {
+        guard hasPins, !bandHasRoom else { return }
+        let inset = gaps.inset(bounds).width, gap = gaps.horizontal
+        let order = [lastPinned ?? .right, lastPinned == .left ? .right : .left]
+        for side in order {
+            guard !bandHasRoom, let index = pinnedIndex(side), inset > 0 else { continue }
+            let band = bandRange
+            let widest = band.map {
+                root.children[$0].minimumExtent(.horizontal, gap: gap, padding: accordionPadding, minimumSizes)
+            }.max() ?? 0
+            let needed = max(inset * CGFloat(Self.minimumBandShare), widest + gap)
+            let short = needed - stripInset.width
+            let own = root.children[index].minimumExtent(.horizontal, gap: gap, padding: accordionPadding, minimumSizes)
+            let floor = max(Self.minimumColumnWidth, Double((own + gap / 2) / inset))
+            let share = width(ofColumn: index)
+            setWidth(ofColumn: index, max(share - Double(short / inset), floor))
+        }
+    }
 }

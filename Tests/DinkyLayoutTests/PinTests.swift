@@ -676,3 +676,32 @@ struct PinSurvivalTests {
         do { let r = ws.resize(2, to: CGSize(width: 400, height: 600)); #expect(!r) }
     }
 }
+
+struct PinFitTests {
+    @Test func `A minimum learned after pinning narrows the pin pinned last, never unpinning it`() throws {
+        var ws = try pinned(pinned(strip(4, width: 0.3), 1, .left), 4, .right)
+        ws.minimumSizes[2] = CGSize(width: 500, height: 100)
+        ws.fitBand()
+        #expect(ws.pins.count == 2)
+        #expect(ws.width(ofColumn: 3) < 0.3, "the right pin, pinned last, narrowed")
+        #expect(ws.stripInset.width >= 500)
+    }
+
+    @Test func `With nothing pinned, fitting the band changes nothing`() {
+        var ws = strip(4)
+        ws.minimumSizes[2] = CGSize(width: 1500, height: 100)
+        let before = ws
+        ws.fitBand()
+        #expect(ws == before)
+    }
+
+    @Test func `Minimized and restored, a pin still unpins to where it was first pinned from`() throws {
+        var ws = try pinned(strip(5), 2, .left)
+        ws.depart(2)
+        ws.focus(4)
+        ws.arrive(2)
+        #expect(ws.pins[.left] == 2)
+        #expect(ws.unpin(.left) == .changed)
+        #expect(shape(ws.root) == "h[1 2 3 4 5]")
+    }
+}
