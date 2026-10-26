@@ -419,7 +419,11 @@ enum Dispatcher {
         let id = window ?? coordinator.commandFocusedWindow
         guard let floating = coordinator.isFloating(id) else { return .error("layout: no window dinky manages is focused") }
         var current: [LayoutName] = floating ? [.floating] : [.tiling]
-        if !floating, coordinator.isScrolling(id) {
+        // A window sharing a strip column has that column's layout, which `layout` changes alone (see `changesColumn`).
+        let column = floating ? nil : coordinator.stripColumn(of: id)
+        if let column, let axis = coordinator.containerAxis(of: id) {
+            current = LayoutName.describingColumn(column.mode, axis: axis, auto: column.orientation == .auto)
+        } else if !floating, coordinator.isScrolling(id) {
             current.append(.scrolling)
         } else if !floating, let container = coordinator.container(of: id), let axis = coordinator.containerAxis(of: id) {
             current += LayoutName.describing(container.mode, axis: axis, auto: container.orientation == .auto)
@@ -432,10 +436,15 @@ enum Dispatcher {
             coordinator.setFloating(id, name == .floating)
         case .scrolling:
             if floating { coordinator.setFloating(id, false) }
-            coordinator.setScrolling(true, for: id)
+            if let column, name.changesColumn(column.mode) {
+                coordinator.command(on: id) { $0.setLayout(.tiles, nil) }
+            } else {
+                coordinator.setScrolling(true, for: id)
+            }
         default:
             if floating { coordinator.setFloating(id, false) }
-            if coordinator.isScrolling(id) { coordinator.setScrolling(false, for: id) }
+            let inColumn = column.map { name.changesColumn($0.mode) } ?? false
+            if coordinator.isScrolling(id), !inColumn { coordinator.setScrolling(false, for: id) }
             coordinator.command(on: id) { $0.setLayout(name.mode, name.orientation) }
         }
         Hud.shared.layoutChanged(name.rawValue)

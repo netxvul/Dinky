@@ -92,6 +92,11 @@ extension Workspace {
         bandIndex(of: id).map { hangsUnderPin(column: $0) } ?? false
     }
 
+    /// Whether `id` shares its strip column with other windows, in a container `setLayout` changes alone.
+    public func sharesColumn(_ id: WindowID) -> Bool {
+        isScrolling && (root.path(of: id)?.count ?? 0) > 1
+    }
+
     /// Whether a column is pinned to either side.
     var hasPins: Bool { pinnedIndex(.left) != nil || pinnedIndex(.right) != nil }
 

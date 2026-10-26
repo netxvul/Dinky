@@ -143,6 +143,25 @@ struct ParseTests {
         #expect(LayoutName.next(in: [.accordion], current: [.tiling, .accordion]) == .accordion)
     }
 
+    @Test func `A strip column of several windows cycles stack, accordion, then back, and leaves the strip from a stack`() {
+        let cycle: [LayoutName] = [.tiles, .accordion, .scrolling]
+        let stack = LayoutName.describingColumn(.tiles, axis: .vertical, auto: false)
+        let accordion = LayoutName.describingColumn(.accordion, axis: .vertical, auto: false)
+        #expect(stack == [.tiling, .scrolling, .tiles, .vertical, .vTiles])
+        #expect(!accordion.contains(.scrolling))
+        // From a stack: tiles, as from the strip, which takes the workspace to its tree.
+        #expect(LayoutName.next(in: cycle, current: stack) == .tiles)
+        #expect(!LayoutName.tiles.changesColumn(.tiles) && !LayoutName.vTiles.changesColumn(.tiles))
+        // accordion and orientations change the column alone.
+        #expect(LayoutName.next(in: [.accordion], current: stack) == .accordion)
+        #expect(LayoutName.accordion.changesColumn(.tiles) && LayoutName.horizontal.changesColumn(.tiles))
+        // From an accordion: scrolling stacks it again, and tiles does too, the strip staying.
+        #expect(LayoutName.next(in: cycle, current: accordion) == .scrolling)
+        #expect(LayoutName.scrolling.changesColumn(.accordion) && LayoutName.tiles.changesColumn(.accordion))
+        #expect(!LayoutName.scrolling.changesColumn(.tiles))
+        #expect(!LayoutName.floating.changesColumn(.accordion) && !LayoutName.tiling.changesColumn(.accordion))
+    }
+
     @Test func `Layout names set mode, orientation or both`() {
         #expect(LayoutName.hAccordion.mode == .accordion)
         #expect(LayoutName.hAccordion.orientation == .horizontal)

@@ -1859,3 +1859,65 @@ struct StripRestoreDecisionTests {
         #expect(!wider.keepsShape(of: unpinned), "a column at another width")
     }
 }
+
+struct AccordionColumnTests {
+    /// A strip of 4 with windows 1 and 2 joined into an accordion column at its start, 2 focused.
+    private func accordionColumn(gaps: Gaps = .zero) -> Workspace {
+        var ws = strip(4, gaps: gaps)
+        ws.focus(2)
+        _ = ws.join(.left)
+        ws.setLayout(.accordion, nil)
+        return ws
+    }
+
+    @Test func `A strip column of several windows becomes an accordion and stays one, the strip staying`() {
+        var ws = accordionColumn()
+        #expect(ws.isScrolling)
+        #expect(shape(ws.root) == "h[av[1 2] 3 4]")
+        ws.normalize()
+        ws.focus(4)
+        ws.focus(1)
+        #expect(shape(ws.root) == "h[av[1 2] 3 4]")
+        #expect(ws.sharesColumn(1) && !ws.sharesColumn(3))
+    }
+
+    @Test func `A window alone in its column has no column layout to change`() {
+        var ws = strip(3)
+        ws.focus(2)
+        ws.setLayout(.accordion, nil)
+        #expect(shape(ws.root) == "h[1 2 3]")
+    }
+
+    @Test func `Joining into an accordion column stacks the window into the accordion`() {
+        var ws = accordionColumn()
+        ws.focus(3)
+        do { let r = ws.join(.left); #expect(r) }
+        #expect(shape(ws.root) == "h[av[1 2 3] 4]")
+    }
+
+    @Test func `An accordion column lays out in its column, its focused window in front`() {
+        let ws = accordionColumn(gaps: spaced)
+        let layout = ws.tiledLayout(), column = ws.columnSpans(in: ws.stripArea)[0]
+        for id: WindowID in [1, 2] {
+            let frame = layout.frames[id]!
+            #expect(frame.width <= column.width && frame.height < 584, "offset in its column")
+        }
+        let order = layout.order
+        #expect(order.firstIndex(of: 2)! < order.firstIndex(of: 1)!, "the focused window first, in front")
+    }
+
+    @Test func `A pinned accordion column keeps its accordion in the pin's rect, its shown window stacked in front`() throws {
+        var ws = accordionColumn(gaps: spaced)
+        do { let r = ws.pin(.left); #expect(r == .changed) }
+        marked(ws, pins: [.left: 2])
+        #expect(shape(ws.root) == "h[av[1 2] 3 4]")
+        let pin = ws.pinRect(0), layout = ws.layout()
+        #expect(pin.contains(layout.frames[1]!) && pin.contains(layout.frames[2]!))
+        // Back to front, as raiseCoveredPins raises a pinned column: the shown window last.
+        let raised = layout.order.filter { ws.pinSide(of: $0) != nil }.reversed()
+        #expect(Array(raised) == [1, 2])
+        ws.focus(3)
+        let still = ws.layout().order.filter { ws.pinSide(of: $0) != nil }
+        #expect(still.first == 2, "with focus in the band, the window shown last stays in front")
+    }
+}
