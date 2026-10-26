@@ -90,6 +90,8 @@ extension Command {
             let rest = args.filter { $0 != "--toggle" }
             guard rest.count == 1, args.count - rest.count <= 1, let side = PinSide(rawValue: rest[0]) else { return nil }
             return .pin(side, toggle: rest.count < args.count)
+        case "focus-pin":
+            return one.flatMap(PinSide.init(rawValue:)).map { .focusPin($0) }
         case "unpin":
             if none { return .unpin(nil) }
             return one.flatMap(PinSide.init(rawValue:)).map { .unpin($0) }

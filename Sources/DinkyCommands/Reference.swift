@@ -79,6 +79,9 @@ extension Command {
         Doc(syntax: "unpin [left|right]",
             description: "Unpin the column pinned to that side, or the focused window's: it goes back between the columns "
                 + "it was pinned from."),
+        Doc(syntax: "focus-pin <left|right>",
+            description: "Focus the column pinned to that side, scrolling nothing; run again with it focused, go back to "
+                + "the band window focused last."),
         Doc(syntax: "flatten-workspace-tree",
             description: "Put every window on the workspace back into its layout, in order, undoing tree edits. A scrolling workspace keeps its column widths. "
                 + "With a floating window focused, acts on the tiles of its workspace."),

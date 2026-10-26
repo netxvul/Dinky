@@ -34,6 +34,8 @@ public enum Command: Equatable, Sendable {
     case pin(PinSide, toggle: Bool = false)
     /// Unpin the column pinned to a side, or with nil the focused window's.
     case unpin(PinSide?)
+    /// Focus the column pinned to a side without scrolling; with it focused, go back to the band.
+    case focusPin(PinSide)
     case flattenWorkspaceTree
     case balanceSizes
     /// Turn the focused workspace's tree clockwise, as yabai's `space --rotate`.

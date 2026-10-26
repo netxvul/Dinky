@@ -243,3 +243,23 @@ extension Workspace {
         for side in [PinSide.right, .left] where !bandHasRoom && pinnedIndex(side) != nil { _ = unpin(side) }
     }
 }
+
+extension Workspace {
+    /// `focus-pin`: focus the column pinned to `side`, scrolling nothing; with it focused already, the band window
+    /// focused last instead. The window focused, nil with nothing pinned there.
+    public mutating func focusPin(_ side: PinSide) -> WindowID? {
+        guard let index = pinnedIndex(side) else { return nil }
+        let target: WindowID?
+        if let focused, root.children[index].windows.contains(focused) {
+            target = bandReturn(from: side)
+        } else {
+            target = switch root.children[index] {
+            case .window(let id): id
+            case .container(let c): c.mostRecentWindow
+            }
+        }
+        guard let target else { return nil }
+        focus(target)
+        return target
+    }
+}

@@ -28,6 +28,7 @@ prints it.
 | `grid [--toggle] <rows>:<columns>:<x>:<y>:<width>:<height>` | Float the focused window and glide it onto a grid over its display, as yabai's `--grid`. `--toggle` tiles a floating window instead, or on a free workspace puts it back where it was. See [Grid](#grid). |
 | `cycle-size <percent>...` | Step the focused window to the next of these sizes, as percentages of its display. A floating window is centred at that width and height; a tile or scrolling column takes that width. See [Cycle size](#cycle-size). |
 | `pin <left\|right> [--toggle]` | Pin the focused window's column to that side of the screen in a scrolling workspace, the other columns scrolling between. Pinned there already it stays, or with `--toggle` is unpinned. See [Pins](#pins). |
+| `focus-pin <left\|right>` | Focus the column pinned to that side without scrolling; again, back to the band window focused last. |
 | `unpin [left\|right]` | Unpin the column pinned to that side, or the focused window's: it goes back between the columns it was pinned from. |
 | `flatten-workspace-tree` | Put every window back into the workspace's layout, in order, undoing tree edits. A scrolling workspace keeps its column widths. |
 | `balance-sizes` | Give every window an equal share. |
@@ -111,6 +112,8 @@ room for its widest window; a pin or a resize that would leave less is refused.
   unpins. Pinning a side another column holds sends that column back to where it
   was pinned from, and pinning the other side's column moves it across.
 - `unpin` puts the column back between the columns it was pinned from.
+- `focus-pin left` jumps straight to the left pin, however far the band is
+  scrolled, and again goes back to where focus was in the band.
 
 Nothing is bound by default. For example:
 

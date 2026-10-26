@@ -80,7 +80,7 @@ extension Dispatcher {
         return .ok("focused display \((model.displays.firstIndex(of: display) ?? 0) + 1)")
     }
 
-    private static func focus(window id: WindowID) -> Reply {
+    static func focus(window id: WindowID) -> Reply {
         guard let coordinator = AppState.shared.coordinator, let window = coordinator.model.windows[id] else {
             return .error("window \(id) is gone")
         }

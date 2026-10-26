@@ -425,3 +425,15 @@ struct PinSurvivalTests {
         #expect(ws.pins.count < 2)
     }
 }
+
+struct FocusPinTests {
+    @Test func `focus-pin jumps to a pin without scrolling, and again goes back to the band`() {
+        var ws = pinned(strip(8), 1, .left)
+        ws.focus(7)
+        let shown = ws.shownOffset
+        #expect(ws.focusPin(.left) == 1)
+        #expect(ws.shownOffset == shown)
+        #expect(ws.focusPin(.left) == 7)
+        #expect(ws.focusPin(.right) == nil, "nothing pinned right")
+    }
+}

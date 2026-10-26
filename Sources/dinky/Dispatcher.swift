@@ -138,6 +138,12 @@ enum Dispatcher {
             return pin("pin \(side.rawValue)" + (toggle ? " --toggle" : ""), window: window) {
                 $0.pin(side, toggle: toggle, freeSideOnly: window != nil, window: window)
             }
+        case .focusPin(let side):
+            guard let coordinator = AppState.shared.coordinator else { return .error("tiling is not running") }
+            guard let id = coordinator.command({ $0.focusPin(side) }) ?? nil else {
+                return .nothing("focus-pin \(side.rawValue): nothing is pinned \(side.rawValue)", ok: false)
+            }
+            return focus(window: id)
         case .unpin(let side):
             return pin("unpin" + (side.map { " \($0.rawValue)" } ?? ""), window: window) { $0.unpin(side, window: window) }
         case .flattenWorkspaceTree:
