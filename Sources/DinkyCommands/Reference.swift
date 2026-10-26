@@ -70,6 +70,15 @@ extension Command {
                 + "'cycle-size 50% 30% 60%': the size after the one it has now, or the first. A floating window is centred "
                 + "at that width and height of the display's visible area, inside the outer gaps. A tile takes that width "
                 + "along its nearest side-by-side container, and a scrolling column that width; heights stay."),
+        Doc(syntax: "pin <left|right> [--toggle]",
+            description: "Pin the focused window's column to the left or right side of the screen in a scrolling workspace: "
+                + "it stays there while the other columns scroll in the band between, one column on each side at most. "
+                + "Pinned there already, it stays, or with --toggle is unpinned; pinned to the other side, it moves across, "
+                + "and a column pinned to that side already goes back to where it was pinned from. Refused where the band "
+                + "would be left less than a quarter of the screen or too narrow for its widest window."),
+        Doc(syntax: "unpin [left|right]",
+            description: "Unpin the column pinned to that side, or the focused window's: it goes back between the columns "
+                + "it was pinned from."),
         Doc(syntax: "flatten-workspace-tree",
             description: "Put every window on the workspace back into its layout, in order, undoing tree edits. A scrolling workspace keeps its column widths. "
                 + "With a floating window focused, acts on the tiles of its workspace."),

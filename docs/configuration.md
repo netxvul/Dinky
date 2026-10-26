@@ -121,6 +121,12 @@ else reaches the app as usual, and the strip scrolls once the button is up.
 layout = 'scrolling'
 ```
 
+`pin left` and `pin right` hold the focused window's column at a side of the
+screen while the others scroll in the band between, after SlideScroll; see
+[Pins](commands.md#pins). Pins are not kept across a restart of dinky: a
+[rule](#rules) such as `run = 'pin right'` pins a window again, and with nothing
+pinned on that side, a rule's `pin` takes only a free side.
+
 `layout scrolling` switches the focused window's workspace to scrolling on the fly, and
 `layout tiles` or `accordion` switches it back to its tree. The switch holds
 until you switch again. To cycle all three on one key:

@@ -196,6 +196,15 @@ final class FrameApplier {
         }
     }
 
+    /// Raise pinned windows to the front, back to front, so the last is frontmost: they overlap nothing in view, only
+    /// the band's windows sliding under them. Not when that could move focus (see `raisingKeepsFocus`).
+    func raisePins(_ ids: [WindowID], pids: [WindowID: pid_t], front: WindowID?) {
+        raiseQueue.async {
+            guard Self.raisingKeepsFocus(ids, front: front, pids: pids) else { return }
+            self.raise(ids, pids: pids, front: front)
+        }
+    }
+
     /// Minimums are recorded after a retry; note each new one under its app. A window written that came out smaller than
     /// its app's in a dimension it has none of its own in, and so takes its app's in, where it was put and wholly on
     /// screen, as one asked for less than that where the layout could not make the room, shows the app's is too big for

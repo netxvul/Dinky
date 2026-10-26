@@ -29,6 +29,11 @@ public enum Command: Equatable, Sendable {
     /// Step the focused window to the next of these sizes, percentages of its display: a floating window
     /// centred at that width and height, a tile or scrolling column at that width.
     case cycleSize([Int])
+    /// Pin the focused window's column to a side of the screen in a scrolling strip. Pinned there already it stays,
+    /// or with `toggle` is unpinned.
+    case pin(PinSide, toggle: Bool = false)
+    /// Unpin the column pinned to a side, or with nil the focused window's.
+    case unpin(PinSide?)
     case flattenWorkspaceTree
     case balanceSizes
     /// Turn the focused workspace's tree clockwise, as yabai's `space --rotate`.

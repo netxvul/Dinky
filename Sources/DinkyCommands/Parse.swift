@@ -86,6 +86,13 @@ extension Command {
             let percents = args.compactMap(percent)
             guard !none, percents.count == args.count else { return nil }
             return .cycleSize(percents)
+        case "pin":
+            let rest = args.filter { $0 != "--toggle" }
+            guard rest.count == 1, args.count - rest.count <= 1, let side = PinSide(rawValue: rest[0]) else { return nil }
+            return .pin(side, toggle: rest.count < args.count)
+        case "unpin":
+            if none { return .unpin(nil) }
+            return one.flatMap(PinSide.init(rawValue:)).map { .unpin($0) }
         case "flatten-workspace-tree":
             return none ? .flattenWorkspaceTree : nil
         case "balance-sizes":

@@ -98,14 +98,17 @@ extension Workspace {
         return room >= gaps.inset(bounds).width * CGFloat(Self.minimumBandShare) - 0.5 && room >= widest + gap - 0.5
     }
 
-    /// Pin the focused window's column to `side`. Pinned there already, it stays, or with `toggle` is unpinned; pinned to
-    /// the other side, it moves across. A column already pinned to `side` goes back to where it was pinned from. With
-    /// `freeSideOnly`, as a rule pins, a side another column holds is left to it. Refused outside the scrolling layout,
-    /// with nothing focused, or where the band would be left too little room.
+    /// Pin the column of `window`, or of the focused window, to `side`, focus left where it is. Pinned there already, it
+    /// stays, or with `toggle` is unpinned; pinned to the other side, it moves across. A column already pinned to `side`
+    /// goes back to where it was pinned from. With `freeSideOnly`, as a rule pins, a side another column holds is left to
+    /// it. Refused outside the scrolling layout, with nothing to pin, or where the band would be left too little room.
     @discardableResult
-    public mutating func pin(_ side: PinSide, toggle: Bool = false, freeSideOnly: Bool = false) -> PinChange {
+    public mutating func pin(_ side: PinSide, toggle: Bool = false, freeSideOnly: Bool = false,
+                             window: WindowID? = nil) -> PinChange {
         guard isScrolling else { return .refused("only a scrolling strip pins columns") }
-        guard let focused, let column = root.path(of: focused)?.first else { return .refused("nothing to pin") }
+        guard let focused = window ?? self.focused, let column = root.path(of: focused)?.first else {
+            return .refused("nothing to pin")
+        }
         if let pinned = pinSide(ofColumn: column) {
             if pinned == side { return toggle ? unpin(side) : .unchanged }
         } else if freeSideOnly, pinnedIndex(side) != nil {
@@ -138,7 +141,7 @@ extension Workspace {
         }
         guard pinned.bandHasRoom else { return .refused("the band would be left too little room") }
         self = pinned
-        focus(focused)
+        if let shown = self.focused { focus(shown) }
         return .changed
     }
 
@@ -152,9 +155,9 @@ extension Workspace {
     /// Unpin the column pinned to `side`, or with nil the focused window's column: it goes back between the columns it
     /// was pinned from, or failing them to the band's end beside where it was pinned. Refused with nothing pinned there.
     @discardableResult
-    public mutating func unpin(_ side: PinSide? = nil) -> PinChange {
+    public mutating func unpin(_ side: PinSide? = nil, window: WindowID? = nil) -> PinChange {
         guard isScrolling else { return .refused("only a scrolling strip pins columns") }
-        guard let side = side ?? focused.flatMap({ pinSide(of: $0) }), let index = pinnedIndex(side) else {
+        guard let side = side ?? (window ?? focused).flatMap({ pinSide(of: $0) }), let index = pinnedIndex(side) else {
             return .refused(side.map { "nothing is pinned \($0.rawValue)" } ?? "the focused column is not pinned")
         }
         let node = root.children[index], origin = pinOrigins.removeValue(forKey: side) ?? PinOrigin()

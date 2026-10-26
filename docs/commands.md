@@ -27,6 +27,8 @@ prints it.
 | `fullscreen` | Toggle filling the workspace (not macOS full screen). [`[fullscreen] focus-change`](configuration.md#fullscreen) says what focusing another window does meanwhile. A floating window fills its display, then goes back. A lone window that already fills its workspace stays as it is with `focus-change = 'exit'`, the default. |
 | `grid [--toggle] <rows>:<columns>:<x>:<y>:<width>:<height>` | Float the focused window and glide it onto a grid over its display, as yabai's `--grid`. `--toggle` tiles a floating window instead, or on a free workspace puts it back where it was. See [Grid](#grid). |
 | `cycle-size <percent>...` | Step the focused window to the next of these sizes, as percentages of its display. A floating window is centred at that width and height; a tile or scrolling column takes that width. See [Cycle size](#cycle-size). |
+| `pin <left\|right> [--toggle]` | Pin the focused window's column to that side of the screen in a scrolling workspace, the other columns scrolling between. Pinned there already it stays, or with `--toggle` is unpinned. See [Pins](#pins). |
+| `unpin [left\|right]` | Unpin the column pinned to that side, or the focused window's: it goes back between the columns it was pinned from. |
 | `flatten-workspace-tree` | Put every window back into the workspace's layout, in order, undoing tree edits. A scrolling workspace keeps its column widths. |
 | `balance-sizes` | Give every window an equal share. |
 | `rotate <90\|180\|270>` | Turn the workspace's tiles clockwise, as yabai's `space --rotate`: a quarter turn makes a row a column, its first window on top, and a column a row, its top window on the right; a half turn reverses everything. A container set to `auto` keeps the turned axis as its orientation. Not for fixed or scrolling layouts. |
@@ -84,6 +86,38 @@ ctrl-l = 'move right 10 --floating-only'
 shift-h = 'resize width -50 --floating-only'
 shift-l = 'resize width +50 --floating-only'
 esc = 'mode main'
+```
+
+## Pins
+
+In a [scrolling](configuration.md#scrolling) workspace, `pin left` or `pin right`
+holds the focused window's column at that side of the screen, after SlideScroll,
+while the other columns scroll in the band between. Each side holds one column,
+a single window or a stack. A pinned column keeps its width, a share of the
+screen inside the outer gaps, and the band keeps at least a quarter of it and
+room for its widest window; a pin or a resize that would leave less is refused.
+
+- Focusing a pin never scrolls. From the band's first column, focusing towards
+  the pin focuses it; from the pin, focusing inwards goes back to the band window
+  focused last. Outwards from a pin there is nothing.
+- Columns scrolled out of the band slide under the pin and park at the screen's
+  edge with only a sliver showing. The pin is kept in front of them.
+- `move` leaves a pinned column where it is; `join-with` into a pin stacks the
+  window there, and out of a pin of one window unpins it. A window dragged beside
+  a pin goes into the band, swapped onto it takes its place.
+- A window in the band filling the workspace with [`fullscreen`](#commands) fills
+  the band; a pinned one covers the screen.
+- `pin left` again changes nothing, so a rule can run it safely; `--toggle`
+  unpins. Pinning a side another column holds sends that column back to where it
+  was pinned from, and pinning the other side's column moves it across.
+- `unpin` puts the column back between the columns it was pinned from.
+
+Nothing is bound by default. For example:
+
+```toml
+[mode.main]
+alt-p = 'pin left --toggle'
+alt-shift-p = 'pin right --toggle'
 ```
 
 ## Grid

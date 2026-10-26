@@ -718,7 +718,7 @@
     },
     "command": {
       "type": "string",
-      "pattern": "^\\s*(workspace|workspace-back-and-forth|move-window-to-workspace|move-window-to-display|focus|focus-monitor|move|join-with|resize|layout|fullscreen|grid|cycle-size|flatten-workspace-tree|balance-sizes|rotate|mirror|retile|window-switcher|workspace-switcher|clear-minimum-sizes|mode|reload-config|enable|list-workspaces|list-windows|list-monitors|list-displays|list-modes|debug-state|exec-and-forget)(\\s.*)?$",
+      "pattern": "^\\s*(workspace|workspace-back-and-forth|move-window-to-workspace|move-window-to-display|focus|focus-monitor|move|join-with|resize|layout|fullscreen|grid|cycle-size|pin|unpin|flatten-workspace-tree|balance-sizes|rotate|mirror|retile|window-switcher|workspace-switcher|clear-minimum-sizes|mode|reload-config|enable|list-workspaces|list-windows|list-monitors|list-displays|list-modes|debug-state|exec-and-forget)(\\s.*)?$",
       "description": "A dinky command, as `dinky help` lists them: `workspace 3`, `layout floating`, `exec-and-forget open -a Safari`."
     },
     "commands": {

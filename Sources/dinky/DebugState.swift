@@ -34,6 +34,8 @@ extension Coordinator {
                     "windows": workspace.windows,
                     "focused": workspace.focused ?? 0,
                     "fullscreen": workspace.fullscreen ?? 0,
+                    "pins": Dictionary(uniqueKeysWithValues: workspace.pins.map { ($0.key.rawValue, $0.value) }),
+                    "band-focus": workspace.bandFocus ?? 0,
                     "expected": Dictionary(uniqueKeysWithValues: layout.frames.map { ("\($0.key)", json($0.value)) }),
                 ] as [String: Any]
             },

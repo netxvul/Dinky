@@ -133,6 +133,13 @@ enum Dispatcher {
                 return changed == true ? .ok(name) : .nothing("\(name): nothing to do", ok: false)
             }
             return tree(name) { $0.cycleWidth(through: shares) }
+        case .pin(let side, let toggle):
+            // A rule pins only a side no other column holds.
+            return pin("pin \(side.rawValue)" + (toggle ? " --toggle" : ""), window: window) {
+                $0.pin(side, toggle: toggle, freeSideOnly: window != nil, window: window)
+            }
+        case .unpin(let side):
+            return pin("unpin" + (side.map { " \($0.rawValue)" } ?? ""), window: window) { $0.unpin(side, window: window) }
         case .flattenWorkspaceTree:
             return tree("flatten-workspace-tree", wholeSpace: true) { $0.flatten(); return true }
         case .balanceSizes:
@@ -319,6 +326,26 @@ enum Dispatcher {
         case nil: return .error("\(name): the focused window is not tiled")
         case false?: return moved ? .error("\(name): nothing to do") : .nothing("\(name): nothing to do", ok: false)
         case true?: return .ok(name)
+        }
+    }
+
+    /// `pin` and `unpin` on the focused window's tree, or for a rule on its window's, which is not focused for it. Done
+    /// already, it answers so; refused, it does nothing and says why, as a binding that does nothing.
+    private static func pin(_ name: String, window: WindowID?, _ change: (inout Workspace) -> PinChange) -> Reply {
+        guard let coordinator = AppState.shared.coordinator else { return .error("tiling is not running") }
+        let id = window ?? coordinator.focusedWindow
+        if coordinator.isFloating(id) == true { return .nothing("\(name): the window floats", ok: false) }
+        let result: PinChange?
+        if let window, let key = coordinator.placements[window]?.space {
+            result = coordinator.command(onSpace: key) { $0.contains(window) ? change(&$0) : .refused("the window is not tiled") }
+        } else {
+            result = coordinator.command { change(&$0) }
+        }
+        switch result {
+        case nil: return .error("\(name): the focused window is not tiled")
+        case .changed?: return .ok(name)
+        case .unchanged?: return .ok("\(name): already so")
+        case .refused(let why)?: return .nothing("\(name): \(why)", ok: false)
         }
     }
 
