@@ -132,11 +132,11 @@ final class Coordinator {
     private var landedWidths: [WindowID: (asked: CGFloat, got: CGFloat)] = [:]
     /// By scrolling tree, a glide driven by the Dock scripting addition: the windows it holds transformed and the
     /// layout it is gliding to, so a superseding pass clears those transforms. See ScriptingAddition.
-    private var saGlides: [UInt64: (token: Int, ids: [WindowID], layout: Layout)] = [:]
+    private var saGlides: [UInt64: (token: Int, ids: [WindowID], carry: GlideCarry)] = [:]
     private var saGlideTokens = 0
     /// By tree, or by a floating window's animator key, windows going fullscreen being written their whole sizes
     /// before they glide, and the layout they glide to then. See `ResizeOnce`.
-    private var pushes: [UInt64: (token: Int, layout: Layout)] = [:]
+    private var pushes: [UInt64: (token: Int, carry: GlideCarry)] = [:]
     private var pushTokens = 0
     /// The windows being written their whole sizes before they glide, by the token of the staging that has them: as
     /// good as gliding, for whatever asks.
@@ -809,6 +809,12 @@ final class Coordinator {
             return [activated, lastFocused, lastUsed[pid]].compactMap { $0 }.first { shown($0) && !pinned($0) } ?? id
         }
         guard !applier.isBusy(pid), (frontBackoff[pid] ?? 0) <= now else { return fallback() }
+        // While a drag or a glide moves the windows of its strip, asking the app, up to a tenth of a second on the main
+        // thread, would hold their frames up: the window dinky has, and the app asked once the strip rests.
+        if stripMoves(key) {
+            readFocusOnceStill(key)
+            return fallback()
+        }
         let real = focusedWindowID(of: pid, timeout: 0.1)
         let after = CACurrentMediaTime()
         let focused: WindowID
@@ -847,6 +853,9 @@ final class Coordinator {
 
     /// Reads focus afresh 20 ms on, as the front window settles after an event, the borders taking that read; once
     /// more after it where another event came meanwhile, so a burst costs two reads at most.
+    /// A read of focus waits for a strip to stop moving (`readFocusOnceStill`).
+    private var focusReadDeferred = false
+
     private func readFocusSoon() {
         focusReadPending = true
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(20)) { [weak self] in
@@ -860,6 +869,29 @@ final class Coordinator {
                 readFocusSoon()
             }
         }
+    }
+
+    /// Whether a drag or a glide is moving windows of the strip on `key`, as `frontWindow` should not hold up.
+    private func stripMoves(_ key: UInt64) -> Bool {
+        drag != nil || dragging != nil || saGlides[key] != nil || pushes[key] != nil
+            || workspaces[key]?.windows.contains(where: animator.isAnimating) == true
+    }
+
+    /// Reads focus afresh, asking the app, once the strip on `key` stops moving, or after three seconds whatever it does.
+    private func readFocusOnceStill(_ key: UInt64) {
+        guard !focusReadDeferred else { return }
+        focusReadDeferred = true
+        let began = CACurrentMediaTime()
+        func check() {
+            guard !stripMoves(key) || CACurrentMediaTime() - began > 3 else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(50)) { check() }
+                return
+            }
+            focusReadDeferred = false
+            frontRead = nil
+            readFocusSoon()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(50)) { check() }
     }
 
     /// Forgets what `frontWindow` last read: the window behind a pin, and a pin it was told is focused.
@@ -1555,11 +1587,13 @@ final class Coordinator {
         // its windows show now, by this pass's own scripting-addition glide, so a scroll taken further or turned back
         // part way goes on from there rather than jumping; before anything else, `settleGlide` clears its transforms, so
         // the windows show at the real frames this pass is about to write.
+        // Only one that wrote the same windows: a window a drag held out of it, released now, is written by this pass, and
+        // from where it really is, not where that glide had it.
         var supersededGlide: [WindowID]?
         if let sa = saGlides[key] {
-            if sa.layout == layout { return }
+            if sa.carry.carriesOn(into: layout, frozen: frozen) { return }
             saGlides[key] = nil
-            supersededGlide = sa.ids
+            supersededGlide = sa.ids.filter { !sa.carry.frozen.contains($0) || frozen.contains($0) }
         }
         func settleGlide() {
             guard let ids = supersededGlide else { return }
@@ -1570,7 +1604,7 @@ final class Coordinator {
         // Windows taking their whole fullscreen frames before the strip glides to this layout carry on; for another
         // layout, this pass takes them from wherever they have got to.
         if let push = pushes[key] {
-            if push.layout == layout { return settleGlide() }
+            if push.carry.carriesOn(into: layout, frozen: frozen) { return settleGlide() }
             pushes[key] = nil
         }
         // Not the windows a drag has: written, they would be taken from the user, or from the display they wait on.
@@ -1947,7 +1981,7 @@ final class Coordinator {
                 }
                 saGlideTokens += 1
                 let token = saGlideTokens
-                saGlides[key] = (token, stripIDs, layout)
+                saGlides[key] = (token, stripIDs, GlideCarry(layout: layout, frozen: frozen))
                 let saGlide = SAGlide { [weak self] in self?.endSAGlide(key, token) }
                 // Parked on every frame, as the window glide below is: a column scrolled out stays at the edge with its
                 // sliver showing rather than leaving the screen, and one coming in slides out from there, in view all the
@@ -2015,7 +2049,7 @@ final class Coordinator {
         animator.stop(key)
         pushTokens += 1
         let token = pushTokens
-        pushes[key] = (token, layout)
+        pushes[key] = (token, GlideCarry(layout: layout, frozen: dragFrozen))
         var staging: [WindowID: CGRect] = [:]
         for id in staged {
             guard let current = frameOf(id), let target = layout.frames[id] else { continue }
@@ -2166,7 +2200,7 @@ final class Coordinator {
         animator.stop(key)
         pushTokens += 1
         let token = pushTokens
-        pushes[key] = (token, layout)
+        pushes[key] = (token, GlideCarry(layout: layout, frozen: dragFrozen))
         let staging = ResizeOnce.staging(from: start, to: frame, edge: edge)
         stage([id: staging], token: token, order: [id], front: id, pids: pids,
               live: { [weak self] in self?.pushes[key]?.token == token }) { [weak self] in
