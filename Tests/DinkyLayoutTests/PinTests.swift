@@ -70,6 +70,25 @@ struct PinGeometryTests {
         #expect(ws.columnStart(of: 5) == 751)
     }
 
+    @Test func `With an odd inner gap either pin is exactly one gap from the band`() throws {
+        let odd = Gaps(horizontal: 9, vertical: 9, top: 8, bottom: 8, left: 8, right: 8)
+        var right = try pinned(strip(5, gaps: odd), 5, .right)
+        right.focus(4)
+        #expect(right.pinRect(4).minX - frames(right)[4]!.maxX == 9)
+        var left = try pinned(strip(5, gaps: odd), 1, .left)
+        left.focus(2)
+        #expect(frames(left)[2]!.minX - left.pinRect(0).maxX == 9)
+    }
+
+    @Test func `At a wall on a pinned side the band's start column does not reach out under the pin`() throws {
+        var ws = strip(8, width: 0.5, gaps: spaced, walls: [.left])
+        ws.columnWidths[1] = 0.25
+        ws = try pinned(ws, 1, .left)
+        ws.focus(8)
+        ws.focus(4)
+        #expect(frames(ws)[4]!.minX == ws.pinRect(0).maxX + 10)
+    }
+
     @Test func `With an odd inner gap a pin's frame is whole points`() throws {
         let odd = Gaps(horizontal: 9, vertical: 9, top: 8, bottom: 8, left: 8, right: 8)
         let ws = try pinned(strip(5, gaps: odd), 1, .left)

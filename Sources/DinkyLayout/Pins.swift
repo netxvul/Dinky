@@ -77,11 +77,19 @@ extension Workspace {
     }
 
     /// Where the pinned column at `index` goes: from the outer gap on its side, its span less the half gap towards
-    /// the band, the strip's height.
+    /// the band, the strip's height. Its edge towards the band is rounded as the band's edges are, so with an odd gap
+    /// it is still one whole gap from them.
     func pinRect(_ index: Int) -> CGRect {
-        let inset = gaps.inset(bounds), width = (pinSpan(index) - gaps.horizontal / 2).rounded()
-        let x = (index == 0 && pinnedIndex(.left) == 0 ? inset.minX : inset.maxX - width).rounded()
-        return CGRect(x: x, y: inset.minY, width: width, height: inset.height)
+        let inset = gaps.inset(bounds), span = pinSpan(index), half = gaps.horizontal / 2
+        let minX: CGFloat, maxX: CGFloat
+        if index == 0 && pinnedIndex(.left) == 0 {
+            minX = inset.minX.rounded()
+            maxX = ((inset.minX + span).rounded() - half).rounded()
+        } else {
+            maxX = inset.maxX.rounded()
+            minX = ((inset.maxX - span).rounded() + half).rounded()
+        }
+        return CGRect(x: minX, y: inset.minY, width: max(maxX - minX, 0), height: inset.height)
     }
 
     /// Whether the band keeps room enough: `minimumBandShare` of the area inside the outer gaps, and its widest column.

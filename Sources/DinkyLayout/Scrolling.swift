@@ -342,16 +342,19 @@ extension Workspace {
     /// and at the far end of the strip the gutter there too, which the end column reaches into instead of a column
     /// parking in it. Not reached over, that room would show the screen's background between the column and the outer
     /// gap. Only less room than the narrowest column takes: more is a column's worth, as columns of other widths can
-    /// leave, and the column keeps its width. `edges` are each column's window edges where the strip has it.
+    /// leave, and the column keeps its width. Not on a pinned side: the pin is there, a gap from the band.
+    /// `edges` are each column's window edges where the strip has it.
     func reachingWalls(_ edges: [(left: CGFloat, right: CGFloat)], in area: CGRect) -> (left: Int?, right: Int?) {
         let inset = stripInset, band = bandRange, most = area.width * CGFloat(Self.minimumColumnWidth)
         let inView = band.filter { edges[$0].left >= bounds.minX - 1 && edges[$0].right <= bounds.maxX + 1 }
         let reaches = { (room: CGFloat) in room > 0 && room < most }
         let left = inView.first.flatMap { i in
-            i > band.lowerBound && walls.contains(.left) && reaches(edges[i].left - inset.minX) ? i : nil
+            i > band.lowerBound && walls.contains(.left) && pinnedIndex(.left) == nil && reaches(edges[i].left - inset.minX)
+                ? i : nil
         }
         let right = inView.last.flatMap { i in
-            i < band.upperBound - 1 && walls.contains(.right) && reaches(inset.maxX - edges[i].right) ? i : nil
+            i < band.upperBound - 1 && walls.contains(.right) && pinnedIndex(.right) == nil
+                && reaches(inset.maxX - edges[i].right) ? i : nil
         }
         return (left, right)
     }
