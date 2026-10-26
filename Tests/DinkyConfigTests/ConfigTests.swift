@@ -548,6 +548,16 @@ struct ConfigTests {
         assertError("[gestures.mouse-scroll]\nhaptic = true\n", path: "gestures.mouse-scroll.haptic", line: 2, contains: "unknown key")
     }
 
+    @Test func `Either scroll can glance at a strip`() throws {
+        #expect(!Config().gestures.stripGlances, "both off")
+        #expect(try Config.parse("[gestures.scroll]\nenabled = true\n").gestures.stripGlances)
+        #expect(try Config.parse("[gestures.mouse-scroll]\nenabled = true\n").gestures.stripGlances)
+        #expect(try !Config.parse("[gestures.mouse-scroll]\nenabled = true\nshow-switcher = false\n").gestures.stripGlances)
+        #expect(try !Config.parse("[gestures.mouse-scroll]\nenabled = true\ndrag = false\nwheel = false\n").gestures.stripGlances)
+        #expect(try !Config.parse("[gestures.scroll]\nshow-switcher = false\n[gestures.mouse-scroll]\nenabled = true\n").gestures.stripGlances,
+                "the mouse's show-switcher is the fingers' unless set")
+    }
+
     @Test func `Mouse scroll's modifier is its own`() throws {
         assertError("[drag]\nmouse-modifier = 'ctrl-alt'\n[gestures.mouse-scroll]\nenabled = true\n",
                     path: "gestures.mouse-scroll.modifier", contains: "[drag] mouse-modifier already uses 'alt-ctrl'")

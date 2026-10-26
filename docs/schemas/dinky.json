@@ -603,7 +603,7 @@
             "enabled": { "type": "boolean", "default": false, "description": "true scrolls strips with the mouse." },
             "modifier": { "type": "string", "pattern": "^(alt|ctrl|cmd|shift)(-(alt|ctrl|cmd|shift))*$", "default": "ctrl-alt", "description": "The modifiers held, exactly these, joined by -. Not [drag] mouse-modifier while drag is on, nor a switcher's modifier." },
             "drag": { "type": "boolean", "default": true, "description": "Whether a press dragged across with the modifier scrolls the strip." },
-            "wheel": { "type": "boolean", "default": true, "description": "Whether a swipe or wheel stroke with the modifier scrolls the strip, and a wheel that clicks steps a column." },
+            "wheel": { "type": "boolean", "default": true, "description": "Whether a stroke with scroll phases (a Magic Mouse or trackpad swipe, a smooth wheel whose driver sends them) with the modifier scrolls the strip, and any other wheel steps a column per notch, at most every 120 ms." },
             "speed": { "type": "number", "minimum": 0.25, "maximum": 5, "default": 1, "description": "How far the strip goes for each point the pointer or the stroke moves; 1 follows the pointer." },
             "show-switcher": { "type": "boolean", "description": "Whether the window switcher shows the strip once it rests. Unset, [gestures.scroll]'s." },
             "switcher-ms": { "type": "integer", "minimum": 100, "maximum": 5000, "description": "Milliseconds the window switcher shows the strip. Unset, [gestures.scroll]'s." },

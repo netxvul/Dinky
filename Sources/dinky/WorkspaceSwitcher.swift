@@ -65,6 +65,8 @@ final class WorkspaceSwitcher {
     }
 
     var isShowing: Bool { hold.isShowing }
+    /// Whether the capsule, shown from the keyboard, is under `point`: a click there picks. A glance never is.
+    func covers(_ point: CGPoint) -> Bool { hold.covers(point) }
     /// Whether the capsule, shown from the keyboard, takes this key.
     func takes(_ event: CGEvent) -> Bool { hold.takes(event) }
     /// Whether a modifier or a key binding can show the capsule, so thumbnails are worth keeping.

@@ -173,7 +173,7 @@ extension Config {
     # enabled = true
     # modifier = 'ctrl-alt'         # held exactly; not [drag] mouse-modifier or a switcher's modifier
     # drag = true                   # press over a window and drag across
-    # wheel = true                  # swipe a Magic Mouse or trackpad, or turn the wheel; a wheel that clicks steps a column
+    # wheel = true                  # a stroke with scroll phases (Magic Mouse, trackpad) scrolls; other wheels step a column a notch
     # speed = 1                     # how far the strip goes for each point, 0.25 to 5; 1 follows the pointer
     # show-switcher = true          # unset is [gestures.scroll]'s
     # switcher-ms = 1000            # unset is [gestures.scroll]'s

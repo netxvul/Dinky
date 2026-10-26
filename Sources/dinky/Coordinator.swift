@@ -190,6 +190,8 @@ final class Coordinator {
         var hold = 0
         /// A tick is checked again at the end of its gap.
         var tickPending = false
+        /// Since when the button of a press dragging it has read up with no release heard (`watchStripScroll`).
+        var upSince: CFTimeInterval?
     }
     private var stripScroll: StripScroll?
     /// Counts the holds of a strip, numbering each (`StripScroll.hold`).
@@ -206,6 +208,8 @@ final class Coordinator {
     /// How long a stroke of the mouse wheel or a swipe holding a strip may go unheard: its events stop while a finger
     /// rests on a Magic Mouse, and its end comes as it lifts.
     private static let strokeQuiet: CFTimeInterval = 10
+    /// How long the button of a press dragging a strip reads up before its release counts as lost.
+    private static let releaseLost: CFTimeInterval = 0.2
     /// How far a strip coasts once the fingers lift: as far as their speed would take it in this many seconds.
     private static let stripScrollFling = 0.15
     /// Bumped as fingers let go of a strip, so only the last let-go's glance waits for its strip to rest.
@@ -1139,57 +1143,67 @@ final class Coordinator {
     }
 
     /// The mouse, with `[gestures.mouse-scroll] modifier` held, takes hold of the strip under the pointer as fingers do,
-    /// a press dragged across it or a stroke of its wheel; false where it takes nothing, as `beginStripScroll()` says. A
-    /// hold the mouse still has, its release lost, is let go of first; one the fingers have is theirs.
-    func mouseTookHold(_ holder: StripHolder) -> Bool {
+    /// a press dragged across it or a stroke of its wheel: the number of the hold, nil where it takes nothing, as
+    /// `beginStripScroll()` says. A hold the mouse still has, its release lost, is let go of first; one the fingers have
+    /// is theirs, and so is one a press dragging it has, from a stroke, while its button is down.
+    func mouseTookHold(_ holder: StripHolder) -> Int? {
         if let scroll = stripScroll {
-            guard scroll.holder != .fingers else { return false }
+            guard scroll.holder != .fingers else { return nil }
+            if holder == .wheel, scroll.holder == .drag, CGEventSource.buttonState(.combinedSessionState, button: .left) {
+                return nil
+            }
             endStripScroll(velocity: 0, glance: false)
         }
-        return beginStripScroll(holder: holder)
+        return beginStripScroll(holder: holder) ? stripScroll?.hold : nil
     }
 
-    /// The mouse holding the strip moved `points` across, right positive: the strip's content goes with it,
-    /// `[gestures.mouse-scroll] speed` times as far.
-    func mouseScrolled(_ points: Double) {
-        guard let scroll = stripScroll, scroll.holder != .fingers else { return }
+    /// The mouse holding the strip, by hold `hold`, moved `points` across, right positive: the strip's content goes with
+    /// it, `[gestures.mouse-scroll] speed` times as far. Nothing for a hold it no longer has.
+    func mouseScrolled(_ points: Double, hold: Int) {
+        guard let scroll = stripScroll, scroll.holder != .fingers, scroll.hold == hold else { return }
         scrollStrip(points: -CGFloat(points * config.gestures.mouseScroll.speed))
     }
 
-    /// The mouse let go of the strip, moving across at `velocity` points a second, right positive: it coasts and
-    /// settles as it does when fingers let go.
-    func mouseLetGo(velocity: Double) {
-        guard let scroll = stripScroll, scroll.holder != .fingers else { return }
+    /// The mouse let go of hold `hold` of the strip, moving across at `velocity` points a second, right positive: it
+    /// coasts and settles as it does when fingers let go. Nothing for a hold it no longer has.
+    func mouseLetGo(velocity: Double, hold: Int) {
+        guard let scroll = stripScroll, scroll.holder != .fingers, scroll.hold == hold else { return }
         endStripScroll(momentum: -CGFloat(velocity * config.gestures.mouseScroll.speed * Self.stripScrollFling))
     }
 
-    /// Whether the mouse can take hold of a strip at `point`: one on the display there that fingers could scroll, and,
-    /// for a press, a window of it under the pointer.
+    /// Whether the mouse can take hold of a strip at `point`: one that fingers could scroll on the display there, as it
+    /// shows, with nothing holding it, no Space changing or Mission Control; for a press, a window of it under the
+    /// pointer, and no switcher shown from the keyboard under it.
     func mouseCanHold(at point: CGPoint, press: Bool) -> Bool {
-        guard enabled, let display = displays.displays.first(where: { $0.frame.contains(point) }),
+        guard enabled, stripScroll == nil || stripScroll?.holder != .fingers, !MissionControl.shared.active,
+              !SpaceSwitcher.shared.switching, let display = displays.displays.first(where: { $0.frame.contains(point) }),
+              !dinky_display_is_animating(display.uuid as CFString),
+              dinky_current_space_id(display.uuid as CFString) == display.currentSpaceID,
               let workspace = workspaces[display.currentSpaceID], workspace.canScrollFreely else { return false }
         guard press else { return true }
+        guard !WindowSwitcher.shared.covers(point), !WorkspaceSwitcher.shared.covers(point) else { return false }
         return pressedWindow(at: point).map { placements[$0.id]?.space == display.currentSpaceID } ?? false
     }
 
-    /// Whether a notch of the mouse wheel at `point` steps a strip: a scrolling workspace shows on the display there.
+    /// Whether a notch of a wheel without phases at `point` steps a strip: one the mouse could hold, nothing holding it.
     func mouseCanStep(at point: CGPoint) -> Bool {
-        guard enabled, let display = displays.displays.first(where: { $0.frame.contains(point) }) else { return false }
-        return workspaces[display.currentSpaceID]?.isScrolling ?? false
+        stripScroll == nil && mouseCanHold(at: point, press: false)
     }
 
     /// A notch of the mouse wheel with `[gestures.mouse-scroll] modifier` held, its content going `left` or right:
     /// focus goes to the column beside the focused one on the strip under the pointer, the other way, as the content
     /// shows what is beyond it.
     func mouseStepped(left: Bool) {
-        guard stripScroll == nil, let pointer = CGEvent(source: nil)?.location,
-              let display = displays.displays.first(where: { $0.frame.contains(pointer) }),
-              workspaces[display.currentSpaceID]?.isScrolling == true else { return }
+        guard let pointer = CGEvent(source: nil)?.location, mouseCanStep(at: pointer),
+              let display = displays.displays.first(where: { $0.frame.contains(pointer) }) else { return }
         let key = display.currentSpaceID
         guard let target = command(onSpace: key, { $0.focus(left ? .right : .left) ? $0.focused : nil }) ?? nil else { return }
         print("\(stamp()) mouse-scroll: wheel notch focuses \(target)")
         focus(target)
     }
+
+    /// Whether a stroke of the mouse wheel or a swipe holds a strip: swipes across bound for the same fingers wait.
+    var mouseWheelHoldsStrip: Bool { stripScroll?.holder == .wheel }
 
     /// Whether the mouse holds a strip, pressed and dragging it: the windows it moves under the button are no drag.
     var mouseDragsStrip: Bool { stripScroll?.holder == .drag }
@@ -1440,10 +1454,22 @@ final class Coordinator {
         }
         if !stripScrollShows(scroll) {
             abortStripScroll()
-        } else if scroll.holder == .drag ? !CGEventSource.buttonState(.hidSystemState, button: .left)
-                    : CACurrentMediaTime() - scroll.heard > (scroll.holder == .wheel ? Self.strokeQuiet : Self.stripScrollQuiet) {
-            // A mouse held still holds on till its button comes up, its release lost; a finger resting on a Magic
-            // Mouse mid-stroke sends nothing, so a stroke goes on till its end comes, or long after it is lost.
+        } else if scroll.holder == .drag {
+            // A press held still holds on till its button comes up. Read up twice, 0.2 s apart, both as the hardware and
+            // the session have it, its release is lost rather than on its way, which would let go with its fling.
+            let now = CACurrentMediaTime()
+            let up = !CGEventSource.buttonState(.hidSystemState, button: .left)
+                && !CGEventSource.buttonState(.combinedSessionState, button: .left)
+            if !up {
+                stripScroll?.upSince = nil
+            } else if let since = scroll.upSince {
+                if now - since >= Self.releaseLost, !mouseStripScroll.releaseLost() { endStripScroll(velocity: 0) }
+            } else {
+                stripScroll?.upSince = now
+            }
+        } else if CACurrentMediaTime() - scroll.heard > (scroll.holder == .wheel ? Self.strokeQuiet : Self.stripScrollQuiet) {
+            // A finger resting on a Magic Mouse mid-stroke sends nothing, so a stroke goes on till its end comes, or
+            // long after it is lost.
             endStripScroll(velocity: 0)
         } else {
             // A window its app brought up meanwhile, as one activated just as the fingers came down, goes back under

@@ -28,6 +28,9 @@ final class ModifierDrag {
         let press: CGEventTimestamp
     }
 
+    /// A press older than this as it gets here was held up on the way: the app may have had it already.
+    private static let stalePress: CFTimeInterval = 0.25
+
     private unowned let coordinator: Coordinator
     private var modifiers: KeyCombo.Modifiers = []
     private var sides = ModifierSides()
@@ -103,9 +106,13 @@ final class ModifierDrag {
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             if armed { pressTap?.enable(true) }
+            // While it was off, the app may have had the press: its drag and release go on to it.
+            release()
         case .leftMouseDown:
             // A window still held lost its release.
             release()
+            // Held up on the way, the press may have reached the app already.
+            guard eventAge(event) <= Self.stalePress else { return true }
             return !take(at: event.location, flags: event.flags, press: event.timestamp)
         default:
             break

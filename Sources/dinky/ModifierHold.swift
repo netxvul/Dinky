@@ -148,6 +148,12 @@ final class ModifierHold {
         }
     }
 
+    /// Whether it shows from the keyboard, a binding or a double tap, over `point`, where a click picks.
+    func covers(_ point: CGPoint) -> Bool {
+        guard case .keyboard = state else { return false }
+        return within(point)
+    }
+
     /// Whether a key is one it takes while shown, so key bindings leave it alone: alt-h moves the pick, not the focus,
     /// while alt holds it up or a binding with alt shows it.
     func takes(_ event: CGEvent) -> Bool {

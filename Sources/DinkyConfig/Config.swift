@@ -523,6 +523,13 @@ public struct Gestures: Equatable {
         }
     }
 
+    /// Whether a strip let go of can show the window switcher at a glance: fingers that scroll it with
+    /// `show-switcher`, or the mouse with its own.
+    public var stripGlances: Bool {
+        (scroll.enabled && scroll.showSwitcher)
+            || (mouseScroll.enabled && (mouseScroll.drag || mouseScroll.wheel) && mouseScroll.showSwitcher)
+    }
+
     /// What the trackpad swipes run; none while it is off.
     public var trackpadSwipes: [GestureSwipe: [String]] { trackpad.enabled ? trackpad.swipes : [:] }
 
@@ -599,9 +606,9 @@ public struct MouseSwipes: Equatable {
 
 /// `[gestures.mouse-scroll]`: with exactly `modifier` held, the mouse scrolls the strip under the pointer as fingers
 /// on the trackpad do in `[gestures.scroll]`: a press dragged across takes hold of it, the strip following the pointer
-/// `speed` times as far, and a swipe on a Magic Mouse or a trackpad, or a wheel that turns smoothly, scrolls it by its
-/// own deltas; let go, it coasts and settles as theirs does. A wheel that clicks focuses the column beside for each
-/// notch. `show-switcher`, `switcher-ms` and `edge-flash` are `[gestures.scroll]`'s unless set. No haptic: a mouse has
+/// `speed` times as far, and a stroke that reports scroll phases, a swipe on a Magic Mouse or a trackpad or a smooth
+/// wheel whose driver sends them, scrolls it by its own deltas; let go, it coasts and settles as theirs does. Any other
+/// wheel focuses the column beside for each notch. `show-switcher`, `switcher-ms` and `edge-flash` are `[gestures.scroll]`'s unless set. No haptic: a mouse has
 /// nothing to tap, and the trackpad is not under the hand. Off until `enabled`.
 public struct MouseScroll: Equatable {
     public var enabled = false

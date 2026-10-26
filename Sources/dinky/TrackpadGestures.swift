@@ -130,7 +130,8 @@ final class TrackpadGestures {
     private enum Action {
         /// The fingers are down, which drive a switcher a swipe left up.
         case landed
-        case run([String])
+        /// Runs the commands bound for a swipe, `across` (left or right) or not.
+        case run([String], across: Bool)
         case move(steps: Int, rows: Int)
         case lift(stepped: Bool)
         case scroll(FingerScroll)
@@ -217,7 +218,7 @@ final class TrackpadGestures {
                     return nil
                 }
                 phase = .driving(anchor: point, down: down, stepped: false)
-                return .run(commands)
+                return .run(commands, across: swipe == .swipeLeft || swipe == .swipeRight)
             case .scrolling(let last, let when, let velocity, let count):
                 guard down == count else {
                     // Lifted, or a finger landed or lifted: the scroll ends at the speed it had.
@@ -267,8 +268,11 @@ final class TrackpadGestures {
             switch action {
             case .landed:
                 if ModifierHold.driven?.byFingers == true { self.adopt(device, mouse: mouse) }
-            case .run(let commands):
+            case .run(let commands, let across):
                 guard AppState.shared.enabled else { return }
+                // Two fingers with `[gestures.mouse-scroll] modifier` held scroll the strip as a stroke of the wheel:
+                // the same fingers bound across do not run as well, which would take the strip from them.
+                if across, AppState.shared.coordinator?.mouseWheelHoldsStrip == true { return }
                 // A mouse has nothing to tick; the trackpad would, under the other hand.
                 if !mouse, let tap = self.lock.withLock({ self.trackpad.tap }) {
                     tapTrackpad("trackpad swipe ran \(commands.joined(separator: ", "))", actuation: tap)

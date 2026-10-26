@@ -119,6 +119,8 @@ final class WindowSwitcher {
     }
 
     var isShowing: Bool { hold.isShowing }
+    /// Whether the capsule, shown from the keyboard, is under `point`: a click there picks. A glance never is.
+    func covers(_ point: CGPoint) -> Bool { hold.covers(point) }
     /// Shown, held, from a binding or as a glance: thumbnails and titles landing late still go in.
     private var isUp: Bool { isShowing || glanceEnd != nil }
     /// Whether the capsule, shown from the keyboard, takes this key.
@@ -143,8 +145,7 @@ final class WindowSwitcher {
         self.config = config.windowSwitcher
         let modifier = self.config.enabled ? self.config.modifier : .none
         let byHand = modifier != .none || config.binds("window-switcher")
-        let glances = config.gestures.scroll.enabled && config.gestures.scroll.showSwitcher
-            && self.config.layouts.contains(.scrolling)
+        let glances = config.gestures.stripGlances && self.config.layouts.contains(.scrolling)
         enabled = self.config.enabled && (byHand || glances)
         glancesOnly = !byHand
         hold.update(modifier: modifier, sides: config.modifiers, delayMs: self.config.delayMs,
