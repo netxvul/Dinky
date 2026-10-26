@@ -560,7 +560,9 @@ extension Coordinator {
     /// the pointer has gone `stir` from where it last asked for it. Anywhere else, by what it is over in the tree as it
     /// shows: over the frame the drop shown gives the window, that drop, unless it is a swap and the window it swaps with
     /// is under the pointer as the trees are: its zones still count, so the pointer can go on from the middle of a lone
-    /// window, which a swap covers, to beside it. A strip can show that frame over another window's tile, the dragged
+    /// window, which a swap covers, to beside it; or unless it is beside a tile and the tree as it is has the pointer in
+    /// the top or bottom band of a tile there, the column making room having slid from under it (`DropHit.stacks`).
+    /// A strip can show that frame over another window's tile, the dragged
     /// window's width in place of the one it swaps with, or its own, and those count for nothing there. Over its own
     /// tile as the trees are, from a drop shown on another display, going back, whatever that drop puts there; so too
     /// between displays, over a Space dinky does not tile, or in Mission Control.
@@ -580,6 +582,9 @@ extension Coordinator {
         if let at = session.askedAt, hypot(point.x - at.x, point.y - at.y) < DragSession.stir { return .keep }
         let hit = shows.dropHit(at: point, in: shows.layout(), excluding: session.id)
         guard hit == .own else { return ask(session, into: key, over: hit, in: shows) }
+        // Over the dragged window's place in a drop beside a column, where that column showed: its top or bottom band
+        // as the tree is stacks onto it.
+        if real.stacks(overBeside: shown.zone, shows: hit) { return asIs }
         guard shown.zone == .swap, let partner = shown.target, case .tile(partner, _) = real else { return .keep }
         return asIs
     }

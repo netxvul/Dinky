@@ -49,6 +49,20 @@ public enum DropHit: Equatable, Sendable {
     case none
 }
 
+extension DropHit {
+    /// Whether this hit, in the tree as it is, asks for its own drop although the pointer is over the dragged window's
+    /// place in a drop shown beside a tile (`shown` split left or right, `shows` the hit in the tree as that drop leaves
+    /// it, `.own`). Making room for that drop slides the column aimed at out from under the pointer, so the pointer goes
+    /// on over the preview where the column showed: its top or bottom band there, the stacking zone of a tile as the
+    /// tree is, asks to stack onto it. Anywhere else over the preview the drop shown stays, as it does for every other
+    /// drop shown, so windows making room cannot send it back and forth.
+    public func stacks(overBeside shown: DropZone, shows: DropHit) -> Bool {
+        guard shows == .own, case .split(let side) = shown, side.orientation == .horizontal,
+              case .tile(_, .split(let way)) = self else { return false }
+        return way.orientation == .vertical
+    }
+}
+
 /// Dropping a dragged window onto another tile.
 extension Workspace {
     /// Whether a drop beside a tile splits it. A fixed layout's template only swaps.
@@ -160,6 +174,7 @@ extension Workspace {
             let share = isScrolling ? root.path(of: target).map { width(ofColumn: $0[0]) } : nil
             splitTile(of: target, with: id, side)
             normalize()
+            if isScrolling { shareStack(with: id, besides: target) }
             if let share, let column = root.path(of: id)?.first { setWidth(ofColumn: column, share) }
         }
         focus(id)
@@ -217,6 +232,26 @@ extension Workspace {
         let pair: [Node] = side.isForward ? [.window(target), .window(id)] : [.window(id), .window(target)]
         root.modify(at: Array(at.dropLast())) {
             $0.replace(at: at.last!, with: .container(Container(ContainerOrientation(side.orientation), .tiles, pair)))
+        }
+    }
+
+    /// In a strip, `id` just stacked beside `target` in a column, the two sharing what `target` had: `id` takes its
+    /// share of the column instead, 1/n of n, and the others keep theirs among themselves, scaled to the rest, so a
+    /// column of thirds stays thirds, and dropping a window back where it already is changes nothing. Only where the two
+    /// sit one over the other in the same container.
+    private mutating func shareStack(with id: WindowID, besides target: WindowID) {
+        guard let path = root.path(of: id), let other = root.path(of: target), path.count > 1,
+              Array(path.dropLast()) == Array(other.dropLast()) else { return }
+        let parent = Array(path.dropLast())
+        root.modify(at: parent) { column in
+            guard column.orientation == .vertical, column.children.count > 2 else { return }
+            let n = Double(column.children.count), mine = path.last!, theirs = other.last!
+            var ratios = column.ratios
+            ratios[theirs] += ratios[mine]
+            ratios[mine] = 0
+            ratios = ratios.map { $0 * (n - 1) / n }
+            ratios[mine] = 1 / n
+            column.setRatios(ratios)
         }
     }
 
