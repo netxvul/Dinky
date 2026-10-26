@@ -1009,3 +1009,62 @@ struct PinRingTests {
         #expect(ws.ringedPins == [1])
     }
 }
+
+struct PinReviewTests {
+    @Test func `A focused band window wider than the band at a wall hangs under the pin, not hidden behind it`() throws {
+        var ws = try pinned(strip(4, walls: [.right]), 1, .left)
+        ws.minimumSizes[3] = CGSize(width: 800, height: 100)
+        ws.focus(3)
+        let frame = try #require(ws.layout().frames[3])
+        #expect(frame.maxX <= ws.bounds.maxX)
+        #expect(frame.intersects(ws.bandRect))
+        var mirror = try pinned(strip(4, walls: [.left]), 4, .right)
+        mirror.minimumSizes[2] = CGSize(width: 800, height: 100)
+        mirror.focus(2)
+        let other = try #require(mirror.layout().frames[2])
+        #expect(other.minX >= mirror.bounds.minX)
+        #expect(other.intersects(mirror.bandRect))
+    }
+
+    @Test func `A lone band column beside a pin keeps its minimum width, ending at the wall`() throws {
+        var ws = try pinned(strip(2, walls: [.right]), 1, .left)
+        ws.minimumSizes[2] = CGSize(width: 900, height: 100)
+        let frame = try #require(ws.layout().frames[2])
+        #expect(frame.width >= 900)
+        #expect(frame.maxX <= ws.bounds.maxX)
+    }
+
+    @Test func `With the band short through a pin's own minimum, a pin can shrink but not grow`() throws {
+        var ws = try pinned(pinned(strip(4, width: 0.3), 1, .left), 4, .right)
+        ws.minimumSizes[1] = CGSize(width: 500, height: 100)
+        try #require(!ws.bandHasRoom)
+        ws.focus(4)
+        do { let r = ws.resizeColumn(by: -20); #expect(r) }
+        #expect(!ws.bandHasRoom)
+        do { let r = ws.resizeColumn(by: 20); #expect(!r) }
+    }
+
+    @Test func `A swap from a Space whose pin slot would leave its band short is refused, both trees as they were`() throws {
+        var ws = strip(4)
+        ws.minimumSizes[2] = CGSize(width: 900, height: 100)
+        var source = Workspace(bounds: rect(0, 0, 1000, 600), gaps: .zero, algorithm: .scrolling)
+        for id: WindowID in [9, 10, 11] { source.insert(id) }
+        source.focus(9)
+        try #require(source.pin(.left) == .changed)
+        let (before, sourceBefore) = (ws, source)
+        do { let r = ws.receive(9, from: &source, onto: 2, .swap); #expect(!r) }
+        #expect(ws == before && source == sourceBefore)
+    }
+
+    @Test func `While held, a band window ahead of a pin raises it without overlapping, an own-app focused one does not`() throws {
+        let ws = try pinned(strip(4), 1, .left)
+        let layout = ws.layout()
+        let pin = StackedWindow(id: 1, layer: 0, frame: layout.frames[1]!, pid: 1)
+        let away = StackedWindow(id: 3, layer: 0, frame: rect(900, 0, 50, 600), pid: 3)
+        #expect(ws.pinsToRaise(stack: [away, pin], candidates: [], takingHold: true) == [1])
+        #expect(ws.pinsToRaise(stack: [away, pin], candidates: [3], takingHold: true) == [1], "another app's focused window")
+        var own = away
+        own.pid = 1
+        #expect(ws.pinsToRaise(stack: [own, pin], candidates: [3], takingHold: true).isEmpty, "the pin's own app's")
+    }
+}

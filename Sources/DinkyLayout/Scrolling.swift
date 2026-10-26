@@ -163,7 +163,10 @@ extension Workspace {
             let wide = (base * CGFloat(width(ofColumn: i))).rounded()
             let share = pushed.contains(i) ? area.width + endGutters(of: i, area).left + endGutters(of: i, area).right
                 : pinned ? min(wide, area.width) : wide
-            let width = band.count == 1 ? area.width : max(share, minimum + insets)
+            // A lone column fills the area, beside a pin no narrower than its windows take: it then hangs under the
+            // pin, or is held off a wall (`parked`), rather than growing past it onto the next display.
+            let lone = pinned ? max(area.width, minimum + insets) : area.width
+            let width = band.count == 1 ? lone : max(share, minimum + insets)
             defer { start += width }
             return (start, width)
         }
@@ -462,9 +465,14 @@ extension Workspace {
                 front = max(front, bounds.maxX - min(frame.minX, limit))
             }
         }
+        // A band window as wide as the band or wider, beside a pin, is the one in view there: past a wall it is held
+        // off it, hanging under the pin, not hidden behind a column in view.
+        let band = hasPins ? bandRect : .null
+        let spans = { (frame: CGRect) in !band.isNull && frame.minX <= band.minX + 1 && frame.maxX >= band.maxX - 1 }
         return Dictionary(uniqueKeysWithValues: frames.map { id, frame in
             let offLeft = frame.minX < bounds.minX - 1, offRight = frame.maxX > bounds.maxX + 1
-            if offLeft != offRight, walls.contains(offLeft ? .left : .right), let cover = offLeft ? left : right {
+            if offLeft != offRight, walls.contains(offLeft ? .left : .right), let cover = offLeft ? left : right,
+               pinSide(of: id) != nil || !spans(frame) {
                 return (id, hiddenAtWall(id, frame, behind: cover, wall: offLeft ? .left : .right, keepsSize: keepsSize))
             }
             var x = frame.minX
