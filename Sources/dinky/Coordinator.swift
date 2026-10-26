@@ -1163,7 +1163,8 @@ final class Coordinator {
         stripHolds += 1
         stripScroll?.hold = stripHolds
         if let workspace = workspaces[key] {
-            stripScroll?.ticker = StripTicker(target: workspace.heldTarget, offset: workspace.shownOffset)
+            stripScroll?.ticker = StripTicker(target: workspace.heldTarget, offset: workspace.shownOffset,
+                                              atEnd: workspace.heldAtEnd)
         }
         // The glance the last let-go left up is of where the strip was.
         WindowSwitcher.shared.endGlance()
@@ -1275,7 +1276,7 @@ final class Coordinator {
         // than the trackpad last ticked for: it ticks now, as the first finger lifts, the others still on it, so a
         // column taking focus is always felt.
         if config.gestures.scroll.haptic, target != scroll.ticker.felt {
-            tapTrackpad("strip settled on \(target)", actuation: config.gestures.scroll.hapticStrength.actuation)
+            tapTrackpad("strip let-go, settles on \(target)", actuation: config.gestures.scroll.hapticStrength.actuation)
         }
         if glance { glanceOnceStill(target, in: key, display: scroll.display) }
         // As SlideScroll does, the window is focused when it is another than before, or focus was on another Space.

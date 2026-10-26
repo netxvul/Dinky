@@ -1281,30 +1281,36 @@ struct PinRaiseOrderTests {
 }
 
 struct StripTickerTests {
-    @Test func `Fingers resting at an end, wiggling a fraction of a point, never tick`() {
+    @Test func `Fingers resting at an end, wiggling a fraction of a point from taking hold, never tick`() {
         var ws = strip(6, gaps: spaced)
         ws.focus(1)
         do { let r = ws.beginFreeScroll(); #expect(r) }
-        var ticker = StripTicker(target: ws.heldTarget, offset: ws.shownOffset)
+        var ticker = StripTicker(target: ws.heldTarget, offset: ws.shownOffset, atEnd: ws.heldAtEnd)
         var ticks = 0
         for i in 0..<20 {
             ws.scrollFreely(by: i.isMultiple(of: 2) ? 0.6 : -0.6)
-            if case .tick = ticker.moved(to: ws.heldTarget, offset: ws.shownOffset, at: Double(i)) { ticks += 1 }
+            if case .tick = ticker.moved(to: ws.heldTarget, offset: ws.shownOffset, at: Double(i), atEnd: ws.heldAtEnd) {
+                ticks += 1
+            }
         }
         #expect(ticks == 0)
     }
 
-    @Test func `Wiggling about a midpoint between two columns never ticks, a real crossing ticks once`() {
+    @Test func `A first crossing ticks at once, by a point`() {
+        var ticker = StripTicker(target: 1, offset: 119)
+        #expect(ticker.moved(to: 1, offset: 119.5, at: 1) == .none)
+        #expect(ticker.moved(to: 2, offset: 120.5, at: 2) == .tick(2))
+    }
+
+    @Test func `Jitter about a midpoint ticks once on the way over and never back`() {
         var ticker = StripTicker(target: 1, offset: 119.4)
         var ticks = 0
-        // The midpoint at 120: targets flip at it.
         for i in 0..<20 {
             let offset: CGFloat = i.isMultiple(of: 2) ? 120.6 : 119.4
             if case .tick = ticker.moved(to: offset > 120 ? 2 : 1, offset: offset, at: Double(i)) { ticks += 1 }
         }
-        #expect(ticks == 0)
-        if case .tick(let t) = ticker.moved(to: 2, offset: 140, at: 100) { #expect(t == 2) } else { Issue.record("no tick") }
-        #expect(ticker.moved(to: 2, offset: 141, at: 101) == .none)
+        #expect(ticks == 1)
+        #expect(ticker.moved(to: 1, offset: 100, at: 100) == .tick(1), "a real move back ticks")
     }
 
     @Test func `A stroke that crosses two columns inside the gap ticks the last once the gap ends`() {
@@ -1315,15 +1321,11 @@ struct StripTickerTests {
         #expect(ticker.moved(to: 3, offset: 101, at: 1.060) == .none)
     }
 
-    @Test func `Back across inside the gap ticks once more at its end, a wiggle under the margin not at all`() {
+    @Test func `Over and back with real moves, the back inside the gap, ticks twice`() {
         var ticker = StripTicker(target: 1, offset: 0)
         #expect(ticker.moved(to: 2, offset: 50, at: 1.000) == .tick(2))
         #expect(ticker.moved(to: 1, offset: 30, at: 1.020) == .later(1.055))
         #expect(ticker.moved(to: 1, offset: 30, at: 1.055) == .tick(1))
-        var still = StripTicker(target: 1, offset: 0)
-        #expect(still.moved(to: 2, offset: 5, at: 1.000) == .none)
-        #expect(still.moved(to: 1, offset: 1, at: 1.010) == .none)
-        #expect(still.moved(to: 2, offset: 6, at: 1.100) == .none)
     }
 }
 
@@ -1440,7 +1442,7 @@ struct StripTickerEndTests {
         var ws = strip(6, gaps: spaced)
         ws.focus(6)
         do { let r = ws.beginFreeScroll(); #expect(r) }
-        var ticker = StripTicker(target: ws.heldTarget, offset: ws.shownOffset)
+        var ticker = StripTicker(target: ws.heldTarget, offset: ws.shownOffset, atEnd: ws.heldAtEnd)
         var ticked: [WindowID] = []
         var time = 0.0
         func feed() {
