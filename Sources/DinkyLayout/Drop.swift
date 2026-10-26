@@ -168,18 +168,24 @@ extension Workspace {
 
     /// Take `id` from the tree `source`, another Space's, as dropped onto `target` here in `zone`, or, without a
     /// target, as a new window comes in. Swapped, the two trade places, each taking the other's size, and neither tree
-    /// keeps a window fullscreen. Otherwise `id` goes straight to its place, focused: in a strip a column of its own
+    /// keeps a window fullscreen; refused where a pin's holder changing leaves its band short of room. Otherwise `id` goes straight to its place, focused: in a strip a column of its own
     /// keeps the width its column had in a strip it came from, and the strip scrolls once, from where it is, as little
     /// as shows it. False, and nothing changes, when `id` is not in `source`, already here, or `target` is not here.
     @discardableResult
     public mutating func receive(_ id: WindowID, from source: inout Workspace, onto target: WindowID?, _ zone: DropZone) -> Bool {
         guard source.contains(id), !contains(id), target.map({ contains($0) }) ?? true else { return false }
         if let target, zone == .swap {
-            endFullscreen()
-            source.endFullscreen()
-            replace(target, with: id)
-            focus(id)
-            source.replace(id, with: target)
+            var here = self, there = source
+            here.endFullscreen()
+            there.endFullscreen()
+            here.replace(target, with: id)
+            here.focus(id)
+            there.replace(id, with: target)
+            // Not where it changes a pin's holder and so leaves the band short of room.
+            if isScrolling, pinSide(of: target) != nil, lacksRoom(after: here) { return false }
+            if source.isScrolling, source.pinSide(of: id) != nil, source.lacksRoom(after: there) { return false }
+            self = here
+            source = there
             return true
         }
         let share = source.columnShare(of: id)

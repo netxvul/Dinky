@@ -109,6 +109,12 @@ extension Workspace {
         pinSide(ofColumn: index) != nil && !bandHasRoom && stripInset.width < roomBefore - 0.5
     }
 
+    /// Whether `after`, this tree with a pin slot's holder changed, leaves the band short of room where it had it, or
+    /// with less than it had: what a swap through a pin slot is refused for.
+    func lacksRoom(after: Workspace) -> Bool {
+        !after.bandHasRoom && (bandHasRoom || after.stripInset.width < stripInset.width - 0.5)
+    }
+
     /// Pin the column of `window`, or of the focused window, to `side`, focus left where it is. Pinned there already, it
     /// stays, or with `toggle` is unpinned; pinned to the other side, it moves across. A column already pinned to `side`
     /// goes back to where it was pinned from. With `freeSideOnly`, as a rule pins, a side another column holds is left to
@@ -256,10 +262,12 @@ extension Workspace {
 
 extension Workspace {
     /// `remove` for a window going away for a while, minimized, hidden or floated: a pin of its own is remembered, so
-    /// it is pinned again as it comes back (`arrive`).
+    /// it is pinned again as it comes back (`arrive`). So is a mark asleep outside the scrolling layout.
     public mutating func depart(_ id: WindowID) {
-        let side = pinSide(of: id)
-        let lone = side.flatMap { pinnedIndex($0) }.map { root.children[$0].windows.count == 1 } ?? false
+        let dormant = isScrolling ? nil : pins.first(where: { $0.value == id })?.key
+        let side = pinSide(of: id) ?? dormant
+        let lone = dormant != nil
+            || side.flatMap { pinnedIndex($0) }.map { root.children[$0].windows.count == 1 } ?? false
         let share = columnWidths[id], origin = side.flatMap { pinOrigins[$0] }
         remove(id)
         if let side, lone {
@@ -276,9 +284,13 @@ extension Workspace {
         guard let side = departedPins.first(where: { $0.value == id })?.key else { return }
         departedPins[side] = nil
         let share = departedWidths.removeValue(forKey: id), origin = departedOrigins.removeValue(forKey: id)
-        // Outside the scrolling layout, a mark asleep till it scrolls again, for a side still free.
+        // Outside the scrolling layout, a mark asleep till it scrolls again, for a side still free, with the width and
+        // the origin it had.
         guard isScrolling else {
-            if pins[side] == nil { pins[side] = id }
+            guard pins[side] == nil else { return }
+            pins[side] = id
+            if let share { columnWidths[id] = share }
+            if let origin { pinOrigins[side] = origin }
             return
         }
         guard pinnedIndex(side) == nil, let column = root.path(of: id)?.first else { return }
@@ -295,10 +307,11 @@ extension Workspace {
 }
 
 extension Workspace {
-    /// After the display or the gaps changed: pins that leave the band too little room now are unpinned, the right one
-    /// first, till it has room again.
+    /// After the display or the gaps changed: pins that leave the band too little room now are unpinned, the one
+    /// pinned last first, till it has room again.
     public mutating func fitPins() {
-        for side in [PinSide.right, .left] where !bandHasRoom && pinnedIndex(side) != nil { _ = unpin(side) }
+        let order = [lastPinned ?? .right, lastPinned == .left ? .right : .left]
+        for side in order where !bandHasRoom && pinnedIndex(side) != nil { _ = unpin(side) }
     }
 }
 
@@ -325,7 +338,8 @@ extension Workspace {
 extension Workspace {
     /// `drop`'s swap in a strip with a pin: the two trade places, each slot marked by the window that lands in it, and
     /// where a pin's slot changes hands each column keeps its width, so the pin stays a pin's width and the band a band
-    /// column's. Refused, nothing changed, where the band would be left too little room.
+    /// column's. Refused, nothing changed, where a pin slot changing hands leaves the band short of room (see
+    /// `lacksRoom`).
     mutating func swapBesidePins(_ id: WindowID, _ target: WindowID) -> Bool {
         guard id != target, let a = root.path(of: id), let b = root.path(of: target) else { return false }
         var swapped = self
@@ -342,7 +356,7 @@ extension Workspace {
         }
         swapped.settlePins()
         if let back = swapped.bandFocus, swapped.pinSide(of: back) != nil { swapped.bandFocus = nil }
-        guard swapped.bandHasRoom else { return false }
+        guard slots.0 == slots.1 || !lacksRoom(after: swapped) else { return false }
         self = swapped
         focus(id)
         return true
