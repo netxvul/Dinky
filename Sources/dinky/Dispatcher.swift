@@ -344,8 +344,13 @@ enum Dispatcher {
     /// `pin` and `unpin` on the focused window's tree, or for a rule on its window's, which is not focused for it. Done
     /// already, it answers so; refused, it does nothing and says why, as a binding that does nothing.
     private static func pin(_ name: String, window: WindowID?, unpinning: Command? = nil,
-                            _ change: (inout Workspace) -> PinChange) -> Reply {
+                            _ pinning: @escaping (inout Workspace) -> PinChange) -> Reply {
         guard let coordinator = AppState.shared.coordinator else { return .error("tiling is not running") }
+        // With the minimum sizes the next pass lays out with, so the band's room is judged as it will show.
+        let change = { (workspace: inout Workspace) -> PinChange in
+            workspace.minimumSizes = coordinator.minimumSizes(in: workspace)
+            return pinning(&workspace)
+        }
         let id = window ?? coordinator.focusedWindow
         let result: PinChange?
         if let window {

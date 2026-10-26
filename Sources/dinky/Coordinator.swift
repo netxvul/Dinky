@@ -317,7 +317,7 @@ final class Coordinator {
             raisedInBackground.insert(pin)
             guard let used = lastUsed[pid], used != pin, !raise.contains(used), !fronts.contains(used), !restore.contains(used),
                   let key = placements[used]?.space, let workspace = workspaces[key], workspace.pinSide(of: used) == nil,
-                  let frame = model.windows[used]?.frame,
+                  workspace.isInView(used), let frame = model.windows[used]?.frame,
                   !PinSide.allCases.contains(where: { workspace.pinFrame($0)?.intersects(frame) == true }) else { continue }
             restore.append(used)
         }
@@ -663,14 +663,21 @@ final class Coordinator {
     func focus(_ id: WindowID) {
         guard let window = model.windows[id] else { return }
         if let space = placements[id]?.space { telemetry.command(space, "dinky focused \(id) \(window.appName ?? "?")") }
-        // A band window still under a pin is activated once it rests in the band, as a clicked peek is: activated now,
-        // its app would bring it up over the pin as it slides out.
+        // A pin focused on purpose is the user's choice, not one raised in the background.
+        raisedInBackground.remove(id)
+        // A band window whose glide in crosses a pin is activated once it rests in the band, as a clicked peek is:
+        // activated now, its app would bring it up over the pin as it slides across.
         if let key = placements[id]?.space, let workspace = workspaces[key], workspace.pinSide(of: id) == nil,
-           PinSide.allCases.contains(where: { workspace.pinFrame($0)?.intersects(window.frame) == true }) {
-            focusing = (id, Date() + 3)
-            edit(key) { $0.focus(id) }
-            flush()
-            return focusOnceStill(id, in: key)
+           !workspace.pinnedWindows.isEmpty {
+            var focused = workspace
+            focused.focus(id)
+            let sweep = focused.layout().frames[id].map { window.frame.union($0) } ?? window.frame
+            if PinSide.allCases.contains(where: { workspace.pinFrame($0)?.intersects(sweep) == true }) {
+                focusing = (id, Date() + 3)
+                edit(key) { $0.focus(id) }
+                flush()
+                return focusOnceStill(id, in: key)
+            }
         }
         // Until the app is activated, which waits on Accessibility calls into it off the main thread (at most about
         // two seconds), and for half a second after.
@@ -702,7 +709,8 @@ final class Coordinator {
         if id != lastFocused, let pid = model.windows[id]?.pid {
             // Its app came to the front on a pin dinky raised meanwhile, not one the user chose: back to the window they
             // had. A click on the pin is theirs.
-            if raisedInBackground.contains(id), !clickUnderWay(within: 0.3), let used = lastUsed[pid], used != id,
+            if raisedInBackground.contains(id), focusing?.id != id, !clickUnderWay(within: 0.3), let used = lastUsed[pid],
+               used != id,
                model.windows[used] != nil, placements[used]?.space != nil {
                 raisedInBackground = raisedInBackground.filter { model.windows[$0]?.pid != pid }
                 return focus(used)
