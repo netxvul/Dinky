@@ -896,9 +896,20 @@ struct PinRaiseTests {
         let shown = stack(ws, pids: [1: 1]).filter { $0.id != 2 }.prepending(band)
         #expect(ws.pinsToRaise(stack: shown, candidates: [], takingHold: true, beyondReach: [7]).isEmpty)
         #expect(ws.pinsToRaise(stack: shown, candidates: [], takingHold: true, beyondReach: [8]) == [1])
+        let covering = StackedWindow(id: 3, layer: 0, frame: rect(100, 0, 300, 600), pid: 8)
+        let base = stack(ws, pids: [1: 1]).filter { $0.id != 2 && $0.id != 3 }
+        #expect(ws.pinsToRaise(stack: [band, covering] + base, candidates: [], beyondReach: [7]) == [1])
         let floating = StackedWindow(id: 50, layer: 0, frame: rect(10, 10, 100, 100), pid: 7)
-        #expect(ws.pinsToRaise(stack: [floating] + shown, candidates: [], beyondReach: [7]).isEmpty,
-                "a window of its outside the tree still holds the pin as in use")
+        #expect(ws.pinsToRaise(stack: [floating, band, covering] + base, candidates: [], beyondReach: [7]).isEmpty,
+                "a window of the front app outside the tree over the pin is in use")
+    }
+
+    @Test func `A pin's own app's window counts though that app is beyond reach`() throws {
+        let ws = try pinned(strip(4), 1, .left)
+        let layout = ws.layout()
+        let pin = StackedWindow(id: 1, layer: 0, frame: layout.frames[1]!, pid: 7)
+        let sliding = StackedWindow(id: 3, layer: 0, frame: rect(100, 0, 300, 600), pid: 7)
+        #expect(ws.pinsToRaise(stack: [sliding, pin], candidates: [2], beyondReach: [7]) == [1])
     }
 
     @Test func `A sweep under one pin raises that pin only`() throws {

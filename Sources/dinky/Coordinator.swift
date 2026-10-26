@@ -301,6 +301,9 @@ final class Coordinator {
         // window its app had put back.
         let ordering = ScriptingAddition.available && ScriptingAddition.orders
         let frontApp = model.windows[focusedWindow]?.pid
+        // The app in front as the window server has it, not the one dinky is about to focus: its windows are the ones
+        // Accessibility cannot raise a window over.
+        let shownFront = dinky_window_info(dinky_border_focused_window()).pid
         let front = focusedWindow
         var raise: [WindowID] = [], fronts: [WindowID] = [], raisedBy: [(key: UInt64, pins: [WindowID], cause: String)] = []
         for key in keys {
@@ -313,7 +316,7 @@ final class Coordinator {
             // While fingers hold the strip, its windows move through Dock without the window model hearing, so any
             // band window in front of a pin counts, as when they took hold.
             let held = takingHold || stripScroll?.key == key
-            let reach: Set<Int32> = ordering ? [] : Set([frontApp].compactMap { $0 })
+            let reach: Set<Int32> = ordering || shownFront == 0 ? [] : [shownFront]
             let raised = workspace.pinsToRaise(stack: stack, candidates: candidates, raising: raising, sweeping: sweeping,
                                                takingHold: held, beyondReach: reach)
             guard !raised.isEmpty else { continue }

@@ -207,14 +207,23 @@ final class FrameApplier {
     func raisePins(_ ids: [WindowID], pids: [WindowID: pid_t], front: WindowID?, ordering: Bool = false,
                    done: @escaping (Bool) -> Void = { _ in }) {
         raiseQueue.async {
+            if ordering {
+                // Ordering moves no focus, but a pin of the app focused now could read as focused once in front of its
+                // window; and one hidden or minimized since it was judged covered would be ordered back in, its app
+                // none the wiser. So those are left out, the rest ordered.
+                // TODO: check SLSWindowIsOrderedIn in the payload's order too, at its next version.
+                let focused = dinky_border_focused_window()
+                let owner = focused != 0 && focused != front ? dinky_window_info(focused).pid : 0
+                let shown = Set(onScreenOrder())
+                let ordered = ids.filter { shown.contains($0) && (owner == 0 || pids[$0] != owner) }
+                guard !ordered.isEmpty else { return DispatchQueue.main.async { done(false) } }
+                dinky_sa_order_batch(ordered, Int32(ordered.count))
+                return DispatchQueue.main.async { done(true) }
+            }
             guard Self.raisingKeepsFocus(ids, front: front, pids: pids) else {
                 return DispatchQueue.main.async { done(false) }
             }
-            if ordering {
-                dinky_sa_order_batch(ids, Int32(ids.count))
-            } else {
-                self.raise(ids, pids: pids, front: front)
-            }
+            self.raise(ids, pids: pids, front: front)
             DispatchQueue.main.async { done(true) }
         }
     }

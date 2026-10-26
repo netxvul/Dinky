@@ -99,9 +99,9 @@ screen inside the outer gaps, and the band keeps at least a quarter of it; a
 pin or a resize that would leave less is refused, with the noop flash. A band
 window wider than the band, as an app's minimum width can make it, hangs past
 the band's edge, under a pin there. With dinky's Dock scripting addition the
-pins stay in front of every window; without it the active app's windows, and
-the focused window of a pin's own app, can show over a pin, sliding past or
-hanging under it. A band left under
+pins go in front of the band's windows, the active app's too; without it the
+active app's windows, and the focused window of a pin's own app, can show over
+a pin, sliding past or hanging under it. A band left under
 a quarter later, as when a pinned app turns out to need a wider window, takes
 the room from the pins, the one pinned last first, down to what their windows
 need; they keep the narrower width and are never unpinned for it.
@@ -117,11 +117,14 @@ need; they keep the narrower width and are never unpinned for it.
   slide under it, after a focus change, Cmd-Tab, a click in the Dock or a new
   window, and while fingers scroll the strip. With dinky's Dock
   [scripting addition](scripting-addition.md) loaded, the pins go in
-  front of every window, the active app's too, and no app's focus changes.
-  Without it they are raised through Accessibility, which cannot put a window
-  in front of the active app's: a window of the app in use, and the focused
-  window of the pin's own app, which is raised after the pin to keep its app's
-  focus, can show over the pin while sliding past.
+  front of the band's windows sliding under them, the active app's too, and no
+  app's focus changes. A floating window or a dialog over a pin, or a window
+  fullscreen over the pins, still stays in front, and nothing is reordered while
+  a window is held or dragged. Without it they are raised through
+  Accessibility, which cannot put another app's window in front of the active
+  app's: a window of the app in use, and the focused window of the pin's own
+  app, which is raised after the pin to keep its app's focus, can show over the
+  pin while sliding past.
 - A pinned window has a ring around it in `[borders] pinned-color`, Claude's
   orange by default, whether it has focus or not and even with focus borders
   off; see [`[borders]`](configuration.md#borders) `pinned`.
