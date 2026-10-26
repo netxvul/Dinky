@@ -202,29 +202,30 @@ final class FrameApplier {
     /// the band's windows sliding under them. Not when that could move focus (see `raisingKeepsFocus`). `ordering`, they
     /// are ordered through Dock's scripting addition instead, which also puts them in front of the active app's windows,
     /// where Accessibility cannot, and makes none its app's main window.
-    /// `done` runs on the main thread once they are, or once that was refused, told which: their rings are placed next
-    /// to them again then.
-    func raisePins(_ ids: [WindowID], pids: [WindowID: pid_t], front: WindowID?, ordering: Bool = false,
-                   done: @escaping (Bool) -> Void = { _ in }) {
+    /// `done` runs on the main thread once they are, given the ones raised or ordered, none where that was refused:
+    /// their rings are placed next to them again then.
+    func raisePins(_ ids: [WindowID], pids: [WindowID: pid_t], front: WindowID?, frontPid: pid_t = 0,
+                   ordering: Bool = false, done: @escaping ([WindowID]) -> Void = { _ in }) {
         raiseQueue.async {
             if ordering {
-                // Ordering moves no focus, but a pin of the app focused now could read as focused once in front of its
-                // window; and one hidden or minimized since it was judged covered would be ordered back in, its app
-                // none the wiser. So those are left out, the rest ordered.
+                // Ordering moves no focus, but a pin of an app focused now, other than the one dinky has in front, could
+                // read as focused once in front of its window; and one hidden or minimized since it was judged covered
+                // would be ordered back in, its app none the wiser. So those are left out, the rest ordered. Apps are
+                // compared, not windows: a pin of the app in front, ordered already, reads in front itself.
                 // TODO: check SLSWindowIsOrderedIn in the payload's order too, at its next version.
                 let focused = dinky_border_focused_window()
-                let owner = focused != 0 && focused != front ? dinky_window_info(focused).pid : 0
+                let live = focused != 0 ? dinky_window_info(focused).pid : 0
+                let owner = live != frontPid ? live : 0
                 let shown = Set(onScreenOrder())
                 let ordered = ids.filter { shown.contains($0) && (owner == 0 || pids[$0] != owner) }
-                guard !ordered.isEmpty else { return DispatchQueue.main.async { done(false) } }
-                dinky_sa_order_batch(ordered, Int32(ordered.count))
-                return DispatchQueue.main.async { done(true) }
+                if !ordered.isEmpty { dinky_sa_order_batch(ordered, Int32(ordered.count)) }
+                return DispatchQueue.main.async { done(ordered) }
             }
             guard Self.raisingKeepsFocus(ids, front: front, pids: pids) else {
-                return DispatchQueue.main.async { done(false) }
+                return DispatchQueue.main.async { done([]) }
             }
-            self.raise(ids, pids: pids, front: front)
-            DispatchQueue.main.async { done(true) }
+            let raised = self.raise(ids, pids: pids, front: front)
+            DispatchQueue.main.async { done(raised) }
         }
     }
 
@@ -296,7 +297,9 @@ final class FrameApplier {
     /// turn, and macOS reports that as focus moving to it, for the app in front. So while the raise runs, and for
     /// `RaiseEchoes.settle` after, the windows of the app in front and of `front`'s, which dinky may be activating, count
     /// as raised behind `front` (`echoesRaise`); then `onRaised` has focus read again.
-    private func raise(_ ids: [WindowID], pids: [WindowID: pid_t], front: WindowID?) {
+    /// Returns the windows it asked to raise, one whose app did not answer in time too.
+    @discardableResult
+    private func raise(_ ids: [WindowID], pids: [WindowID: pid_t], front: WindowID?) -> [WindowID] {
         let focused = dinky_border_focused_window()
         var apps: Set<pid_t> = []
         if let front, let pid = pids[front] { apps.insert(pid) }
@@ -307,9 +310,15 @@ final class FrameApplier {
             lock.withLock { raising.begin(echoing, front: front, at: began) }
         }
         defer { if !echoing.isEmpty { endRaise() } }
-        var unanswered: Set<pid_t> = []
+        var unanswered: Set<pid_t> = [], raised: [WindowID] = []
         let now = CACurrentMediaTime()
         unansweredRaises = unansweredRaises.filter { $0.value > now }
+        // An app that did not answer is not asked again for a while, from when it was given up on, as raises come up to
+        // ten times a second while fingers hold a strip.
+        let giveUp = { (pid: pid_t) in
+            unanswered.insert(pid)
+            self.unansweredRaises[pid] = CACurrentMediaTime() + 2
+        }
         for id in ids {
             guard let pid = pids[id], !unanswered.contains(pid), !scheduler.isBusy(pid), unansweredRaises[pid] == nil
             else { continue }
@@ -317,14 +326,13 @@ final class FrameApplier {
             case .found(let element):
                 let started = Date()
                 let error = AXUIElementPerformAction(element, kAXRaiseAction as CFString)
-                if Self.timedOut(error, since: started) { unanswered.insert(pid) }
-            case .busy: unanswered.insert(pid)
+                raised.append(id)
+                if Self.timedOut(error, since: started) { giveUp(pid) }
+            case .busy: giveUp(pid)
             case .gone: continue
             }
         }
-        // An app that did not answer is not asked again for a while, as raises come up to ten times a second while
-        // fingers hold a strip.
-        for pid in unanswered { unansweredRaises[pid] = now + 2 }
+        return raised
     }
 
     /// Ends the raise under way: its windows settle for `RaiseEchoes.settle`, and then focus is read again, a little

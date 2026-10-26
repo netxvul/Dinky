@@ -274,9 +274,10 @@ uint32_t dinky_border_focused_window(void)
 
         // The iterator yields windows in the input array's order, so the first match is the
         // frontmost. JankyBorders get_front_window relies on the same. A window floating above the normal
-        // level, as a picture in picture video does in front of every window of its app, is never the one
-        // its app has focused: the frontmost at the normal level is, and the floating one only when the
-        // app has no other.
+        // level on every Space, as a picture in picture video does in front of every window of its app, is
+        // not the one its app has focused: the frontmost other is, and the floating one only when the app
+        // has no other. One floating on its own Space, as a player kept on top, and a modal panel, an alert
+        // or an Open or Save panel, are focused as they show.
         uint32_t floating = 0;
         while (iterator && SLSWindowIteratorAdvance(iterator)) {
             uint32_t wid = SLSWindowIteratorGetWindowID(iterator);
@@ -286,9 +287,12 @@ uint32_t dinky_border_focused_window(void)
             if (dinky_is_document_kind(parent, tags) && dinky_is_visible(attributes, tags)) {
                 int64_t level = 0;
                 SLSGetWindowLevel(cid, wid, &level);
-                if (level > kCGNormalWindowLevel) {
-                    if (!floating) floating = wid;
-                    continue;
+                if (level > kCGNormalWindowLevel && level != kCGModalPanelWindowLevel) {
+                    NSArray *on = CFBridgingRelease(SLSCopySpacesForWindows(cid, 0x7, (__bridge CFArrayRef)@[@(wid)]));
+                    if (on.count > 1) {
+                        if (!floating) floating = wid;
+                        continue;
+                    }
                 }
                 focused = wid;
                 break;

@@ -477,3 +477,13 @@ extension Workspace {
         }
     }
 }
+
+/// The order pins are raised in through Accessibility, back to front: the front app's own pins and the windows that keep
+/// its focus, `front` last of those wherever it came in, as raising makes a window its app's key one, then other apps'
+/// pins, which it does not cover, and the windows their apps had put back. Each once.
+public func pinRaiseOrder(ownPins: [WindowID], fronts: [WindowID], front: WindowID, keepsFront: Bool,
+                          otherPins: [WindowID], restore: [WindowID]) -> [WindowID] {
+    var seen: Set<WindowID> = []
+    return ((ownPins + fronts).filter { $0 != front } + (keepsFront ? [front] : []) + otherPins + restore)
+        .filter { seen.insert($0).inserted }
+}

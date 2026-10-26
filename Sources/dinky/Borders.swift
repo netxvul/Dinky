@@ -24,17 +24,19 @@ final class BorderManager {
     /// Whether dinky is animating the window, when its border only follows moves: redrawing it at every
     /// size of a resize costs more than a frame.
     private let isAnimating: (UInt32) -> Bool
-    /// The focused window: the front app's frontmost, unless that is a pin Dock ordered in front of it.
-    private let front: () -> UInt32
+    /// The focused window: the front app's frontmost, unless that is a pin Dock ordered in front of it; read afresh
+    /// when told.
+    private let front: (Bool) -> UInt32
 
-    init(config: Borders, model: WindowModel, front: @escaping () -> UInt32 = dinky_border_focused_window,
+    init(config: Borders, model: WindowModel, front: @escaping (Bool) -> UInt32 = { _ in dinky_border_focused_window() },
          isAnimating: @escaping (UInt32) -> Bool) {
         self.config = config
         self.model = model
         self.front = front
         self.isAnimating = isAnimating
         refreshSpaces()
-        focusedID = front()
+        // Focus borders off, only pins' rings are drawn, which focus does not change: it is not read at all.
+        focusedID = config.enabled ? front(false) : 0
         syncAll()
         // An active colour of 'accent' follows the accent colour as it changes in System Settings.
         NotificationCenter.default.addObserver(forName: NSColor.systemColorsDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
@@ -45,6 +47,7 @@ final class BorderManager {
     func update(config: Borders) {
         guard config != self.config else { return }
         self.config = config
+        focusedID = config.enabled ? front(false) : 0
         syncAll()
     }
 
@@ -77,11 +80,15 @@ final class BorderManager {
         case .frontApp:
             pending.refocus = true
             // The new app's front window can settle a few ms after the app (JankyBorders waits 20 ms).
-            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(20)) { [weak self] in self?.refocus() }
+            if config.enabled {
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(20)) { [weak self] in self?.refocus(fresh: true) }
+            }
         case .windowReorder:
             pending.refocus = true
             // A click between one app's windows can report the previous one in front for a few ms.
-            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(20)) { [weak self] in self?.refocus() }
+            if config.enabled {
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(20)) { [weak self] in self?.refocus(fresh: true) }
+            }
         case .windowUpdate, .windowCreate, .windowDestroy, .windowTitle:
             pending.refocus = true
         default:
@@ -156,8 +163,9 @@ final class BorderManager {
                       moveOnly: isAnimating(window.id))
     }
 
-    private func refocus() {
-        let id = front()
+    private func refocus(fresh: Bool = false) {
+        guard config.enabled else { return }
+        let id = front(fresh)
         guard id != focusedID else { return }
         let old = focusedID
         focusedID = id

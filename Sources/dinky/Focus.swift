@@ -46,9 +46,9 @@ func mainWindowID(of pid: pid_t) -> UInt32 {
 }
 
 /// The app's focused window, wherever it is. 0 if it has none.
-func focusedWindowID(of pid: pid_t) -> UInt32 {
+func focusedWindowID(of pid: pid_t, timeout: Float = 0.25) -> UInt32 {
     let app = AXUIElementCreateApplication(pid)
-    AXUIElementSetMessagingTimeout(app, 0.25)
+    AXUIElementSetMessagingTimeout(app, timeout)
     return axElement(app, kAXFocusedWindowAttribute).map(axWindowID) ?? 0
 }
 

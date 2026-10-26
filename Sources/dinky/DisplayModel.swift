@@ -117,12 +117,17 @@ final class DisplayModel {
         observers.append(handler)
     }
 
+    /// The focused window as the coordinator tracks it, asking no app: the front app's frontmost, unless that is a pin
+    /// Dock ordered in front of the window the user is on. Set by the coordinator.
+    var frontWindow: () -> UInt32 = { dinky_border_focused_window() }
+
     /// The display chosen by `focus-monitor`, else that of the focused window (or `window`), else the one under
     /// the cursor, else the main display. The focused window is the front app's frontmost one as WindowServer has
     /// it, not as the app answers through Accessibility: this runs on the main thread, on a timer, on every
     /// activation and command, often while that app is busy, and asking it would hold dinky and every key and
     /// click its event taps see until it answers.
-    func focusedDisplay(window wid: UInt32 = dinky_border_focused_window()) -> Display? {
+    func focusedDisplay(window wid: UInt32? = nil) -> Display? {
+        let wid = wid ?? frontWindow()
         if let chosen = displays.first(where: { $0.uuid == focusOverride }) { return chosen }
         if wid != 0, let display = display(ofWindow: wid) { return display }
         if let cursor = CGEvent(source: nil)?.location, let display = displays.first(where: { $0.frame.contains(cursor) }) {
@@ -150,7 +155,7 @@ final class DisplayModel {
 
     /// Takes in the focused display and the Space it has settled on. Called when focus or the Spaces change, with
     /// the focused window when the caller has just read it.
-    func noteFocus(window: UInt32 = dinky_border_focused_window()) {
+    func noteFocus(window: UInt32? = nil) {
         guard let display = focusedDisplay(window: window) else { return }
         focusedDisplays.note(display.uuid)
         if let space = settledSpaceIDs[display.uuid] { focusedSpaces.note(space) }

@@ -1229,3 +1229,17 @@ struct PinLayerTests {
         #expect(ws.pinsToRaise(stack: [over, pin], candidates: []).isEmpty)
     }
 }
+
+struct PinRaiseOrderTests {
+    @Test func `A focused pin of the front app is raised last of its app's, after its other pin`() {
+        let order = pinRaiseOrder(ownPins: [10, 20], fronts: [], front: 20, keepsFront: true, otherPins: [], restore: [])
+        #expect(order == [10, 20])
+    }
+
+    @Test func `The focused band window goes after its app's pins, before other apps' pins and the windows put back`() {
+        let order = pinRaiseOrder(ownPins: [10], fronts: [5, 7], front: 7, keepsFront: true, otherPins: [30], restore: [40])
+        #expect(order == [10, 5, 7, 30, 40])
+        let none = pinRaiseOrder(ownPins: [], fronts: [], front: 7, keepsFront: false, otherPins: [30], restore: [])
+        #expect(none == [30])
+    }
+}
