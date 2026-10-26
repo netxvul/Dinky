@@ -290,8 +290,11 @@ final class Coordinator {
         for key in keys {
             let workspace = workspaces[key]!
             let candidates = [workspace.focused, focusedWindow].compactMap { $0 }.filter { workspace.pinSide(of: $0) == nil }
+            // While fingers hold the strip, its windows move through Dock without the window model hearing, so any
+            // band window in front of a pin counts, as when they took hold.
+            let held = takingHold || stripScroll?.key == key
             let raised = workspace.pinsToRaise(stack: stack, candidates: candidates, raising: raising, sweeping: sweeping,
-                                               takingHold: takingHold)
+                                               takingHold: held)
             guard !raised.isEmpty else { continue }
             raise += raised
             let raisedApps = Set(raised.compactMap { model.windows[$0]?.pid })
@@ -325,7 +328,8 @@ final class Coordinator {
             ids = ids.filter { $0 != front } + [front]
             pids[front] = pid
         }
-        let cause = takingHold ? "fingers took hold" : sweeping.isEmpty ? "after window events" : "a glide sweeping under"
+        let cause = takingHold ? "fingers took hold" : stripScroll != nil ? "while fingers hold the strip"
+            : sweeping.isEmpty ? "after window events" : "a glide sweeping under"
         telemetry.pinsRaised(only ?? keys[0], ids, cause)
         applier.raisePins(ids, pids: pids, front: focusedWindow)
     }
@@ -1076,8 +1080,8 @@ final class Coordinator {
         }
     }
 
-    /// Every `stripScrollCheck` while fingers hold a strip: its Space gone from under them puts it back, and fingers
-    /// not heard from for `stripScrollQuiet` let go.
+    /// Every `stripScrollCheck` while fingers hold a strip: its Space gone from under them puts it back, fingers not
+    /// heard from for `stripScrollQuiet` let go, and a band window in front of a pin has the pin raised again.
     private func watchStripScroll() {
         guard let scroll = stripScroll else {
             stripScrollWatch?.invalidate()
@@ -1088,6 +1092,10 @@ final class Coordinator {
             abortStripScroll()
         } else if CACurrentMediaTime() - scroll.heard > Self.stripScrollQuiet {
             endStripScroll(velocity: 0)
+        } else {
+            // A window its app brought up meanwhile, as one activated just as the fingers came down, goes back under
+            // the pins it slides under.
+            raiseCoveredPins(in: scroll.key)
         }
     }
 
