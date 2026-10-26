@@ -365,6 +365,12 @@ public struct Workspace: Equatable, Sendable {
             if pinOrigins[side]?.before == old { pinOrigins[side]?.before = new }
             if pinOrigins[side]?.after == old { pinOrigins[side]?.after = new }
         }
+        if let origin = departedOrigins.removeValue(forKey: old) { departedOrigins[new] = origin }
+        if let share = departedWidths.removeValue(forKey: old) { departedWidths[new] = share }
+        for (departed, origin) in departedOrigins {
+            if origin.before == old { departedOrigins[departed]?.before = new }
+            if origin.after == old { departedOrigins[departed]?.after = new }
+        }
         fullscreenWindows = fullscreenWindows.map { $0 == old ? new : $0 }
         if pendingFullscreen == old { pendingFullscreen = new }
         minimumSizes[old] = nil

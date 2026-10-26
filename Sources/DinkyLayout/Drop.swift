@@ -181,6 +181,9 @@ extension Workspace {
             here.replace(target, with: id)
             here.focus(id)
             there.replace(id, with: target)
+            // Each takes the minimum it had with it, which the room each tree keeps depends on.
+            here.minimumSizes[id] = source.minimumSizes[id]
+            there.minimumSizes[target] = minimumSizes[target]
             // Not where it changes a pin's holder and so leaves the band short of room.
             if isScrolling, pinSide(of: target) != nil, lacksRoom(after: here) { return false }
             if source.isScrolling, source.pinSide(of: id) != nil, source.lacksRoom(after: there) { return false }

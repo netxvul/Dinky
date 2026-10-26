@@ -97,11 +97,16 @@ while the other columns scroll in the band between. Each side holds one column,
 a single window or a stack. A pinned column keeps its width, a share of the
 screen inside the outer gaps, and the band keeps at least a quarter of it and
 room for its widest window; a pin or a resize that would leave less is refused.
+A band left short later, as when an app turns out to need a wider window, takes
+the room from the pins, the one pinned last first, down to what their windows
+need; they keep the narrower width and are never unpinned for it.
 
 - Focusing a pin never scrolls. From the band's first column, focusing towards
   the pin focuses it; from the pin, focusing inwards goes back to the band window
-  focused last. Outwards from a pin, focus goes on as at the workspace's edge:
-  to the next display, or around the workspace with `wrap-around-the-workspace`.
+  focused last. Outwards from a pin, focus does what it does at the workspace's
+  edge: nothing by default, the next display with `--boundaries
+  all-monitors-outer-frame`, or around the workspace with `--boundaries-action
+  wrap-around-the-workspace`.
 - Columns scrolled out of the band slide under the pin and park at the screen's
   edge with only a sliver showing. The pin is raised in front of them as they
   slide under it, after a focus change, Cmd-Tab, a click in the Dock or a new

@@ -210,6 +210,7 @@ final class WorkspaceNumbers {
                 print("workspaces: windows stayed on Space \(from) instead of moving to \(to)")
                 return false
             }
+            AppState.shared.coordinator?.fitMovedTree(to)
             print("workspaces: moved the windows of Space \(from) to \(to)")
             return true
 

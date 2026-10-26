@@ -281,38 +281,17 @@ final class Coordinator {
             (only.map { $0 == key } ?? isVisible(key)) && !(workspaces[key]?.pinnedWindows.isEmpty ?? true)
         }
         guard !keys.isEmpty else { return }
-        let stack = onScreenStack()
-        let position = Dictionary(stack.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, _ in a })
-        let level = Dictionary(stack.map { ($0.id, $0.layer) }, uniquingKeysWith: { a, _ in a })
+        // The windows shown, front to back, as the window model has them.
+        let stack = onScreenStack().compactMap { shown -> StackedWindow? in
+            guard let window = model.windows[shown.id], window.isVisible else { return nil }
+            return StackedWindow(id: shown.id, layer: shown.layer, frame: window.frame, pid: window.pid)
+        }
         var raise: [WindowID] = [], fronts: [WindowID] = []
         for key in keys {
-            let workspace = workspaces[key]!, layout = workspace.layout()
-            // Only a fullscreen window that covers the pins stands in the way: one pushing in the band covers none.
-            if let first = layout.order.first, workspace.fullscreenWindows.contains(first),
-               !workspace.pushesFullscreen || workspace.pinSide(of: first) != nil { continue }
-            let tree = Set(workspace.windows)
-            // Back to front, as the layout stacks them: a pinned accordion's shown window last.
-            let pins = layout.order.filter { workspace.pinSide(of: $0) != nil }.reversed()
-            let apps = Set(pins.compactMap { model.windows[$0]?.pid })
-            let candidates = [workspace.focused, focusedWindow].compactMap { $0 }.filter { id in
-                workspace.pinSide(of: id) == nil && model.windows[id].map { apps.contains($0.pid) } == true
-            }
-            var covered: Set<PinSide> = []
-            for pin in pins {
-                guard let side = workspace.pinSide(of: pin), !covered.contains(side),
-                      let frame = model.windows[pin]?.frame, let at = position[pin] else { continue }
-                let ahead = (stack.prefix(at).map(\.id) + raising.filter { position[$0] != nil })
-                    .filter { $0 != pin && !candidates.contains($0) && model.windows[$0]?.isVisible == true }
-                let over = ahead.filter { model.windows[$0]!.frame.intersects(frame) }
-                // Something of its own over the pin, at its level or lower, is left there: it is in use.
-                guard !over.contains(where: { !tree.contains($0) && (level[$0] ?? 0) <= (level[pin] ?? 0) }) else { continue }
-                let band = { (id: WindowID) in tree.contains(id) && workspace.pinSide(of: id) == nil }
-                if over.contains(where: band)
-                    || ahead.contains(where: { band($0) && (takingHold || sweeping[pin]?.contains($0) == true) }) {
-                    covered.insert(side)
-                }
-            }
-            let raised = pins.filter { id in workspace.pinSide(of: id).map(covered.contains) == true && position[id] != nil }
+            let workspace = workspaces[key]!
+            let candidates = [workspace.focused, focusedWindow].compactMap { $0 }.filter { workspace.pinSide(of: $0) == nil }
+            let raised = workspace.pinsToRaise(stack: stack, candidates: candidates, raising: raising, sweeping: sweeping,
+                                               takingHold: takingHold)
             guard !raised.isEmpty else { continue }
             raise += raised
             let raisedApps = Set(raised.compactMap { model.windows[$0]?.pid })
@@ -330,7 +309,11 @@ final class Coordinator {
             guard let used = lastUsed[pid], used != pin, !raise.contains(used), !fronts.contains(used), !restore.contains(used),
                   let key = placements[used]?.space, let workspace = workspaces[key], workspace.pinSide(of: used) == nil,
                   workspace.isInView(used), let frame = model.windows[used]?.frame,
-                  !PinSide.allCases.contains(where: { workspace.pinFrame($0)?.intersects(frame) == true }) else { continue }
+                  !PinSide.allCases.contains(where: { workspace.pinFrame($0)?.intersects(frame) == true }),
+                  let at = stack.firstIndex(where: { $0.id == used }) else { continue }
+            // Nor over anything in front of it, an accordion sibling, a window fullscreen or floating over it: that is
+            // left to `syncFocus`, which follows the app back to it as it comes to the front.
+            guard !stack.prefix(at).contains(where: { $0.frame.intersects(frame) }) else { continue }
             restore.append(used)
         }
         var seen: Set<WindowID> = []
@@ -482,11 +465,19 @@ final class Coordinator {
         tree.bounds = display.visibleArea
         tree.gaps = gaps(on: display)
         tree.walls = walls(of: display)
-        // Its pins fitted to the display it is on now, as for a display that changed.
-        tree.fitPins()
-        tree.fitBand()
         workspaces[to] = tree
         for (id, placement) in placements where placement.space == from { placements[id]!.space = to }
+    }
+
+    /// Fits the pins of the tree `moveTree` took to `key` to the display it is on now, as for a display that changed:
+    /// once its windows are there, so a move rolled back brings the tree back as it was.
+    func fitMovedTree(_ key: UInt64) {
+        guard workspaces[key] != nil else { return }
+        edit(key) { workspace in
+            workspace.fitPins()
+            workspace.fitBand()
+        }
+        flush()
     }
 
     /// Resolve layout settings by a Space's current numbered position, which can change when Spaces are reordered.
@@ -590,7 +581,13 @@ final class Coordinator {
             for key in workspaces.keys where key != new && workspaces[key]!.departedPins.values.contains(window.id) {
                 edit(key) { $0.forgetPinned(window.id) }
             }
-            edit(new) { $0.arrive(window.id) }
+            // Pinned again only with room for it, judged with the minimums the next pass lays out with, its own too.
+            let own = applier.minimumSize(of: window.id, app: window.bundleID)
+            edit(new) { workspace in
+                workspace.minimumSizes = minimumSizes(in: workspace)
+                workspace.minimumSizes[window.id] = own
+                workspace.arrive(window.id)
+            }
             telemetry.member(new, workspaces[new], window.id, joined: true, old.map { "from Space \($0)" } ?? "shown")
         }
         placements[window.id]!.space = new
@@ -695,19 +692,26 @@ final class Coordinator {
         // A pin focused on purpose is the user's choice, not one raised in the background.
         raisedInBackground.remove(id)
         // A band window whose glide in crosses a pin is activated once it rests in the band, as a clicked peek is:
-        // activated now, its app would bring it up over the pin as it slides across.
+        // activated now, its app would bring it up over the pin as it slides across. Not one already where it goes,
+        // which has no glide, though it meets a pin there, as a window fullscreen over the strip does.
         if let key = placements[id]?.space, let workspace = workspaces[key], workspace.pinSide(of: id) == nil,
            !workspace.pinnedWindows.isEmpty {
             var focused = workspace
             focused.focus(id)
-            let sweep = focused.layout().frames[id].map { window.frame.union($0) } ?? window.frame
-            if PinSide.allCases.contains(where: { workspace.pinFrame($0)?.intersects(sweep) == true }) {
+            if let target = focused.layout().frames[id], !window.frame.isClose(to: target, within: 1),
+               PinSide.allCases.contains(where: { workspace.pinFrame($0)?.intersects(window.frame.union(target)) == true }) {
                 focusing = (id, Date() + 3)
                 edit(key) { $0.focus(id) }
                 flush()
                 return focusOnceStill(id, in: key)
             }
         }
+        activate(id)
+    }
+
+    /// Activates `id`'s app on it, now: `focus` without waiting for a glide.
+    private func activate(_ id: WindowID) {
+        guard let window = model.windows[id] else { return }
         // Until the app is activated, which waits on Accessibility calls into it off the main thread (at most about
         // two seconds), and for half a second after.
         focusing = (id, Date() + 3)
@@ -1186,7 +1190,7 @@ final class Coordinator {
                 DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { check() }
                 return
             }
-            focus(id)
+            activate(id)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { check() }
     }

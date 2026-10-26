@@ -796,7 +796,7 @@ struct PinSwapRoomTests {
         var ws = try pinned(strip(4), 1, .left)
         var source = Workspace(bounds: rect(0, 0, 1000, 600), gaps: .zero, algorithm: .scrolling)
         source.insert(9)
-        ws.minimumSizes[9] = CGSize(width: 900, height: 100)
+        source.minimumSizes[9] = CGSize(width: 900, height: 100)
         do { let r = ws.receive(9, from: &source, onto: 1, .swap); #expect(!r) }
         #expect(ws.pins == [.left: 1] && ws.contains(1) && source.contains(9))
     }
@@ -837,4 +837,80 @@ struct PinDormantTests {
         ws.fitPins()
         #expect(ws.pins == [.right: 4])
     }
+}
+
+struct PinRaiseTests {
+    /// Each window of `ws` shown where its layout has it, front to back as the layout stacks them, apps by `pids`,
+    /// with `over` put in front of all.
+    private func stack(_ ws: Workspace, pids: [WindowID: Int32], over: [StackedWindow] = []) -> [StackedWindow] {
+        let layout = ws.layout()
+        return over + layout.order.map { StackedWindow(id: $0, layer: 0, frame: layout.frames[$0]!, pid: pids[$0] ?? 0) }
+    }
+
+    @Test func `A band window in front of a pin where they overlap has the pin raised`() throws {
+        let ws = try pinned(strip(4), 1, .left)
+        let band = StackedWindow(id: 2, layer: 0, frame: rect(100, 0, 300, 600), pid: 2)
+        #expect(ws.pinsToRaise(stack: stack(ws, pids: [1: 1, 2: 2]).filter { $0.id != 2 }.prepending(band), candidates: []) == [1])
+    }
+
+    @Test func `The focused window of the pin's own app does not count, another app's does`() throws {
+        let ws = try pinned(strip(4), 1, .left)
+        let band = StackedWindow(id: 2, layer: 0, frame: rect(100, 0, 300, 600), pid: 1)
+        let same = stack(ws, pids: [1: 1]).filter { $0.id != 2 }.prepending(band)
+        #expect(ws.pinsToRaise(stack: same, candidates: [2]).isEmpty, "raised after the pin, it would cover it again")
+        var other = band
+        other.pid = 7
+        let different = stack(ws, pids: [1: 1]).filter { $0.id != 2 }.prepending(other)
+        #expect(ws.pinsToRaise(stack: different, candidates: [2]) == [1], "a Dia window under a Terminal pin")
+    }
+
+    @Test func `A pinned stack is raised whole, unless a window outside the tree is in use over any of it`() throws {
+        var ws = try pinned(strip(4), 1, .left)
+        ws.focus(2)
+        do { let r = ws.join(.left); #expect(r) }
+        ws.focus(3)
+        let layout = ws.layout()
+        let lower = layout.frames[2]!
+        let band = StackedWindow(id: 3, layer: 0, frame: lower.insetBy(dx: 10, dy: 10), pid: 3)
+        let base = stack(ws, pids: [:]).filter { $0.id != 3 }
+        #expect(Set(ws.pinsToRaise(stack: base.prepending(band), candidates: [])) == [1, 2], "the whole column")
+        let floating = StackedWindow(id: 50, layer: 0, frame: layout.frames[1]!.insetBy(dx: 10, dy: 10), pid: 50)
+        #expect(ws.pinsToRaise(stack: [floating, band] + base, candidates: []).isEmpty)
+    }
+
+    @Test func `A sweep under one pin raises that pin only`() throws {
+        var ws = try pinned(pinned(strip(5, width: 0.2), 1, .left), 5, .right)
+        ws.focus(3)
+        let shown = stack(ws, pids: [:])
+        let raised = ws.pinsToRaise(stack: shown.filter { $0.id != 3 } .prepending(shown.first { $0.id == 3 }!),
+                                    candidates: [], sweeping: [5: [3]])
+        #expect(raised == [5])
+    }
+}
+
+struct PinCleanupTests {
+    @Test func `A band left short narrows a pin, never widening one already narrower than its floor`() throws {
+        var ws = try pinned(pinned(strip(4, width: 0.3), 1, .left), 4, .right)
+        ws.focus(4)
+        do { let r = ws.cycleWidth(through: [0.15]); #expect(r) }
+        ws.minimumSizes[4] = CGSize(width: 300, height: 100)
+        ws.minimumSizes[2] = CGSize(width: 650, height: 100)
+        ws.fitBand()
+        #expect(ws.width(ofColumn: 3) <= 0.15, "never wider than it was")
+    }
+
+    @Test func `A departed pin forgets a neighbour that closed, and follows one replaced by a tab`() throws {
+        var ws = try pinned(strip(5), 3, .left)
+        ws.depart(3)
+        let origin = try #require(ws.departedOrigins[3])
+        #expect(origin.before == 2 && origin.after == 4)
+        ws.remove(2)
+        ws.replace(4, with: 9)
+        #expect(ws.departedOrigins[3]?.before == nil)
+        #expect(ws.departedOrigins[3]?.after == 9)
+    }
+}
+
+private extension Array {
+    func prepending(_ element: Element) -> [Element] { [element] + self }
 }
