@@ -106,8 +106,9 @@ final class ModifierDrag {
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             if armed { pressTap?.enable(true) }
-            // While it was off, the app may have had the press: its drag and release go on to it.
-            release()
+            // Off by a timeout, the app may have had the press meanwhile: its drag and release go on to it. Turned off
+            // as the modifiers were let go of, a window still held goes on.
+            if type == .tapDisabledByTimeout { release() }
         case .leftMouseDown:
             // A window still held lost its release.
             release()

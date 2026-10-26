@@ -64,6 +64,9 @@ final class MouseStripScroll {
     private var grabTap: MainEventTap?
     /// Takes scrolls; on while `armed`, or while a stroke it took is under way.
     private var wheelTap: MainEventTap?
+    /// Whether `wheelTap` is meant to be on. Turned on or off only as that changes: turning a tap off tells its callback
+    /// so, which must not turn it off again.
+    private var wheelOn = false
     private var armed = false
 
     init(coordinator: Coordinator) {
@@ -101,7 +104,7 @@ final class MouseStripScroll {
         if case .holding(let hold, _, _) = stroke { coordinator.mouseLetGo(velocity: 0, hold: hold) }
         stroke = .idle
         [pressTap, grabTap, wheelTap, modifierTap].forEach { $0?.remove() }
-        (pressTap, grabTap, wheelTap, modifierTap, armed) = (nil, nil, nil, nil, false)
+        (pressTap, grabTap, wheelTap, modifierTap, armed, wheelOn) = (nil, nil, nil, nil, false, false)
     }
 
     private func arm(_ held: Bool) {
@@ -116,7 +119,10 @@ final class MouseStripScroll {
         case .idle: busy = false
         case .holding, .spent, .passing, .coasting: busy = true
         }
-        wheelTap?.enable(settings.wheel && (armed || busy))
+        let on = settings.wheel && (armed || busy)
+        guard on != wheelOn else { return }
+        wheelOn = on
+        wheelTap?.enable(on)
     }
 
     fileprivate func modifiersChanged(_ type: CGEventType, _ event: CGEvent) {
@@ -139,8 +145,9 @@ final class MouseStripScroll {
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             if armed, settings.drag { pressTap?.enable(true) }
-            // While it was off, the app may have had the press: its drag and release go on to it.
-            letGo(velocity: 0)
+            // Off by a timeout, the app may have had the press meanwhile: its drag and release go on to it. Turned off
+            // as the modifier was let go of, a press still dragging goes on.
+            if type == .tapDisabledByTimeout { letGo(velocity: 0) }
         case .leftMouseDown:
             // A press still taken lost its release.
             letGo(velocity: 0)
@@ -234,8 +241,10 @@ final class MouseStripScroll {
     /// A scroll; whether it goes on to the app.
     fileprivate func scrolled(_ type: CGEventType, _ event: CGEvent) -> Bool {
         guard type == .scrollWheel else {
-            if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-                // The end of a stroke held may have come while it was off.
+            // Off by a timeout while meant to be on, the tap goes back on, and a stroke held lets go, its end maybe lost
+            // meanwhile. Off because it was turned off, as `updateWheelTap` does, nothing.
+            if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput, wheelOn {
+                wheelTap?.enable(true)
                 if case .holding = stroke { letGoStroke(velocity: 0) }
                 updateWheelTap()
             }
