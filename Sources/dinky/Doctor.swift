@@ -69,6 +69,16 @@ func runDoctor(_ args: [String]) -> Int32 {
                                + "turn that off in System Settings > Trackpad > More Gestures, or change [gestures.scroll] fingers")
     }
 
+    // macOS's own tiling by dragging a window to a screen edge, or the top, fights a drag dinky drops.
+    let edgeTiling = ["EnableTilingByEdgeDrag": "to a screen edge", "EnableTopTilingByEdgeDrag": "to the top of the screen"]
+        .filter { key, _ in windowManagerSetting(key) ?? true }
+    if edgeTiling.isEmpty {
+        ok("macOS does not tile windows dragged to the screen's edges")
+    } else {
+        warn("macOS tiles a window dragged \(edgeTiling.values.sorted().joined(separator: " or ")), over dinky's drop; "
+             + "turn off \"Drag windows to screen edges to tile\" and \"Drag windows to menu bar to fill screen\" in System Settings > Desktop & Dock")
+    }
+
     // Where the workspaces go with the displays connected now; the app arranges the Spaces to match.
     let connected = dinky_displays()
     let displays = connected.map { d in
@@ -97,6 +107,11 @@ func runDoctor(_ args: [String]) -> Int32 {
 
     print("\(errors) errors, \(warnings) warnings")
     return errors == 0 ? 0 : 1
+}
+
+/// A boolean setting of macOS's window tiling (com.apple.WindowManager), nil when unset, which is on.
+func windowManagerSetting(_ key: String) -> Bool? {
+    CFPreferencesCopyAppValue(key as CFString, "com.apple.WindowManager" as CFString) as? Bool
 }
 
 /// A boolean Dock setting, nil when unset.

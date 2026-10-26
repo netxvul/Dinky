@@ -91,6 +91,15 @@
 
 ### Fixes
 
+- A window dropped where nothing else had to move, as when swapping two windows of a pinned stack or putting the lower one on top, is put in its tile; before, a glide the drop's preview had started could carry on without it and leave it where the button came up. A drop on its own display is checked a moment after, as one to another display is, and put right if it did not land.
+- Letting go just after moving into another zone drops there once the pointer has asked for it a moment, not where the zone it came from was showing.
+- Over a pin in front of a band window hanging under it, a drag of that window drops on the pin, not back on its own place.
+- `join-with up` and `down` within a strip column do what they say or nothing: they no longer split a column of two into two columns, nor take a window out of a pin or unpin it.
+- Stacking a window into a pinned column, by dropping or `join-with`, is refused where the pin would then leave the band less than a quarter of the screen, as pinning is.
+- Swapping a window with one in a stacked column leaves each column one width; before, the column could take another width once its top window left.
+- Clicking a column only partly in view holds the strip still till the button comes up with `center-focused-column = 'never'` too, so a drag the press starts is measured against the windows where they show.
+- `dinky doctor` warns when macOS tiles windows dragged to a screen edge or the top, which fights dinky's drop.
+- While a drag or a glide moves the windows of a strip with a pin whose app has other windows, dinky no longer asks that app which window it has focused, which held the frames up for up to a tenth of a second; it asks once the strip rests.
 - Dragging a window onto the top or bottom of a strip column stacks it there even when, on the way, the pointer rested beside a column (a pin's edge, or the column's own left or right part) and the drop beside it slid the column from under the pointer. Before, the drop beside stayed: a window dragged out of a pinned stack onto the column next to the pin became a column of its own.
 - A window stacked into a strip column takes its share of the column, a third of three, the others keeping their proportions among themselves; before, it split the tile it was dropped on in half, so a third window got a quarter, and dropping it again where it already was halved it again.
 - On a scrolling workspace, clicking a window no longer sends focus bouncing between windows of its app, nor lands it on one never clicked. As dinky raises windows into their order, each comes in front of its app's others for a moment, which macOS reports as focus; with `center-focused-column = 'always'` every such moment scrolled the strip to that window and called for more raises. Focus on a window only for the length of a raise is passed over, logged as `focus … passed over`, and read again once the raise has settled.
