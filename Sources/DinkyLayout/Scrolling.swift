@@ -44,7 +44,11 @@ extension Workspace {
 
     /// The columns that scroll, as indices of the root's children: the band between the columns pinned to the
     /// screen's sides, which are the first and the last. All of them when nothing is pinned.
-    var bandRange: Range<Int> { root.children.indices }
+    var bandRange: Range<Int> {
+        let count = root.children.count
+        let lower = pinnedIndex(.left) == nil ? 0 : 1, upper = pinnedIndex(.right) == nil ? count : count - 1
+        return lower..<max(lower, upper)
+    }
 
     /// The index of `id`'s column while it is in the band; nil for a pinned column or a window not here.
     func bandIndex(of id: WindowID) -> Int? {
@@ -53,11 +57,29 @@ extension Workspace {
 
     /// The area inside the outer gaps the band has: all of it but a pinned column and an inner gap beside it on each
     /// side pinned. The whole area inside the outer gaps when nothing is pinned.
-    var stripInset: CGRect { gaps.inset(bounds) }
+    var stripInset: CGRect {
+        var inset = gaps.inset(bounds)
+        if let left = pinnedIndex(.left) {
+            let taken = pinSpan(left) + gaps.horizontal / 2
+            inset.origin.x += taken
+            inset.size.width -= taken
+        }
+        if let right = pinnedIndex(.right) { inset.size.width -= pinSpan(right) + gaps.horizontal / 2 }
+        inset.size.width = max(inset.width, 0)
+        return inset
+    }
+
+    /// Whether a column is pinned to either side.
+    var hasPins: Bool { pinnedIndex(.left) != nil || pinnedIndex(.right) != nil }
 
     /// The width a column's share is of: the strip's area as it is with nothing pinned, so pinning leaves the other
     /// columns' widths alone.
-    var shareWidth: CGFloat { stripArea.width }
+    var shareWidth: CGFloat {
+        guard hasPins else { return stripArea.width }
+        var plain = self
+        plain.pins = [:]
+        return plain.stripArea.width
+    }
 
     /// Whether fullscreen here widens the window's column and pushes its neighbours off, rather than covering them.
     public var pushesFullscreen: Bool { isScrolling && fullscreenPushesStrip }
@@ -68,10 +90,13 @@ extension Workspace {
         return Set(fullscreenWindows.compactMap { bandIndex(of: $0) })
     }
 
-    /// Put a window in a new column right of the focused one, at the default width.
+    /// Put a window in a new column right of the focused one, at the default width: in the band, right of the band
+    /// window focused last while a pin has focus, else at the band's end beside that pin.
     mutating func insertColumn(_ id: WindowID) {
         let band = bandRange
-        let index = focused.flatMap { root.path(of: $0) }.map { $0[0] + 1 } ?? band.upperBound
+        let anchor = focused.flatMap { bandIndex(of: $0) } ?? bandFocus.flatMap { bandIndex(of: $0) }
+        let index = anchor.map { $0 + 1 }
+            ?? (focused.flatMap { pinSide(of: $0) } == .left ? band.lowerBound : band.upperBound)
         root.insert(.window(id), at: min(max(index, band.lowerBound), band.upperBound))
         columnWidths[id] = columnWidth
     }
@@ -99,8 +124,8 @@ extension Workspace {
         if pushedColumns.isEmpty, let end = columnSpans(in: area)[safe: band.upperBound - 1],
            end.start + end.width <= area.width { return area }
         let clear = Self.peek + gaps.horizontal / 2
-        let left = walls.contains(.left) ? 0 : max(clear - gaps.left, 0)
-        let right = walls.contains(.right) ? 0 : max(clear - gaps.right, 0)
+        let left = walls.contains(.left) || pinnedIndex(.left) != nil ? 0 : max(clear - gaps.left, 0)
+        let right = walls.contains(.right) || pinnedIndex(.right) != nil ? 0 : max(clear - gaps.right, 0)
         return CGRect(x: area.minX + left, y: area.minY, width: area.width - left - right, height: area.height)
     }
 
@@ -111,12 +136,17 @@ extension Workspace {
     /// an end of the strip, where nothing is parked, it reaches on through the gutter out to the outer gap.
     func columnSpans(in area: CGRect, pushed: Set<Int> = []) -> [(start: CGFloat, width: CGFloat)] {
         let band = bandRange, gap = gaps.horizontal
+        // With a column pinned, the others keep the widths they have without: shares of the unpinned strip, as wide
+        // as the band at most.
+        let base = hasPins ? shareWidth : area.width
         var start: CGFloat = 0
         return root.children.indices.map { i in
+            // A pinned column has a place of its own (`pinRect`), not along the band.
+            guard band.contains(i) else { return (0, pinSpan(i)) }
             let insets = (i > band.lowerBound ? gap / 2 : 0) + (i < band.upperBound - 1 ? gap / 2 : 0)
             let minimum = root.children[i].minimumExtent(.horizontal, gap: gap, padding: accordionPadding, minimumSizes)
             let share = pushed.contains(i) ? area.width + endGutters(of: i, area).left + endGutters(of: i, area).right
-                : (area.width * CGFloat(width(ofColumn: i))).rounded()
+                : min((base * CGFloat(width(ofColumn: i))).rounded(), area.width)
             let width = band.count == 1 ? area.width : max(share, minimum + insets)
             defer { start += width }
             return (start, width)
@@ -236,8 +266,10 @@ extension Workspace {
         if let column = focusedColumn, pushed.contains(column) {
             offset = spans[column].start + endGutters(of: column, area).left
         }
+        // Not with a column pinned: the system's Fill would cover it.
         let fills = { (i: Int, id: WindowID) in
-            pushedFullscreenFills && i == focusedColumn && pushed.contains(i) && fullscreenWindows.contains(id)
+            pushedFullscreenFills && !self.hasPins && i == focusedColumn && pushed.contains(i)
+                && fullscreenWindows.contains(id)
         }
         let unpushed = pushed.isEmpty ? spans : columnSpans(in: area)
         let edges = spans.indices.map { i -> (left: CGFloat, right: CGFloat) in
@@ -248,12 +280,14 @@ extension Workspace {
         let reaching: (left: Int?, right: Int?) = pushed.isEmpty && freeScrollFrom == nil ? reachingWalls(edges, in: area)
             : (nil, nil)
         result.containerRects[[]] = inset
-        for i in root.stackingOrder {
+        let reach = stripInset
+        for i in stripStackingOrder {
             let trail = i < last ? gap / 2 : 0
             let x = area.minX + spans[i].start - offset
-            let a = i == reaching.left ? inset.minX : edges[i].left
-            let b = i == reaching.right ? inset.maxX : edges[i].right
-            let rect = CGRect(x: a, y: area.minY, width: b - a, height: area.height)
+            let a = i == reaching.left ? reach.minX : edges[i].left
+            let b = i == reaching.right ? reach.maxX : edges[i].right
+            // A pinned column stays at its side whatever the scroll.
+            let rect = band.contains(i) ? CGRect(x: a, y: area.minY, width: b - a, height: area.height) : pinRect(i)
             switch root.children[i] {
             case .window(let id):
                 result.frames[id] = fills(i, id) ? inset : rect
@@ -270,6 +304,18 @@ extension Workspace {
             }
         }
         return result
+    }
+
+    /// The strip's columns front to back: the pinned ones, which the band's scroll under, then the band's, its
+    /// focused column first and the others by distance from it, lower index first on ties. The band's focused column
+    /// is the band window focused last while a pin has focus.
+    var stripStackingOrder: [Int] {
+        let band = bandRange
+        let pinned = PinSide.allCases.compactMap(pinnedIndex)
+        let clamped = min(max(root.activeIndex, band.lowerBound), max(band.upperBound - 1, band.lowerBound))
+        let active = band.contains(root.activeIndex) ? root.activeIndex
+            : bandFocus.flatMap { bandIndex(of: $0) } ?? clamped
+        return pinned + band.sorted { (abs($0 - active), $0) < (abs($1 - active), $1) }
     }
 
     /// The column in view nearest each wall that reaches out to the outer gap there, if any. A column scrolled out past
@@ -352,11 +398,14 @@ extension Workspace {
         // a point counts as none. A column stacked above the one in front of it (as on the far side of a long glide,
         // stacked for where it ends) would show its sliver and shadow over that one, so it stays at `peek` instead.
         let behind = Self.peek - Self.tuck
-        let rank = Dictionary(uniqueKeysWithValues: root.stackingOrder.enumerated().map { ($1, $0) })
+        let rank = Dictionary(uniqueKeysWithValues: stripStackingOrder.enumerated().map { ($1, $0) })
         func shows(_ column: Int, behind front: CGFloat, _ frontColumn: Int?) -> CGFloat {
             guard let frontColumn, rank[column]! > rank[frontColumn]! else { return Self.peek }
             return min(max(front - behind, Self.tuck), Self.peek)
         }
+        // On a pinned side every parked column tucks: the pin covers them, and should it lose its place in front
+        // only a sliver shows.
+        let tucked = (left: pinnedIndex(.left) != nil, right: pinnedIndex(.right) != nil)
         var leftLimit: [WindowID: CGFloat] = [:], rightLimit: [WindowID: CGFloat] = [:]
         var front = CGFloat.infinity, frontColumn: Int?
         for (column, ids) in columns.enumerated().reversed() where !ids.isEmpty {
@@ -365,7 +414,8 @@ extension Workspace {
             frontColumn = column
             for id in ids {
                 let frame = frames[id]!, width = shownWidth(of: id, frame)
-                let limit = (bounds.minX + (untuckable.contains(id) ? Self.peek : shows) - width).rounded(.up)
+                let shows = tucked.left ? Self.tuck : untuckable.contains(id) ? Self.peek : shows
+                let limit = (bounds.minX + shows - width).rounded(.up)
                 leftLimit[id] = limit
                 front = max(front, max(frame.minX, limit) + width - bounds.minX)
             }
@@ -378,7 +428,8 @@ extension Workspace {
             frontColumn = column
             for id in ids {
                 let frame = frames[id]!
-                let limit = (bounds.maxX - (untuckable.contains(id) ? Self.peek : shows)).rounded(.down)
+                let shows = tucked.right ? Self.tuck : untuckable.contains(id) ? Self.peek : shows
+                let limit = (bounds.maxX - shows).rounded(.down)
                 rightLimit[id] = limit
                 front = max(front, bounds.maxX - min(frame.minX, limit))
             }
@@ -421,8 +472,13 @@ extension Workspace {
     /// Whether the strip shows the whole window now. Always true outside the scrolling layout. Neighbours a
     /// fullscreen window pushed off are not in view.
     public func isInView(_ id: WindowID) -> Bool {
-        guard isScrolling, let frame = stripLayout(pushed: pushedColumns).frames[id] else { return true }
-        return frame.minX >= bounds.minX - 1 && frame.maxX <= bounds.maxX + 1
+        guard isScrolling, pinSide(of: id) == nil, let frame = stripLayout(pushed: pushedColumns).frames[id] else {
+            return true
+        }
+        // Under a pin is out of view too.
+        let left = pinnedIndex(.left) == nil ? bounds.minX : stripInset.minX
+        let right = pinnedIndex(.right) == nil ? bounds.maxX : stripInset.maxX
+        return frame.minX >= left - 1 && frame.maxX <= right + 1
     }
 
     /// `move` in the strip. Left and right take a window that shares its column out into a new column on that
@@ -431,10 +487,15 @@ extension Workspace {
         guard let focused, let path = root.path(of: focused) else { return false }
         let column = path[0], forward = direction.isForward
         if direction.orientation == .horizontal {
+            // A pinned column stays where it is, and the band does not swap into it; a window of a pinned stack
+            // moving inwards becomes the band's first column on that side.
+            if let side = pinSide(ofColumn: column), path.count == 1 || PinSide(direction) == side { return false }
             if path.count > 1 {
                 let share = width(ofColumn: column)
+                rekeyPins(leaving: focused)
                 root.modify(at: Array(path.dropLast())) { $0.remove(at: path.last!) }
-                root.insert(.window(focused), at: column + (forward ? 1 : 0))
+                let band = bandRange
+                root.insert(.window(focused), at: min(max(column + (forward ? 1 : 0), band.lowerBound), band.upperBound))
                 columnWidths[focused] = share
             } else {
                 let other = column + (forward ? 1 : -1)
@@ -458,8 +519,13 @@ extension Workspace {
         }
         let neighbour = column + (direction.isForward ? 1 : -1)
         guard root.children.indices.contains(neighbour) else { return false }
+        // Out of a pin of its own it unpins; into a pin, it stacks there at the pin's width.
+        if let side = pinSide(ofColumn: column), PinSide(direction) == side { return false }
         let share = width(ofColumn: neighbour)
-        guard joinInTree(direction), let joined = root.path(of: focused)?.first else { return false }
+        var joining = self
+        joining.rekeyPins(leaving: focused)
+        guard joining.joinInTree(direction), let joined = joining.root.path(of: focused)?.first else { return false }
+        self = joining
         setWidth(ofColumn: joined, share)
         reveal(focused)
         return true
@@ -470,10 +536,12 @@ extension Workspace {
         guard let focused, let column = root.path(of: focused)?.first else { return false }
         let old = width(ofColumn: column)
         let (before, offset) = (tiledLayout(), scrollOffset)
-        setWidth(ofColumn: column, old + Double(delta / shareWidth))
+        let pinned = pinSide(ofColumn: column) != nil
+        setWidth(ofColumn: column, old + Double(delta / (pinned ? gaps.inset(bounds).width : shareWidth)))
         reveal(focused)
-        // A step a lone column or the minimum sizes swallow whole is undone, so the width does not drift out of sight.
-        guard tiledLayout() == before else { return true }
+        // A step a lone column or the minimum sizes swallow whole is undone, so the width does not drift out of sight;
+        // so is one that leaves the band too little room.
+        guard tiledLayout() == before || !bandHasRoom else { return true }
         setWidth(ofColumn: column, old)
         scrollOffset = offset
         return false

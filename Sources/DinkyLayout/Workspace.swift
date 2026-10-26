@@ -76,6 +76,16 @@ public struct Workspace: Equatable, Sendable {
     public var columnCentring = ColumnCentring.never
     /// Scrolling: each window's column width, as a share. Every window of a column has its column's width.
     var columnWidths: [WindowID: Double] = [:]
+    /// Scrolling: the columns pinned to the screen's sides, each by one of its windows. The slot decides: the left one
+    /// is the first column, the right one the last; the window only confirms which. See Pins.swift.
+    public internal(set) var pins: [PinSide: WindowID] = [:]
+    /// Scrolling: where each pinned column was in the band as it was pinned, to go back to as it is unpinned.
+    var pinOrigins: [PinSide: PinOrigin] = [:]
+    /// Scrolling: the band window focused last, which focus goes back to from a pin and the band's stacking follows.
+    public internal(set) var bandFocus: WindowID?
+    /// Scrolling: pinned windows away for a while, minimized, hidden or floated, pinned again as they come back to a
+    /// side still free.
+    public var departedPins: [PinSide: WindowID] = [:]
     /// Scrolling: how far the strip is scrolled, in points from its start. The layout clamps it.
     var scrollOffset: CGFloat = 0
     /// Scrolling: the layout keeps `scrollOffset` past the strip's ends, as `scroll(columnOf:to:pastEnds:)` leaves it.
@@ -156,6 +166,13 @@ public struct Workspace: Equatable, Sendable {
     /// If it was focused, focus moves to the window that took its place.
     public mutating func remove(_ id: WindowID) {
         guard let path = root.path(of: id) else { return }
+        // A pinned column it closes is unpinned, focus going back to the band; the last band column closing, to the
+        // one beside it in the band rather than to the pin the root's focus would land on.
+        let column = path[0], inBand = bandIndex(of: id) != nil, wasPinned = pinSide(of: id) != nil
+        let lone = root.children[column].windows.count == 1
+        rekeyPins(leaving: id)
+        departedPins = departedPins.filter { $0.value != id }
+        if bandFocus == id { bandFocus = nil }
         if case .fixed = algorithm, isFixedTree {
             removeFixedWindow(at: path)
             trimEmptyOverflow()
@@ -172,9 +189,22 @@ public struct Workspace: Equatable, Sendable {
         let wasFullscreen = fullscreenWindows.contains(id)
         if focused == id {
             focused = nil
+            let band = bandRange
+            let next: WindowID? = if wasPinned && lone, let back = bandReturn(from: .left) {
+                back
+            } else if isScrolling, inBand, lone, !band.isEmpty {
+                Node.container(root).windows.isEmpty ? nil : {
+                    switch root.children[min(max(column, band.lowerBound), band.upperBound - 1)] {
+                    case .window(let id): return id
+                    case .container(let c): return c.mostRecentWindow
+                    }
+                }()
+            } else {
+                root.mostRecentWindow ?? windows.first
+            }
             // Focus moves on as fullscreen says first: with `follow` the next window takes over the screen, at once
             // when the fullscreen window has gone, since there is nothing to wait for.
-            if let next = root.mostRecentWindow ?? windows.first {
+            if let next = next ?? root.mostRecentWindow ?? windows.first {
                 focus(next)
                 if wasFullscreen { _ = promotePendingFullscreen(next) }
             }
@@ -296,7 +326,15 @@ public struct Workspace: Equatable, Sendable {
             root = Self.fixedRoot(rows: rows, columns: columns)
             for id in ids { _ = insertIntoFixed(id, expand: expand) }
         case .scrolling:
-            root = Container(.horizontal, .tiles, ids.map(Node.window))
+            // A pinned column stays whole at its end; one pinned while the strip was another layout comes back as a
+            // column of its own window there.
+            let ends = PinSide.allCases.map { side -> Node? in
+                guard let id = pins[side], ids.contains(id) else { return nil }
+                return pinnedIndex(side).map { root.children[$0] } ?? .window(id)
+            }
+            let pinned = Set(ends.compactMap { $0?.windows }.joined())
+            let band = ids.filter { !pinned.contains($0) }.map(Node.window)
+            root = Container(.horizontal, .tiles, [ends[0]].compactMap { $0 } + band + [ends[1]].compactMap { $0 })
             for id in ids { columnWidths[id] = columnWidths[id] ?? columnWidth }
         }
         if let focused { focus(focused) }
@@ -308,6 +346,8 @@ public struct Workspace: Equatable, Sendable {
         guard let path = root.path(of: old), !contains(new) else { return }
         root.modify(at: Array(path.dropLast())) { $0.replace(at: path.last!, with: .window(new)) }
         if focused == old { focused = new }
+        if bandFocus == old { bandFocus = new }
+        for side in PinSide.allCases where pins[side] == old { pins[side] = new }
         fullscreenWindows = fullscreenWindows.map { $0 == old ? new : $0 }
         if pendingFullscreen == old { pendingFullscreen = new }
         minimumSizes[old] = nil
@@ -341,6 +381,7 @@ public struct Workspace: Equatable, Sendable {
             }
         }
         focused = id
+        if bandIndex(of: id) != nil { bandFocus = id }
         for depth in path.indices {
             root.modify(at: Array(path.prefix(depth))) { $0.active = path[depth] }
         }
@@ -356,10 +397,31 @@ public struct Workspace: Equatable, Sendable {
     /// instead. Returns false when there is nothing to focus.
     @discardableResult
     public mutating func focus(_ direction: Direction, wrapping: Bool = false) -> Bool {
-        guard let focused,
-              let target = neighbor(of: focused, direction) ?? (wrapping ? edgeWindow(direction.opposite) : nil),
+        guard let focused else { return false }
+        // From a pin: outwards nothing, inwards back to the band window focused last.
+        if isScrolling, let side = pinSide(of: focused), let across = PinSide(direction) {
+            guard across != side, let back = bandReturn(from: side) else {
+                return across != side && focusOtherPin(than: side)
+            }
+            focus(back)
+            return true
+        }
+        guard let target = neighbor(of: focused, direction) ?? (wrapping ? edgeWindow(direction.opposite) : nil),
               target != focused else { return false }
         focus(target)
+        return true
+    }
+
+    /// Focus the column pinned opposite `side`, with no band between: false with none.
+    private mutating func focusOtherPin(than side: PinSide) -> Bool {
+        let other: PinSide = side == .left ? .right : .left
+        guard let index = pinnedIndex(other) else { return false }
+        let id: WindowID? = switch root.children[index] {
+        case .window(let id): id
+        case .container(let c): c.mostRecentWindow
+        }
+        guard let id else { return false }
+        focus(id)
         return true
     }
 
@@ -511,7 +573,8 @@ public struct Workspace: Equatable, Sendable {
         var result = pushesFullscreen ? stripLayout(pushed: pushedColumns) : tiledLayout()
         if isScrolling { result.frames = parked(result.frames) }
         let shown = fullscreenWindows.filter { result.frames[$0] != nil }
-        if !pushesFullscreen { for id in shown { result.frames[id] = gaps.inset(bounds) } }
+        // A pinned window fullscreen covers the strip whether it pushes or not: it has no column in the band to widen.
+        for id in shown where !pushesFullscreen || pinSide(of: id) != nil { result.frames[id] = gaps.inset(bounds) }
         result.order = shown + result.order.filter { !shown.contains($0) }
         if isScrolling {
             result.screen = bounds
@@ -534,6 +597,7 @@ public struct Workspace: Equatable, Sendable {
     /// Tidy the tree after an edit, and unwrap a root whose only child is a container.
     mutating func normalize() {
         root.normalize()
+        settlePins()
         // The strip stays the root even with one column left.
         if !isScrolling, root.children.count == 1, case .container(let only) = root.children[0] { root = only }
     }

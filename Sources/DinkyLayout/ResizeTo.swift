@@ -17,7 +17,12 @@ extension Workspace {
             guard let frame = tiledLayout().frames[id] else { return false }
             let delta = axis == .horizontal ? size.width - frame.width : size.height - frame.height
             guard abs(delta) >= 0.5 else { continue }
-            if isScrolling, axis == .horizontal, let column = bandIndex(of: id), bandRange.count > 1 {
+            if isScrolling, axis == .horizontal, let column = root.path(of: id)?.first, pinSide(ofColumn: column) != nil {
+                // A pinned column takes the width as a share of the area inside the outer gaps, the band keeping room.
+                let old = width(ofColumn: column)
+                setWidth(ofColumn: column, Double((pinSpan(column) + delta) / gaps.inset(bounds).width))
+                if bandHasRoom { changed = true } else { setWidth(ofColumn: column, old) }
+            } else if isScrolling, axis == .horizontal, let column = bandIndex(of: id), bandRange.count > 1 {
                 // The column takes the width; its neighbours keep theirs and move along.
                 let share = Double((columnSpans(in: stripArea)[column].width + delta) / shareWidth)
                 setWidth(ofColumn: column, share)

@@ -115,7 +115,8 @@ extension Workspace {
 
     /// In a strip, where `id`'s column starts on screen as the strip lays it out, before parking; nil anywhere else.
     public func columnStart(of id: WindowID) -> CGFloat? {
-        guard isScrolling, let index = bandIndex(of: id) else { return nil }
+        guard isScrolling, let index = root.path(of: id)?.first else { return nil }
+        if pinSide(ofColumn: index) != nil { return pinRect(index).minX }
         let area = stripArea, spans = columnSpans(in: area)
         return area.minX + spans[index].start - offset(for: spans, in: area)
     }
@@ -147,7 +148,11 @@ extension Workspace {
         guard id != target, contains(id), contains(target) else { return false }
         endFullscreen()
         guard case .split(let side) = zone, splitsOnDrop else {
+            // Swapped with a pin, the dropped window takes its slot, and the two their widths.
+            let pinned = isScrolling ? PinSide.allCases.filter { pins[$0] == id || pins[$0] == target } : []
             guard swap(id, target) else { return false }
+            for side in pinned { pins[side] = pins[side] == id ? target : id }
+            if !pinned.isEmpty { (columnWidths[id], columnWidths[target]) = (columnWidths[target], columnWidths[id]) }
             focus(id)
             return true
         }
@@ -188,8 +193,8 @@ extension Workspace {
             return true
         }
         if isScrolling {
-            // In at the end, out of the way and not scrolled to, so only the drop scrolls.
-            root.insert(.window(id), at: root.children.count)
+            // In at the band's end, out of the way and not scrolled to, so only the drop scrolls.
+            root.insert(.window(id), at: bandRange.upperBound)
             columnWidths[id] = share ?? columnWidth
         } else {
             insert(id)
@@ -201,6 +206,7 @@ extension Workspace {
     /// normalizing splices it into a parent running the same way, the two keeping the tile's share between them.
     private mutating func splitTile(of target: WindowID, with id: WindowID, _ side: Direction) {
         guard let from = root.path(of: id), var at = root.path(of: target) else { return }
+        rekeyPins(leaving: id)
         detach(from, adjusting: &at)
         let pair: [Node] = side.isForward ? [.window(target), .window(id)] : [.window(id), .window(target)]
         root.modify(at: Array(at.dropLast())) {
@@ -212,8 +218,11 @@ extension Workspace {
     private mutating func dropColumn(_ id: WindowID, beside target: WindowID, forward: Bool) {
         guard let from = root.path(of: id), var at = root.path(of: target) else { return }
         let share = width(ofColumn: from[0])
+        // Out of a pin, it is a band column now; beside a pin, it goes in the band next to it.
+        rekeyPins(leaving: id)
         detach(from, adjusting: &at)
-        root.insert(.window(id), at: at[0] + (forward ? 1 : 0))
+        let band = bandRange
+        root.insert(.window(id), at: min(max(at[0] + (forward ? 1 : 0), band.lowerBound), band.upperBound))
         columnWidths[id] = share
     }
 }

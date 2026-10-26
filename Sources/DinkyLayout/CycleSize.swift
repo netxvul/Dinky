@@ -44,8 +44,9 @@ extension Workspace {
             for share in SizeCycle.upcoming(after: old, in: shares) {
                 setWidth(ofColumn: column, share)
                 reveal(focused)
-                // A lone column fills the screen whatever its width, so the step is undone, as `resizeColumn` does.
-                if tiledLayout() != before { return true }
+                // A lone column fills the screen whatever its width, so the step is undone, as `resizeColumn` does; so is
+                // one that leaves the band too little room.
+                if tiledLayout() != before, bandHasRoom { return true }
                 setWidth(ofColumn: column, old)
                 scrollOffset = offset
             }
