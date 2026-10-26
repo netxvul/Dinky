@@ -342,6 +342,8 @@ final class Coordinator {
             ids = ids.filter { $0 != front } + [front]
             pids[front] = pid
         }
+        let cause = takingHold ? "fingers took hold" : sweeping.isEmpty ? "after window events" : "a glide sweeping under"
+        telemetry.pinsRaised(only ?? keys[0], ids, cause)
         applier.raisePins(ids, pids: pids, front: focusedWindow)
     }
 

@@ -96,6 +96,12 @@ final class StripTelemetry {
         log(key, "fingers \(what)")
     }
 
+    /// Pins raised over band windows, and the windows raised after them to keep their apps' focus, logged as
+    /// `strip N: pins raised …` with what called for it.
+    func pinsRaised(_ key: UInt64, _ ids: [WindowID], _ cause: String) {
+        log(key, "pins raised \(names(ids)), \(cause)")
+    }
+
     /// macOS reported focus on `id` only because dinky was raising it into order behind another window, and
     /// `syncFocus` did not follow it. Logged once for each window until the strip's next pass.
     func passedOver(_ key: UInt64, _ workspace: Workspace, _ id: WindowID) {
