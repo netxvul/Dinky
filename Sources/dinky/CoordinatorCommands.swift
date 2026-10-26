@@ -17,6 +17,13 @@ extension Coordinator {
         placements[id]?.space.flatMap { workspaces[$0]?.container(of: id) }
     }
 
+    /// The container a window shares its strip column with, in a scrolling workspace: nil for a window alone in its
+    /// column, or not in a strip. `layout` changes it alone, the strip staying.
+    func stripColumn(of id: WindowID) -> Container? {
+        guard let key = placements[id]?.space, let workspace = workspaces[key], workspace.sharesColumn(id) else { return nil }
+        return workspace.container(of: id)
+    }
+
     /// Whether a tiled window's workspace is laid out as a scrolling strip.
     func isScrolling(_ id: WindowID) -> Bool {
         placements[id]?.space.flatMap { workspaces[$0]?.isScrolling } ?? false

@@ -108,7 +108,8 @@ behind the column in view nearest it instead, in the place of its biggest window
 Commands work on columns. `focus left` and `right` move between columns, `up`
 and `down` within one. `move left` and `right` swap the column with its
 neighbour, or take a window that shares its column out into a new column.
-`join-with left` and `right` put the window into the neighbouring column.
+`join-with left` and `right` put the window into the neighbouring column, which
+stacks its windows one above the other.
 `resize width` (and `smart`) changes the column's width, `resize height` the
 window's share of its column; `balance-sizes` resets them all. Hover focus
 leaves columns that are not wholly in view alone; a click scrolls to them. A
@@ -129,7 +130,13 @@ takes only a free side and leaves a window you unpinned alone.
 
 `layout scrolling` switches the focused window's workspace to scrolling on the fly, and
 `layout tiles` or `accordion` switches it back to its tree. The switch holds
-until you switch again. To cycle all three on one key:
+until you switch again. On a window that shares its column, `layout accordion`
+(or `h_accordion`, `v_accordion`, `horizontal`, `vertical`, `auto`) changes
+that column alone and the workspace stays scrolling: an accordion column shows
+its windows one over another, slightly offset, the focused one in front, and
+can be pinned like any column. `layout tiles` or `scrolling` stacks it again;
+`layout tiles` on a stacked column, or on a window alone in its column, switches
+the workspace back to its tree as before. To cycle all three on one key:
 
 ```toml
 [mode.main]

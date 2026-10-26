@@ -135,6 +135,23 @@ public enum LayoutName: String, Equatable, Sendable {
         return [mode == .tiles ? .tiles : .accordion, horizontal ? .horizontal : .vertical, both] + (auto ? [.auto] : [])
     }
 
+    /// The states of a window sharing a strip column whose container is in `mode`: a stack is the strip's own, so it is
+    /// `scrolling` too and a cycle steps from it as from the strip; an accordion is not.
+    public static func describingColumn(_ mode: LayoutMode, axis: Orientation, auto: Bool) -> [LayoutName] {
+        (mode == .tiles ? [.tiling, .scrolling] : [.tiling]) + describing(mode, axis: axis, auto: auto)
+    }
+
+    /// Whether this, for a window sharing a strip column whose container is in `mode`, changes that column alone, the
+    /// strip staying: any container layout but tiles for a stack, which it is already and which takes the workspace
+    /// back to its tree, as for a window alone in its column; and `scrolling` for an accordion, which stacks it again.
+    public func changesColumn(_ mode: LayoutMode) -> Bool {
+        switch self {
+        case .floating, .tiling: false
+        case .scrolling: mode == .accordion
+        default: self.mode != .tiles || mode != .tiles
+        }
+    }
+
     /// The container orientation this sets, nil if it leaves the orientation alone.
     public var orientation: ContainerOrientation? {
         switch self {
