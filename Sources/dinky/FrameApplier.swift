@@ -200,7 +200,9 @@ final class FrameApplier {
     /// the band's windows sliding under them. Not when that could move focus (see `raisingKeepsFocus`). `ordering`, they
     /// are ordered through Dock's scripting addition instead, which also puts them in front of the active app's windows,
     /// where Accessibility cannot, and makes none its app's main window.
-    func raisePins(_ ids: [WindowID], pids: [WindowID: pid_t], front: WindowID?, ordering: Bool = false) {
+    /// `done` runs on the main thread once they are, as their rings are placed next to them again then.
+    func raisePins(_ ids: [WindowID], pids: [WindowID: pid_t], front: WindowID?, ordering: Bool = false,
+                   done: @escaping () -> Void = {}) {
         raiseQueue.async {
             guard Self.raisingKeepsFocus(ids, front: front, pids: pids) else { return }
             if ordering {
@@ -208,6 +210,7 @@ final class FrameApplier {
             } else {
                 self.raise(ids, pids: pids, front: front)
             }
+            DispatchQueue.main.async(execute: done)
         }
     }
 

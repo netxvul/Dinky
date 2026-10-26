@@ -82,6 +82,8 @@ final class Coordinator {
     /// Pins dinky raised while their app was in the background: raising made each its app's main window, so the app
     /// coming to the front would open on it rather than on the window the user had (see `syncFocus`).
     private var raisedInBackground: Set<WindowID> = []
+    /// The last pin `frontWindow` read in front, the window its app had focused, and when.
+    private var frontRead: (read: WindowID, focused: WindowID, at: CFTimeInterval)?
     /// A pass of `raiseCoveredPins` is waiting to run after window events.
     private var pinRaisePending = false
     /// Windows a drop took to another Space's tree, by that Space, until they are on it: macOS can report one on the
@@ -251,6 +253,7 @@ final class Coordinator {
         // Pinned windows' rings are drawn by the border manager too, focus borders on or off.
         if config.borders.enabled || config.borders.pinned {
             borders = borders ?? BorderManager(config: config.borders, model: model,
+                                               front: { [unowned self] in frontWindow() },
                                                isAnimating: { [unowned self] id in animator.isAnimating(id) })
             borders?.update(config: config.borders)
         } else {
@@ -317,13 +320,11 @@ final class Coordinator {
         if ordering {
             telemetry.pinsRaised(only ?? keys[0], raise, cause + ", through Dock")
             let pids = Dictionary(raise.compactMap { id in model.windows[id].map { (id, $0.pid) } }) { first, _ in first }
-            // Each ring in the same order, next to its pin, so a band window never comes between them.
-            let above = config.borders.order == .above
-            let ordered = raise.flatMap { pin -> [WindowID] in
-                guard let ring = borders?.ring(of: pin) else { return [pin] }
-                return above ? [pin, ring] : [ring, pin]
+            // Their rings go back next to them from here once Dock has ordered them, where they are then: one hidden
+            // meanwhile, as in Mission Control, stays hidden.
+            return applier.raisePins(raise, pids: pids, front: focusedWindow, ordering: true) { [weak self] in
+                self?.borders?.replaceRings(raise)
             }
-            return applier.raisePins(ordered, pids: pids, front: focusedWindow, ordering: true)
         }
         // A pin of an app in the background becomes its main window as it is raised: the window of that app the user
         // had goes back on top of its app's after it, where it covers no pin, so the app comes to the front on it.
@@ -351,9 +352,8 @@ final class Coordinator {
             pids[front] = pid
         }
         telemetry.pinsRaised(only ?? keys[0], ids, cause)
-        applier.raisePins(ids, pids: pids, front: focusedWindow)
         // The rings go back next to their pins once they are raised.
-        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { [weak self] in self?.borders?.replaceRings(raise) }
+        applier.raisePins(ids, pids: pids, front: focusedWindow) { [weak self] in self?.borders?.replaceRings(raise) }
     }
 
     private func handle(_ event: WindowEvent) {
@@ -700,12 +700,29 @@ final class Coordinator {
         edit(space) { $0.remove(id) }
     }
 
+    /// The front app's frontmost document window on a current Space, as the window server stacks them; but where that
+    /// is a pin Dock ordered in front of its own app's focused window, which it does without changing focus, the window
+    /// that app has focused, as Accessibility says. Asked of the app only then, and kept for a moment.
+    func frontWindow() -> WindowID {
+        let id = dinky_border_focused_window()
+        guard ScriptingAddition.orders, let pid = model.windows[id]?.pid, let key = placements[id]?.space,
+              workspaces[key]?.pinSide(of: id) != nil,
+              model.windows.values.contains(where: { $0.pid == pid && $0.id != id && placements[$0.id]?.space != nil })
+        else { return id }
+        let now = CACurrentMediaTime()
+        if let cached = frontRead, cached.read == id, now - cached.at < 0.2 { return cached.focused }
+        let real = focusedWindowID(of: pid)
+        let focused = real != 0 && model.windows[real] != nil ? real : id
+        frontRead = (id, focused, now)
+        return focused
+    }
+
     /// The front app's frontmost document window on a current Space; or, while a window dinky focused has yet to
     /// come to the front, that window: its app is activated once the Accessibility calls into it are done, off the
     /// main thread, and a command run right after the focus acts on the window it chose.
     var focusedWindow: WindowID {
         if let focusing, Date() < focusing.until { return focusing.id }
-        let id = dinky_border_focused_window()
+        let id = frontWindow()
         // One only in front while it is raised into order behind another is not focused, as `syncFocus` has it.
         return applier.echoesRaise(id) ? lastFocused : id
     }
@@ -759,7 +776,7 @@ final class Coordinator {
 
     /// Follows focus into the trees, so new windows land beside the focused one and accordions show it.
     private func syncFocus() {
-        let id = dinky_border_focused_window()
+        let id = frontWindow()
         // A window being raised into its place in the stacking comes in front of its app's other windows on the way,
         // which reads as focus moving to it. That is dinky's doing, not the user's, so nothing follows it: not the tree,
         // whose strip would scroll to it and call for more raises, nor the switchers' recency, the hooks or the click
@@ -1214,12 +1231,12 @@ final class Coordinator {
     /// same: its app is not activated while its window moves. Nothing once `focusing` is another's, or once the user has
     /// focused another meanwhile.
     private func focusOnceStill(_ id: WindowID, in key: UInt64) {
-        let began = CACurrentMediaTime(), from = dinky_border_focused_window()
+        let began = CACurrentMediaTime(), from = frontWindow()
         func check() {
             guard focusing?.id == id else { return }
             // Focus taken elsewhere meanwhile, by a click or Cmd-Tab, not a raise of dinky's: that wins, and the tree
             // follows it, as `syncFocus` held it off for this window.
-            let now = dinky_border_focused_window()
+            let now = frontWindow()
             if now != from, now != id, now != 0, !applier.echoesRaise(now) {
                 focusing = nil
                 syncFocus()

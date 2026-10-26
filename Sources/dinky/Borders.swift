@@ -24,13 +24,17 @@ final class BorderManager {
     /// Whether dinky is animating the window, when its border only follows moves: redrawing it at every
     /// size of a resize costs more than a frame.
     private let isAnimating: (UInt32) -> Bool
+    /// The focused window: the front app's frontmost, unless that is a pin Dock ordered in front of it.
+    private let front: () -> UInt32
 
-    init(config: Borders, model: WindowModel, isAnimating: @escaping (UInt32) -> Bool) {
+    init(config: Borders, model: WindowModel, front: @escaping () -> UInt32 = dinky_border_focused_window,
+         isAnimating: @escaping (UInt32) -> Bool) {
         self.config = config
         self.model = model
+        self.front = front
         self.isAnimating = isAnimating
         refreshSpaces()
-        focusedID = dinky_border_focused_window()
+        focusedID = front()
         syncAll()
         // An active colour of 'accent' follows the accent colour as it changes in System Settings.
         NotificationCenter.default.addObserver(forName: NSColor.systemColorsDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
@@ -50,12 +54,6 @@ final class BorderManager {
         let changed = ids.symmetricDifference(pinned)
         pinned = ids
         sync(changed)
-    }
-
-    /// The ring of a pinned window, where one shows, to be ordered with it.
-    func ring(of id: UInt32) -> UInt32? {
-        guard pinned.contains(id), let border = borders[id], border.isShown, border.id != 0 else { return nil }
-        return border.id
     }
 
     /// Places the rings of these pinned windows again, next to them, as after they were raised.
@@ -159,7 +157,7 @@ final class BorderManager {
     }
 
     private func refocus() {
-        let id = dinky_border_focused_window()
+        let id = front()
         guard id != focusedID else { return }
         let old = focusedID
         focusedID = id
