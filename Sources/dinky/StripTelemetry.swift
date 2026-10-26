@@ -91,9 +91,9 @@ final class StripTelemetry {
 
     /// Fingers took hold of the strip to scroll it (`[gestures.scroll]`), let go of it, or lost it: logged as
     /// `strip N: fingers …`, and the cause of the next `view` line.
-    func fingers(_ key: UInt64, _ what: String) {
-        causes[key] = "fingers \(what)"
-        log(key, "fingers \(what)")
+    func fingers(_ key: UInt64, _ what: String, by holder: String = "fingers") {
+        causes[key] = "\(holder) \(what)"
+        log(key, "\(holder) \(what)")
     }
 
     /// Pins raised over band windows, and the windows raised after them to keep their apps' focus, logged as

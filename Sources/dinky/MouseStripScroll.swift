@@ -159,6 +159,9 @@ final class MouseStripScroll {
         case .leftMouseDown:
             // Another press: the one taken lost its release. The press tap, after this one, takes this one or not.
             letGo(velocity: 0)
+        case .mouseMoved where press != nil && !CGEventSource.buttonState(.hidSystemState, button: .left):
+            // The button came up and its release never got here: the pointer is free again.
+            letGo(velocity: 0)
         case .leftMouseDragged where press != nil, .mouseMoved where press != nil:
             moved(to: event.location)
             return false

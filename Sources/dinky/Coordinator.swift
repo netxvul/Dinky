@@ -203,6 +203,9 @@ final class Coordinator {
     private static let stripScrollCheck: TimeInterval = 0.1
     /// How long fingers holding a strip may go unheard before they count as lifted: a trackpad gone, its frames lost.
     private static let stripScrollQuiet: CFTimeInterval = 1
+    /// How long a stroke of the mouse wheel or a swipe holding a strip may go unheard: its events stop while a finger
+    /// rests on a Magic Mouse, and its end comes as it lifts.
+    private static let strokeQuiet: CFTimeInterval = 10
     /// How far a strip coasts once the fingers lift: as far as their speed would take it in this many seconds.
     private static let stripScrollFling = 0.15
     /// Bumped as fingers let go of a strip, so only the last let-go's glance waits for its strip to rest.
@@ -1246,7 +1249,7 @@ final class Coordinator {
         applier.assume(sizes, pids: pids)
         // Dock's moves leave the stacking as it is, so the pins go on top now, before anything slides under them.
         raiseCoveredPins(in: key, takingHold: true)
-        telemetry.fingers(key, "took hold" + (holder == .fingers ? "" : " by \(holder.rawValue)") + (throughDock ? ", through Dock" : ""))
+        telemetry.fingers(key, "took hold" + (throughDock ? ", through Dock" : ""), by: holder.rawValue)
         stripScrollWatch?.invalidate()
         stripScrollWatch = Timer.scheduledTimer(withTimeInterval: Self.stripScrollCheck, repeats: true) { [weak self] _ in
             self?.watchStripScroll()
@@ -1353,7 +1356,7 @@ final class Coordinator {
         }
         let before = workspace.focused
         let target = edit(key) { $0.endFreeScroll(momentum: momentum) } ?? nil
-        telemetry.fingers(key, "let go" + (target.map { ", \(telemetry.name($0)) takes focus" } ?? ""))
+        telemetry.fingers(key, "let go" + (target.map { ", \(telemetry.name($0)) takes focus" } ?? ""), by: scroll.holder.rawValue)
         handBack(key)
         dirty.insert(key)
         guard let target else { return flush() }
@@ -1391,7 +1394,7 @@ final class Coordinator {
     /// stroke does nothing.
     private func abortStripScroll() {
         guard let key = stripScroll?.key else { return }
-        telemetry.fingers(key, "lost it, the strip no longer showing")
+        telemetry.fingers(key, "lost it, the strip no longer showing", by: stripScroll?.holder.rawValue ?? "fingers")
         edit(key) { $0.cancelFreeScroll() }
         handBack(key)
         animator.stop(key)
@@ -1405,7 +1408,7 @@ final class Coordinator {
     /// nothing to scroll, as fullscreen: it takes the strip over, laid out as ever from where the windows are, and the
     /// rest of the fingers' stroke does nothing.
     private func takeOver(_ key: UInt64) {
-        telemetry.fingers(key, "let go, the strip taken over")
+        telemetry.fingers(key, "let go, the strip taken over", by: stripScroll?.holder.rawValue ?? "fingers")
         // A strip still scrolled freely, as one gone fullscreen, is back where it showed as they took hold.
         workspaces[key]?.cancelFreeScroll()
         handBack(key)
@@ -1438,8 +1441,9 @@ final class Coordinator {
         if !stripScrollShows(scroll) {
             abortStripScroll()
         } else if scroll.holder == .drag ? !CGEventSource.buttonState(.hidSystemState, button: .left)
-                    : CACurrentMediaTime() - scroll.heard > Self.stripScrollQuiet {
-            // A mouse held still holds on till its button comes up, its release lost.
+                    : CACurrentMediaTime() - scroll.heard > (scroll.holder == .wheel ? Self.strokeQuiet : Self.stripScrollQuiet) {
+            // A mouse held still holds on till its button comes up, its release lost; a finger resting on a Magic
+            // Mouse mid-stroke sends nothing, so a stroke goes on till its end comes, or long after it is lost.
             endStripScroll(velocity: 0)
         } else {
             // A window its app brought up meanwhile, as one activated just as the fingers came down, goes back under
