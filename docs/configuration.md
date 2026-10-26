@@ -480,7 +480,7 @@ per window, so the capsule draws at once and fresh ones fade in.
 | `layouts` | `['scrolling', 'tiles']` | The layouts it shows for: `'scrolling'`, `'tiles'` (dwindle), `'accordion'`, `'fixed'` and `'free'`, a workspace dinky does not tile. |
 | `tiles-style` | `'map'` | How a tiles or fixed workspace shows: `'map'`, its tiles as they are, or `'row'`, a row like a scrolling workspace's. |
 | `show-single` | `true` | Whether the capsule shows for a workspace with a lone tiled window (on a free workspace, a lone window), held or from a binding. `false` shows it only with two or more. |
-| `enabled`, `delay-ms`, `trigger`, `double-tap-ms`, `corner-radius`, `position`, `show-titles`, `letter-keys`, `letters`, `highlight-color` | [`[switcher]`](#switcher)'s | As in `[switcher]`, for this switcher alone. |
+| `enabled`, `delay-ms`, `trigger`, `double-tap-ms`, `corner-radius`, `position`, `show-titles`, `letter-keys`, `letters`, `highlight-color`, `haptic`, `haptic-strength` | [`[switcher]`](#switcher)'s | As in `[switcher]`, for this switcher alone. |
 
 </div>
 
@@ -549,7 +549,7 @@ on screen as the capsule shows; a window not captured yet shows its app's icon.
 | `exclude` | `[]` | Workspace numbers left out, such as `[3]`. |
 | `card-height` | `85` | Each card's height in points, `60` to `200`; its width follows its display. A row too wide for the display is scaled down. |
 | `thumbnails` | `'windows'` | `'windows'` shows a picture of each window; `'icons'` only app icons; `'schematic'` a fixed picture of each workspace's layout, the same whatever windows it has: tiles one window beside two, accordion three stacked, scrolling two columns between parked slivers, fixed its template's cells, free three overlapping windows. Its windows are solid grey blocks with a hairline edge, as Windows draws its snap layouts, all in the accent colour on the card picked. Neither of the last two needs Screen Recording. |
-| `enabled`, `delay-ms`, `trigger`, `double-tap-ms`, `corner-radius`, `position`, `show-titles`, `letter-keys`, `letters`, `highlight-color` | [`[switcher]`](#switcher)'s | As in `[switcher]`, for this switcher alone. |
+| `enabled`, `delay-ms`, `trigger`, `double-tap-ms`, `corner-radius`, `position`, `show-titles`, `letter-keys`, `letters`, `highlight-color`, `haptic`, `haptic-strength` | [`[switcher]`](#switcher)'s | As in `[switcher]`, for this switcher alone. |
 
 </div>
 
@@ -575,7 +575,7 @@ swipe-left = 'workspace-switcher'
 ### `[gestures.trackpad]`
 
 Swipe on the trackpad with `fingers` fingers and the swipe's commands run, as
-a key binding's do; the trackpad ticks. A swipe is fingers that land together
+a key binding's do; the trackpad ticks, unless `haptic` is off. A swipe is fingers that land together
 moving `distance` millimetres, mostly one way, soon after they land. Fingers
 that gather slowly, as when a third joins two that scroll or a thumb comes to
 rest, are no swipe until they all lift.

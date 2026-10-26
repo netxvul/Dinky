@@ -15,6 +15,10 @@ struct SchemaTests {
 
     private var definitions: [String: [String: Any]] { Self.schema["definitions"] as! [String: [String: Any]] }
 
+    @Test func `No shared definition claims a default, which each use of it may not have`() {
+        for (name, definition) in definitions { #expect(definition["default"] == nil, "\(name)") }
+    }
+
     @Test func `Command pattern lists every command`() throws {
         let pattern = definitions["command"]!["pattern"] as! String
         let regex = try NSRegularExpression(pattern: pattern)

@@ -15,8 +15,11 @@ static ActuatorOpen openActuator;
 static ActuatorActuate actuate;
 static ActuatorClose closeActuator;
 
-// The open actuators, found on first use and again after one fails, as when a Magic Trackpad comes or goes.
+// The open actuators: found on first use, and again once one fails or a trackpad comes, goes or the Mac wakes
+// (`dinky_trackpad_actuators_reset`), so a Magic Trackpad that connects later gets the taps too. Main thread.
 static NSMutableArray *actuators;
+// When none was found, so a Mac without one is not searched on every tap: again only after a reset or a while.
+static CFAbsoluteTime noneFoundAt;
 
 static bool load(void)
 {
@@ -53,21 +56,42 @@ static void openAll(void)
     }
 }
 
-static bool tapAll(int32_t actuation)
+// Taps them all; true when every one took it, `any` set when at least one did.
+static bool tapAll(int32_t actuation, bool *any)
 {
-    bool any = false;
+    bool all = true;
+    *any = false;
     for (id actuator in actuators) {
-        if (actuate((__bridge CFTypeRef)actuator, actuation, 0, 1.0f, 2.0f) == kIOReturnSuccess) any = true;
+        if (actuate((__bridge CFTypeRef)actuator, actuation, 0, 1.0f, 2.0f) == kIOReturnSuccess) *any = true;
+        else all = false;
     }
-    return any;
+    return all;
+}
+
+void dinky_trackpad_actuators_reset(void)
+{
+    for (id actuator in actuators) closeActuator((__bridge CFTypeRef)actuator);
+    actuators = nil;
+    noneFoundAt = 0;
 }
 
 bool dinky_trackpad_tap(int32_t actuation)
 {
     if (!load()) return false;
-    if (!actuators) openAll();
-    if (tapAll(actuation)) return true;
-    for (id actuator in actuators) closeActuator((__bridge CFTypeRef)actuator);
+    if (!actuators) {
+        if (noneFoundAt != 0 && CFAbsoluteTimeGetCurrent() - noneFoundAt < 5) return false;
+        openAll();
+    }
+    bool any = false;
+    // One that failed, as a Magic Trackpad gone to sleep, is found afresh, the others with it; the tap tried again.
+    if (actuators.count && tapAll(actuation, &any)) return true;
+    dinky_trackpad_actuators_reset();
     openAll();
-    return tapAll(actuation);
+    if (!actuators.count) {
+        noneFoundAt = CFAbsoluteTimeGetCurrent();
+        return any;
+    }
+    bool again = false;
+    tapAll(actuation, &again);
+    return any || again;
 }

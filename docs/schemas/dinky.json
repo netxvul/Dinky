@@ -85,7 +85,7 @@
       "description": "What every highlight left unset takes: the switchers' pick, the focused window's border, the noop glow and a drag's preview. Unset, each keeps its own default."
     },
     "haptic": { "type": "boolean", "default": true, "description": "Whether the trackpad taps for dinky: what every haptic left unset takes, the strip's ticks ([gestures.scroll]), a bound swipe's tap ([gestures.trackpad]) and the switchers' picks ([switcher])." },
-    "haptic-strength": { "$ref": "#/definitions/hapticStrength", "description": "How strongly: what every haptic-strength left unset takes." },
+    "haptic-strength": { "$ref": "#/definitions/hapticStrength", "default": "medium", "description": "How strongly: what every haptic-strength left unset takes." },
     "scrolling": {
       "type": "object",
       "additionalProperties": false,
@@ -683,7 +683,7 @@
     }
   },
   "definitions": {
-    "hapticStrength": { "enum": ["light", "medium", "strong"], "default": "medium", "description": "light, medium (as macOS's own taps) or strong." },
+    "hapticStrength": { "enum": ["light", "medium", "strong"], "description": "light, medium (as macOS's own taps) or strong." },
     "ruleLayout": { "type": "string", "enum": ["scrolling", "tiles", "dwindle", "accordion", "fixed", "free", "floating"] },
     "gaps": {
       "type": "object",

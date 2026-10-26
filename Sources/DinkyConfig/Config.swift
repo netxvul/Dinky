@@ -406,8 +406,9 @@ public struct SwitcherDefaults: Equatable {
 }
 
 /// `[window-switcher]`: hold the modifier on its own over a workspace laid out by one of `layouts` and a capsule of its
-/// windows shows at the pointer; release to focus the one picked. `enabled`, `delay-ms`, `corner-radius`, `position`,
-/// `show-titles`, `letter-keys`, `letters` and `highlight-color` left out are `[switcher]`'s.
+/// windows shows at the pointer; release to focus the one picked. `enabled`, `delay-ms`, `trigger`, `double-tap-ms`,
+/// `corner-radius`, `position`, `show-titles`, `letter-keys`, `letters`, `highlight-color`, `haptic` and
+/// `haptic-strength` left out are `[switcher]`'s.
 public struct Switcher: Equatable {
     public var enabled = true
     public var modifier = SwitcherModifier.none
@@ -687,8 +688,9 @@ public enum WorkspaceSwitcherThumbnails: String, CaseIterable {
 }
 
 /// `[workspace-switcher]`: hold the modifier on its own and a capsule of the workspaces shows at the pointer, each
-/// drawn small in its layout; release to switch to the one picked. `enabled`, `delay-ms`, `corner-radius`, `position`,
-/// `show-titles`, `letter-keys`, `letters` and `highlight-color` left out are `[switcher]`'s.
+/// drawn small in its layout; release to switch to the one picked. `enabled`, `delay-ms`, `trigger`, `double-tap-ms`,
+/// `corner-radius`, `position`, `show-titles`, `letter-keys`, `letters`, `highlight-color`, `haptic` and
+/// `haptic-strength` left out are `[switcher]`'s.
 public struct WorkspaceSwitcher: Equatable {
     public var enabled = true
     public var modifier = SwitcherModifier.none

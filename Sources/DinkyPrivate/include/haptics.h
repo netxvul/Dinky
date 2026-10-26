@@ -6,3 +6,7 @@
 // for the active app, which dinky never is. `actuation` is the pattern: 3 weak, 4 medium, 6 strong. False where
 // there is no actuator or the calls are missing.
 bool dinky_trackpad_tap(int32_t actuation);
+
+// Closes the actuators found, so the next tap finds them afresh: as a trackpad comes or goes, or the Mac wakes. Main
+// thread, as the taps are.
+void dinky_trackpad_actuators_reset(void);

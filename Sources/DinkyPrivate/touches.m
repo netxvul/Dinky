@@ -1,4 +1,5 @@
 #include <dlfcn.h>
+#import "haptics.h"
 #import <AppKit/AppKit.h>
 #import <IOKit/IOKitLib.h>
 #import "touches.h"
@@ -125,6 +126,8 @@ static void restartSoon(void)
     restartPending = true;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), dispatch_get_main_queue(), ^{
         restartPending = false;
+        // The taps' actuators too: a Magic Trackpad come or reconnected after sleep is one to tap.
+        dinky_trackpad_actuators_reset();
         if (!handler) return;
         stopAll();
         startAll();

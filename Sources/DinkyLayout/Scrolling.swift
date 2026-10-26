@@ -288,7 +288,7 @@ extension Workspace {
 
     /// The scroll offset the strip shows at: `scrollOffset` as the layout takes it, within the ends, the focused
     /// column whole.
-    var shownOffset: CGFloat {
+    public var shownOffset: CGFloat {
         let area = stripArea
         return offset(for: columnSpans(in: area), in: area)
     }

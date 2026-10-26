@@ -1110,14 +1110,40 @@ struct HeldTargetTests {
         #expect(ws.heldTarget == nil)
     }
 
-    @Test func `Beside a pin it is always a band column`() throws {
+    @Test func `Beside a left pin it is always a band column, the first one at the end`() throws {
         var ws = try pinned(strip(6), 1, .left)
-        ws.focus(2)
+        ws.focus(6)
         do { let r = ws.beginFreeScroll(); #expect(r) }
-        for _ in 0..<20 {
-            ws.scrollFreely(by: -150)
-            #expect(ws.heldTarget != 1)
+        var moves = 0
+        while ws.scrollFreely(by: -150) != 0 {
+            moves += 1
+            let target = try #require(ws.heldTarget)
+            #expect((2...6).contains(target))
         }
+        #expect(moves >= 1)
+        #expect(ws.heldTarget == 2)
+    }
+
+    @Test func `Beside a right pin it is always a band column, the last one at the end`() throws {
+        var ws = try pinned(strip(6), 6, .right)
+        ws.focus(1)
+        do { let r = ws.beginFreeScroll(); #expect(r) }
+        var moves = 0
+        while ws.scrollFreely(by: 150) != 0 {
+            moves += 1
+            let target = try #require(ws.heldTarget)
+            #expect((1...5).contains(target))
+        }
+        #expect(moves >= 1)
+        #expect(ws.heldTarget == 5)
+    }
+
+    @Test func `Taking hold from a focused pin settles on a band column`() throws {
+        var ws = try pinned(strip(6), 1, .left)
+        ws.focus(1)
+        do { let r = ws.beginFreeScroll(); #expect(r) }
+        let target = try #require(ws.heldTarget)
+        #expect(target != 1)
     }
 }
 
@@ -1241,5 +1267,52 @@ struct PinRaiseOrderTests {
         #expect(order == [10, 5, 7, 30, 40])
         let none = pinRaiseOrder(ownPins: [], fronts: [], front: 7, keepsFront: false, otherPins: [30], restore: [])
         #expect(none == [30])
+    }
+}
+
+struct StripTickerTests {
+    @Test func `Fingers resting at an end, wiggling a fraction of a point, never tick`() {
+        var ws = strip(6, gaps: spaced)
+        ws.focus(1)
+        do { let r = ws.beginFreeScroll(); #expect(r) }
+        var ticker = StripTicker(target: ws.heldTarget, offset: ws.shownOffset)
+        var ticks = 0
+        for i in 0..<20 {
+            ws.scrollFreely(by: i.isMultiple(of: 2) ? 0.6 : -0.6)
+            if case .tick = ticker.moved(to: ws.heldTarget, offset: ws.shownOffset, at: Double(i)) { ticks += 1 }
+        }
+        #expect(ticks == 0)
+    }
+
+    @Test func `Wiggling about a midpoint between two columns never ticks, a real crossing ticks once`() {
+        var ticker = StripTicker(target: 1, offset: 119.4)
+        var ticks = 0
+        // The midpoint at 120: targets flip at it.
+        for i in 0..<20 {
+            let offset: CGFloat = i.isMultiple(of: 2) ? 120.6 : 119.4
+            if case .tick = ticker.moved(to: offset > 120 ? 2 : 1, offset: offset, at: Double(i)) { ticks += 1 }
+        }
+        #expect(ticks == 0)
+        if case .tick(let t) = ticker.moved(to: 2, offset: 140, at: 100) { #expect(t == 2) } else { Issue.record("no tick") }
+        #expect(ticker.moved(to: 2, offset: 141, at: 101) == .none)
+    }
+
+    @Test func `A stroke that crosses two columns inside the gap ticks the last once the gap ends`() {
+        var ticker = StripTicker(target: 1, offset: 0)
+        #expect(ticker.moved(to: 2, offset: 50, at: 1.000) == .tick(2))
+        #expect(ticker.moved(to: 3, offset: 100, at: 1.020) == .later(1.055))
+        #expect(ticker.moved(to: 3, offset: 100, at: 1.055) == .tick(3))
+        #expect(ticker.moved(to: 3, offset: 101, at: 1.060) == .none)
+    }
+
+    @Test func `Back across inside the gap ticks once more at its end, a wiggle under the margin not at all`() {
+        var ticker = StripTicker(target: 1, offset: 0)
+        #expect(ticker.moved(to: 2, offset: 50, at: 1.000) == .tick(2))
+        #expect(ticker.moved(to: 1, offset: 30, at: 1.020) == .later(1.055))
+        #expect(ticker.moved(to: 1, offset: 30, at: 1.055) == .tick(1))
+        var still = StripTicker(target: 1, offset: 0)
+        #expect(still.moved(to: 2, offset: 5, at: 1.000) == .none)
+        #expect(still.moved(to: 1, offset: 1, at: 1.010) == .none)
+        #expect(still.moved(to: 2, offset: 6, at: 1.100) == .none)
     }
 }
