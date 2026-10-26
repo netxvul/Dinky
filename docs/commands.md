@@ -112,8 +112,13 @@ need; they keep the narrower width and are never unpinned for it.
 - Columns scrolled out of the band slide under the pin and park at the screen's
   edge with only a sliver showing. The pin is raised in front of them as they
   slide under it, after a focus change, Cmd-Tab, a click in the Dock or a new
-  window. The focused window of the pin's own app is raised after the pin, to
-  keep its app's focus, so it can show over the pin while sliding past.
+  window, and while fingers scroll the strip. With dinky's Dock
+  [scripting addition](scripting-addition.md) loaded, the pins go in
+  front of every window, the active app's too, and no app's focus changes.
+  Without it they are raised through Accessibility, which cannot put a window
+  in front of the active app's: a window of the app in use, and the focused
+  window of the pin's own app, which is raised after the pin to keep its app's
+  focus, can show over the pin while sliding past.
 - `move` leaves a pinned column where it is; `join-with` into a pin stacks the
   window there, and out of a pin of one window unpins it. A window dragged beside
   a pin goes into the band, swapped onto it takes its place.

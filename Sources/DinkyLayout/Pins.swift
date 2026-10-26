@@ -411,9 +411,11 @@ extension Workspace {
     /// pin. A window in `candidates` (focused, or being focused) of an app of a pinned column is raised after it to keep
     /// its app's focus, so it does not count for that column: it would cover it again. A column under a window outside
     /// the tree at its level or lower, a dialog or a floating window in use, is left as it is, whole. None while a
-    /// window is fullscreen over the pins.
+    /// window is fullscreen over the pins. Windows of the apps in `beyondReach`, as the active app's are for a raise
+    /// through Accessibility, which cannot put a window in front of them, count for none.
     public func pinsToRaise(stack: [StackedWindow], candidates: [WindowID], raising: Set<WindowID> = [],
-                            sweeping: [WindowID: Set<WindowID>] = [:], takingHold: Bool = false) -> [WindowID] {
+                            sweeping: [WindowID: Set<WindowID>] = [:], takingHold: Bool = false,
+                            beyondReach: Set<Int32> = []) -> [WindowID] {
         let layout = self.layout()
         // Only a fullscreen window that covers the pins stands in the way: one pushing in the band covers none.
         if let first = layout.order.first, fullscreenWindows.contains(first), !pushesFullscreen || pinSide(of: first) != nil {
@@ -433,6 +435,7 @@ extension Workspace {
             let own = columnApps[side] ?? []
             let ahead = (stack.prefix(at).map(\.id) + raising.filter { position[$0] != nil }).filter { id in
                 id != pin && !(candidates.contains(id) && shown[id].map { own.contains($0.pid) } == true)
+                    && !(shown[id].map { beyondReach.contains($0.pid) } == true && tree.contains(id))
             }
             let over = ahead.filter { shown[$0]!.frame.intersects(me.frame) }
             if over.contains(where: { !tree.contains($0) && shown[$0]!.layer <= me.layer }) {

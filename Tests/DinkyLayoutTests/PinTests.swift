@@ -890,6 +890,17 @@ struct PinRaiseTests {
         #expect(ws.pinsToRaise(stack: [floating, band] + base, candidates: []).isEmpty)
     }
 
+    @Test func `Windows of an app beyond reach cover no pin, others still do`() throws {
+        let ws = try pinned(strip(4), 1, .left)
+        let band = StackedWindow(id: 2, layer: 0, frame: rect(100, 0, 300, 600), pid: 7)
+        let shown = stack(ws, pids: [1: 1]).filter { $0.id != 2 }.prepending(band)
+        #expect(ws.pinsToRaise(stack: shown, candidates: [], takingHold: true, beyondReach: [7]).isEmpty)
+        #expect(ws.pinsToRaise(stack: shown, candidates: [], takingHold: true, beyondReach: [8]) == [1])
+        let floating = StackedWindow(id: 50, layer: 0, frame: rect(10, 10, 100, 100), pid: 7)
+        #expect(ws.pinsToRaise(stack: [floating] + shown, candidates: [], beyondReach: [7]).isEmpty,
+                "a window of its outside the tree still holds the pin as in use")
+    }
+
     @Test func `A sweep under one pin raises that pin only`() throws {
         var ws = try pinned(pinned(strip(5, width: 0.2), 1, .left), 5, .right)
         ws.focus(3)

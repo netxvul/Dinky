@@ -16,6 +16,7 @@ enum ScriptingAddition {
     private static var cachedAt: CFTimeInterval = -1
     private static var cached = false
     private static var cachedMoves = false
+    private static var cachedOrders = false
     // The payload dies whenever Dock restarts, so dinky re-injects it on its own. These bound that: never more than
     // one attempt in flight, never before `nextAttemptAt`, and the interval doubles (to 5 min) whenever a freshly
     // injected payload dies again within 15 s, so a payload that somehow destabilised Dock cannot drive a restart loop.
@@ -34,6 +35,7 @@ enum ScriptingAddition {
             cached = dinky_sa_available()
             // Asked each time too, as the payload Dock has can be replaced by a newer one without dinky restarting.
             cachedMoves = cached && dinky_sa_moves_windows()
+            cachedOrders = cached && dinky_sa_orders_windows()
             cachedAt = now
             if cached { lastAliveAt = now }
         }
@@ -101,6 +103,10 @@ enum ScriptingAddition {
         let points = wids.map { frames[$0]!.origin }
         dinky_sa_move_batch(wids, points, Int32(wids.count))
     }
+
+    /// Whether the payload Dock has can order windows (see `order`), as of `available`; one installed before 0.4.0
+    /// cannot, and windows are raised through Accessibility instead.
+    static var orders: Bool { cached && cachedOrders }
 
     /// Clear the transforms, returning the windows to their real Accessibility positions.
     static func reset(_ ids: [WindowID]) {

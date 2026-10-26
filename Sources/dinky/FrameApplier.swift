@@ -197,11 +197,17 @@ final class FrameApplier {
     }
 
     /// Raise pinned windows to the front, back to front, so the last is frontmost: they overlap nothing in view, only
-    /// the band's windows sliding under them. Not when that could move focus (see `raisingKeepsFocus`).
-    func raisePins(_ ids: [WindowID], pids: [WindowID: pid_t], front: WindowID?) {
+    /// the band's windows sliding under them. Not when that could move focus (see `raisingKeepsFocus`). `ordering`, they
+    /// are ordered through Dock's scripting addition instead, which also puts them in front of the active app's windows,
+    /// where Accessibility cannot, and makes none its app's main window.
+    func raisePins(_ ids: [WindowID], pids: [WindowID: pid_t], front: WindowID?, ordering: Bool = false) {
         raiseQueue.async {
             guard Self.raisingKeepsFocus(ids, front: front, pids: pids) else { return }
-            self.raise(ids, pids: pids, front: front)
+            if ordering {
+                dinky_sa_order_batch(ids, Int32(ids.count))
+            } else {
+                self.raise(ids, pids: pids, front: front)
+            }
         }
     }
 

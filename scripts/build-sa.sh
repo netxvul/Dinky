@@ -11,7 +11,7 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 O="$REPO/Sources/DinkyPrivate/osax"
 OSAX="$REPO/build/dinky.osax"
 INSTALLED="/Library/ScriptingAdditions/dinky.osax"
-VER="0.3.0"
+VER="0.4.0"
 
 if [ ! -f "$O/loader.m" ]; then
     echo "missing $O/loader.m — copy yabai's src/osax/loader.m here and change yabai.osax -> dinky.osax" >&2

@@ -1,7 +1,7 @@
 // dinky's Dock payload: loaded into Dock.app, it runs from Dock's WindowServer connection, which has
 // authority to move and transform windows belonging to other applications. A small unix-socket daemon
 // takes dinky's commands. Modelled on yabai's src/osax/payload.m (MIT, © 2019 Åsmund Vikane); trimmed to
-// the window-move and transform operations dinky's glides need, plus batched variants.
+// the window-move and transform operations dinky's glides need, plus batched variants, and ordering windows above.
 #include <Cocoa/Cocoa.h>
 #include <pthread.h>
 #include <sys/socket.h>
@@ -17,6 +17,10 @@ extern CGError SLSGetWindowTransform(int cid, uint32_t wid, CGAffineTransform *t
 extern CGError SLSSetWindowTransform(int cid, uint32_t wid, CGAffineTransform t);
 extern OSStatus SLSMoveWindowWithGroup(int cid, uint32_t wid, CGPoint *point);
 extern CGError SLSReassociateWindowsSpacesByGeometry(int cid, CFArrayRef window_list);
+extern CGError SLSOrderWindow(int cid, uint32_t wid, int mode, uint32_t relative_to);
+
+// SLSOrderWindow's modes, as CGSWindowOrderingMode: above (or, relative to no window, above all of its level).
+#define DINKY_SA_ORDER_ABOVE 1
 
 static int daemon_sockfd;
 static pthread_t daemon_thread;
@@ -101,6 +105,18 @@ static void do_move_batch(char *message)
     }
 }
 
+// Orders each window in front of every other of its level, the last frontmost: from Dock's connection, which may order
+// any app's window, also above the active app's, without activating its own app or changing any key window.
+static void do_order_batch(char *message)
+{
+    unpack(int32_t, count);
+    int cid = SLSMainConnectionID();
+    for (int i = 0; i < count; ++i) {
+        unpack(uint32_t, wid);
+        if (wid) SLSOrderWindow(cid, wid, DINKY_SA_ORDER_ABOVE, 0);
+    }
+}
+
 static void do_handshake(int sockfd)
 {
     uint32_t attrib = DINKY_SA_ATTRIB_ALL;
@@ -125,6 +141,7 @@ static void handle_message(int sockfd, char *message)
     case DINKY_SA_OP_TRANSFORM_RESET:  do_transform_reset(message); break;
     case DINKY_SA_OP_RESET_BATCH:      do_reset_batch(message);     break;
     case DINKY_SA_OP_MOVE_BATCH:       do_move_batch(message);      break;
+    case DINKY_SA_OP_ORDER_BATCH:      do_order_batch(message);     break;
     }
 }
 

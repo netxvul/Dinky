@@ -54,7 +54,8 @@ bool dinky_sa_available(void)
     return true;
 }
 
-bool dinky_sa_moves_windows(void)
+// The payload's capabilities from its handshake, nothing when it does not answer.
+static uint32_t sa_attributes(void)
 {
     int fd = sa_connect();
     if (fd < 0) return false;
@@ -80,7 +81,38 @@ bool dinky_sa_moves_windows(void)
         }
     }
     close(fd);
-    return (attrib & DINKY_SA_ATTRIB_MOVE_BATCH) != 0;
+    return attrib;
+}
+
+bool dinky_sa_moves_windows(void)
+{
+    return (sa_attributes() & DINKY_SA_ATTRIB_MOVE_BATCH) != 0;
+}
+
+bool dinky_sa_orders_windows(void)
+{
+    return (sa_attributes() & DINKY_SA_ATTRIB_ORDER) != 0;
+}
+
+void dinky_sa_order_batch(const uint32_t *wids, int count)
+{
+    if (count <= 0) return;
+    int fd = sa_connect();
+    if (fd < 0) return;
+
+    char bytes[DINKY_SA_SOCKET_BUFF_LEN];
+    int pos = sizeof(int16_t);
+    bytes[pos++] = DINKY_SA_OP_ORDER_BATCH;
+    int count_at = pos; pos += sizeof(int32_t);
+    int32_t n = 0;
+    for (int i = 0; i < count; ++i) {
+        if (pos + (int)sizeof(uint32_t) > DINKY_SA_SOCKET_BUFF_LEN) break;
+        uint32_t wid = wids[i];
+        memcpy(bytes + pos, &wid, sizeof(wid)); pos += sizeof(wid);
+        ++n;
+    }
+    memcpy(bytes + count_at, &n, sizeof(n));
+    sa_finish(fd, bytes, pos);
 }
 
 void dinky_sa_transform_batch(const uint32_t *wids, const CGPoint *points, int count)

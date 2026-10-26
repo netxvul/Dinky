@@ -286,15 +286,23 @@ final class Coordinator {
             guard let window = model.windows[shown.id], window.isVisible else { return nil }
             return StackedWindow(id: shown.id, layer: shown.layer, frame: window.frame, pid: window.pid)
         }
+        // Dock's scripting addition orders pins in front of any window, the active app's too, and leaves every app's
+        // main and key window as they were. Accessibility cannot put one in front of the active app's windows, and makes
+        // the window it raises its app's main one, so the focused window of a pinned app is raised after it and the
+        // window its app had put back.
+        let ordering = ScriptingAddition.available && ScriptingAddition.orders
+        let frontApp = model.windows[focusedWindow]?.pid
         var raise: [WindowID] = [], fronts: [WindowID] = []
         for key in keys {
             let workspace = workspaces[key]!
-            let candidates = [workspace.focused, focusedWindow].compactMap { $0 }.filter { workspace.pinSide(of: $0) == nil }
+            let candidates = ordering ? []
+                : [workspace.focused, focusedWindow].compactMap { $0 }.filter { workspace.pinSide(of: $0) == nil }
             // While fingers hold the strip, its windows move through Dock without the window model hearing, so any
             // band window in front of a pin counts, as when they took hold.
             let held = takingHold || stripScroll?.key == key
+            let reach: Set<Int32> = ordering ? [] : Set([frontApp].compactMap { $0 })
             let raised = workspace.pinsToRaise(stack: stack, candidates: candidates, raising: raising, sweeping: sweeping,
-                                               takingHold: held)
+                                               takingHold: held, beyondReach: reach)
             guard !raised.isEmpty else { continue }
             raise += raised
             let raisedApps = Set(raised.compactMap { model.windows[$0]?.pid })
@@ -302,9 +310,15 @@ final class Coordinator {
                 && model.windows[id].map({ raisedApps.contains($0.pid) }) == true { fronts.append(id) }
         }
         guard !raise.isEmpty else { return }
+        let cause = takingHold ? "fingers took hold" : stripScroll != nil ? "while fingers hold the strip"
+            : sweeping.isEmpty ? "after window events" : "a glide sweeping under"
+        if ordering {
+            telemetry.pinsRaised(only ?? keys[0], raise, cause + ", through Dock")
+            let pids = Dictionary(raise.compactMap { id in model.windows[id].map { (id, $0.pid) } }) { first, _ in first }
+            return applier.raisePins(raise, pids: pids, front: focusedWindow, ordering: true)
+        }
         // A pin of an app in the background becomes its main window as it is raised: the window of that app the user
         // had goes back on top of its app's after it, where it covers no pin, so the app comes to the front on it.
-        let frontApp = model.windows[focusedWindow]?.pid
         var restore: [WindowID] = []
         for pin in raise {
             guard let pid = model.windows[pin]?.pid, pid != frontApp else { continue }
@@ -328,8 +342,6 @@ final class Coordinator {
             ids = ids.filter { $0 != front } + [front]
             pids[front] = pid
         }
-        let cause = takingHold ? "fingers took hold" : stripScroll != nil ? "while fingers hold the strip"
-            : sweeping.isEmpty ? "after window events" : "a glide sweeping under"
         telemetry.pinsRaised(only ?? keys[0], ids, cause)
         applier.raisePins(ids, pids: pids, front: focusedWindow)
     }

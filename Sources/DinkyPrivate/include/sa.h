@@ -20,5 +20,13 @@ void dinky_sa_transform_batch(const uint32_t *wids, const CGPoint *points, int c
 // without its app being told. Only where `dinky_sa_moves_windows`.
 void dinky_sa_move_batch(const uint32_t *wids, const CGPoint *points, int count);
 
+// Whether the payload can order windows (`dinky_sa_order_batch`), as one installed before 0.4.0 cannot. Asks it, so
+// call it as seldom as `dinky_sa_moves_windows`.
+bool dinky_sa_orders_windows(void);
+
+// Order each window above every other of its level, in turn, so the last ends frontmost, also above the active app's
+// windows; nothing is activated and no key window changes. Only where `dinky_sa_orders_windows`.
+void dinky_sa_order_batch(const uint32_t *wids, int count);
+
 // Clear each window's transform back to its real (Accessibility) position.
 void dinky_sa_reset_batch(const uint32_t *wids, int count);
