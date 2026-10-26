@@ -452,3 +452,24 @@ extension Workspace {
         return pins.filter { id in pinSide(of: id).map(covered.contains) == true && position[id] != nil }
     }
 }
+
+extension Workspace {
+    /// The pinned windows shown, which get their ring: every window of a pinned stack, the one in front of a pinned
+    /// accordion. None outside the scrolling layout, nor while a window fullscreen over the strip covers the pins.
+    public var ringedPins: [WindowID] {
+        guard hasPins else { return [] }
+        let layout = self.layout()
+        if let first = layout.order.first, fullscreenWindows.contains(first), !pushesFullscreen || pinSide(of: first) != nil {
+            return pinSide(of: first) != nil ? [first] : []
+        }
+        return PinSide.allCases.compactMap(pinnedIndex).flatMap { index -> [WindowID] in
+            switch root.children[index] {
+            case .window(let id): return [id]
+            case .container(let c) where c.mode == .accordion:
+                let windows = Set(Node.container(c).windows)
+                return layout.order.first(where: windows.contains).map { [$0] } ?? []
+            case .container(let c): return Node.container(c).windows
+            }
+        }
+    }
+}

@@ -5,7 +5,7 @@ import DinkyPrivate
 
 // din-nt98: focus borders. One BorderWindow per document window on a visible Space; the
 // focused window's border gets the active colour, the rest the inactive one (JankyBorders'
-// behaviour).
+// behaviour). A pinned window shown gets its ring in `pinned-color` instead, focused or not, borders on or off.
 //
 // The owner feeds it the WindowModel's events through handle(_:). Events only record what needs doing;
 // one flush per run-loop turn does it, in a fixed order: the focus check first, so every border is drawn
@@ -15,6 +15,8 @@ final class BorderManager {
     private let model: WindowModel
     private var borders: [UInt32: BorderWindow] = [:]
     private var focusedID: UInt32 = 0
+    /// The pinned windows shown, which get their ring (`pinned`), as the coordinator last said.
+    private var pinned: Set<UInt32> = []
     private var visibleSpaces: Set<UInt64> = []
     /// What the next flush does: check focus, place every border, or place the borders of these windows.
     private var pending = (refocus: false, all: false, ids: Set<UInt32>())
@@ -32,7 +34,7 @@ final class BorderManager {
         syncAll()
         // An active colour of 'accent' follows the accent colour as it changes in System Settings.
         NotificationCenter.default.addObserver(forName: NSColor.systemColorsDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
-            if self?.config.activeColor == .accent { self?.syncAll() }
+            if self?.config.activeColor == .accent || self?.config.pinnedColor == .accent { self?.syncAll() }
         }
     }
 
@@ -41,6 +43,23 @@ final class BorderManager {
         self.config = config
         syncAll()
     }
+
+    /// The pinned windows that show now: the ones whose ring changed are drawn again.
+    func setPinned(_ ids: Set<UInt32>) {
+        guard ids != pinned else { return }
+        let changed = ids.symmetricDifference(pinned)
+        pinned = ids
+        sync(changed)
+    }
+
+    /// The ring of a pinned window, where one shows, to be ordered with it.
+    func ring(of id: UInt32) -> UInt32? {
+        guard pinned.contains(id), let border = borders[id], border.isShown, border.id != 0 else { return nil }
+        return border.id
+    }
+
+    /// Places the rings of these pinned windows again, next to them, as after they were raised.
+    func replaceRings(_ ids: [UInt32]) { sync(ids.filter(pinned.contains)) }
 
     /// Whether a window id is one of the border windows dinky draws.
     func isBorder(_ id: UInt32) -> Bool { borders.values.contains { $0.id == id } }
@@ -120,7 +139,9 @@ final class BorderManager {
     }
 
     private func sync(_ window: Window) {
-        guard config.enabled, window.isDocument, config.decorates(bundleID: window.bundleID) else {
+        // A pinned window's ring is drawn borders on or off and whatever its app, as the noop flash is.
+        let ring = config.pinned && config.pinnedWidth > 0 && pinned.contains(window.id)
+        guard window.isDocument, ring || config.enabled && config.decorates(bundleID: window.bundleID) else {
             borders[window.id] = nil
             return
         }
@@ -130,10 +151,11 @@ final class BorderManager {
             return
         }
         let focused = window.id == focusedID
-        let color = focused ? config.activeColor.resolved : config.inactiveColor
+        let color = ring ? config.pinnedColor.resolved : focused ? config.activeColor.resolved : config.inactiveColor
         let border = borders[window.id] ?? BorderWindow(target: window.id)
         borders[window.id] = border
-        border.update(window, color: color, config: config, moveOnly: isAnimating(window.id))
+        border.update(window, color: color, width: ring ? config.pinnedWidth : config.width, config: config,
+                      moveOnly: isAnimating(window.id))
     }
 
     private func refocus() {

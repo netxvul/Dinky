@@ -806,12 +806,20 @@ public struct Borders: Equatable {
     public var noopFlashSpread = 100.0
     /// The glow's opacity at the window's edge, as a share of the colour's own; 0 leaves it out.
     public var noopFlashOpacity = 0.6
+    /// Whether a pinned column's shown windows get a ring of their own, borders on or off, focused or not.
+    public var pinned = true
+    /// The pinned windows' ring: the top-level `highlight-color` when the table leaves it out and that is set, else
+    /// Claude's orange, as the noop flash.
+    public var pinnedColor = Highlight.color(try! Color(hex: "#d97757"))
+    /// The pinned windows' ring, in points; 0 leaves it out.
+    public var pinnedWidth = 2.0
 
     public init() {}
 
     init(_ t: Table?, highlight: Highlight?) throws {
         activeColor = highlight ?? activeColor
         noopFlashColor = highlight ?? noopFlashColor
+        pinnedColor = highlight ?? pinnedColor
         guard let t else { return }
         enabled = try t.bool("enabled") ?? enabled
         width = try t.double("width") ?? width
@@ -827,6 +835,10 @@ public struct Borders: Equatable {
         guard (8...160).contains(noopFlashSpread) else { throw ConfigError(path: t.path("noop-flash-spread"), "must be 8 to 160") }
         noopFlashOpacity = try t.double("noop-flash-opacity") ?? noopFlashOpacity
         guard (0...1).contains(noopFlashOpacity) else { throw ConfigError(path: t.path("noop-flash-opacity"), "must be 0 to 1") }
+        pinned = try t.bool("pinned") ?? pinned
+        pinnedColor = try t.highlight("pinned-color") ?? pinnedColor
+        pinnedWidth = try t.double("pinned-width") ?? pinnedWidth
+        guard (0...8).contains(pinnedWidth) else { throw ConfigError(path: t.path("pinned-width"), "must be 0 to 8") }
         try t.done()
     }
 

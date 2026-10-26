@@ -32,7 +32,7 @@ permalink: /configuration/
 | `menu-bar-icon` | `'blocks'` | `'blocks'` shows a block per display in the menu bar, left to right, with the workspace it shows: filled for the focused display, outlined for the others, corner marks for a full-screen Space. `'text'` shows the focused display's workspace number. `'none'` hides the menu bar item; the `dinky` CLI and key bindings still work. |
 | `hide-menu-bar-icon` | `'never'` | When to hide dinky's menu bar item. `'single-display'` hides it while only one display is connected and shows it again once a second one is. `'always'` hides it, as `menu-bar-icon = 'none'` does. `'never'` leaves it to `menu-bar-icon`. Hidden, the `dinky` CLI and key bindings still work. |
 | `scripting-addition` | `true` | Whether dinky may use its Dock scripting addition, which needs SIP off. Where it is injected (see [Scripting addition](scripting-addition.md)), a scrolling strip scrolls through it, its windows sliding past the screen edges; without it the strip moves its windows frame by frame. `false` never touches it, even with SIP off and the addition installed: dinky neither checks for it nor injects it, and the strip moves its windows frame by frame. Takes effect on reload. |
-| `highlight-color` | unset | One highlight colour for everything that has one: `'#rrggbb'`, `'#rrggbbaa'`, or `'accent'` for the accent colour in System Settings. Each highlight a table leaves unset takes it: the pick in both switchers ([`[switcher]`](#switcher)), the focused window's border ([`[borders]`](#borders) `active-color`), the glow of a binding that does nothing ([`[borders]`](#borders) `noop-flash-color`) and a drag's preview ([`[drag]`](#drag) `preview-border-color`). A table's own colour always wins, and its `'accent'` keeps the accent colour there. Unset, each keeps its own default. Like every top-level key, it goes above the first `[table]`. |
+| `highlight-color` | unset | One highlight colour for everything that has one: `'#rrggbb'`, `'#rrggbbaa'`, or `'accent'` for the accent colour in System Settings. Each highlight a table leaves unset takes it: the pick in both switchers ([`[switcher]`](#switcher)), the focused window's border ([`[borders]`](#borders) `active-color`), the glow of a binding that does nothing ([`[borders]`](#borders) `noop-flash-color`), the ring of pinned windows ([`[borders]`](#borders) `pinned-color`) and a drag's preview ([`[drag]`](#drag) `preview-border-color`). A table's own colour always wins, and its `'accent'` keeps the accent colour there. Unset, each keeps its own default. Like every top-level key, it goes above the first `[table]`. |
 
 </div>
 
@@ -263,6 +263,9 @@ gaps.outer.top = 44
 | `noop-flash-width` | `2` | The ring around the window, in points, from `0`, none, to `8`. |
 | `noop-flash-spread` | `100` | How far the glow reaches into the window, in points, from `8` to `160`, and at most a quarter of the window's shorter side. It fades as the screen's glow does, to about a third every third of the way, and to nothing at the end. |
 | `noop-flash-opacity` | `0.6` | The glow's opacity at the window's edge, as a share of the colour's own, from `0`, none, to `1`. |
+| `pinned` | `true` | Ring the windows of a [pinned](commands.md#pins) column in `pinned-color`, whether they have focus or not, even with `enabled = false` and for windows of `exclude-apps`: each window of a pinned stack, and the shown one of a pinned accordion. Drawn as the other borders are, by `order`, and kept with the pin as it is put back in front of the band; it goes while the pin does not show, minimized, hidden, on another Space, in Mission Control, under a window fullscreen over the pins or outside the scrolling layout. |
+| `pinned-color` | [`highlight-color`](#top-level), else `'#d97757'` | Its colour, Claude's orange by default, as the noop flash: `'#rrggbb'`, `'#rrggbbaa'` or `'accent'`. |
+| `pinned-width` | `2` | Its width in points, from `0`, none, to `8`. |
 
 </div>
 
@@ -924,6 +927,9 @@ noop-flash = true               # a binding that does nothing makes the focused 
 noop-flash-width = 2            # the ring around the window, 0 to 8 points
 noop-flash-spread = 100         # points the glow fades over inside the window, 8 to 160
 noop-flash-opacity = 0.6        # its opacity at the window's edge, 0 to 1
+pinned = true                   # a pinned column's windows get a ring, even with enabled = false
+# pinned-color = '#d97757'      # '#rrggbb', '#rrggbbaa' or 'accent'; unset is highlight-color, else '#d97757'
+pinned-width = 2                # the pinned windows' ring, 0 to 8 points
 
 [focus-follows-mouse]
 enabled = false

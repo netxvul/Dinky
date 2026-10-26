@@ -583,6 +583,28 @@ struct ConfigTests {
         assertError("[borders]\nnoop-flash-count = 2\n", path: "borders.noop-flash-count", line: 2, contains: "unknown key")
     }
 
+    @Test func `Pinned windows' ring`() throws {
+        let defaults = Borders()
+        #expect(defaults.pinned)
+        #expect(defaults.pinnedColor == .color(try Color(hex: "#d97757")))
+        #expect(defaults.pinnedWidth == 2)
+        let borders = try Config.parse("""
+        [borders]
+        enabled = false
+        pinned = false
+        pinned-color = 'accent'
+        pinned-width = 0
+        """).borders
+        #expect(!borders.pinned)
+        #expect(borders.pinnedColor == .accent)
+        #expect(borders.pinnedWidth == 0)
+        let highlighted = try Config.parse("highlight-color = '#00ff00'\n").borders
+        #expect(highlighted.pinnedColor == .color(try Color(hex: "#00ff00")), "takes the top-level highlight-color")
+        assertError("[borders]\npinned-width = -1\n", path: "borders.pinned-width", line: 2, contains: "0 to 8")
+        assertError("[borders]\npinned-width = 8.5\n", path: "borders.pinned-width", line: 2, contains: "0 to 8")
+        assertError("[borders]\npinned-color = 'pink'\n", path: "borders.pinned-color", line: 2, contains: "'pink' is not a colour")
+    }
+
     @Test func `Binding values`() throws {
         let config = try Config.parse("""
         [mode.main]

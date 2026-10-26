@@ -48,9 +48,9 @@ final class BorderWindow {
 
     /// Place and draw the border around `window`. With `moveOnly`, a border whose shape would change hides instead,
     /// as redrawing it at every size of a resize costs more than a frame; a new colour alone is drawn, once.
-    func update(_ window: Window, color: DinkyConfig.Color, config: Borders, moveOnly: Bool = false) {
+    func update(_ window: Window, color: DinkyConfig.Color, width: Double, config: Borders, moveOnly: Bool = false) {
         let look = Look(size: window.frame.size, cornerRadius: window.cornerRadius,
-                        color: color, width: config.width)
+                        color: color, width: width)
         if moveOnly, drawn?.with(color: color) != look { return hide() }
         place(window, look: look, order: config.order == .above ? .above : .below)
     }

@@ -248,7 +248,8 @@ final class Coordinator {
                            easing: Easing(rawValue: config.animations.curve.rawValue),
                            damping: config.animations.damping)
         modifierDrag.update(modifiers: config.drag.mouseModifier, sides: config.modifiers)
-        if config.borders.enabled {
+        // Pinned windows' rings are drawn by the border manager too, focus borders on or off.
+        if config.borders.enabled || config.borders.pinned {
             borders = borders ?? BorderManager(config: config.borders, model: model,
                                                isAnimating: { [unowned self] id in animator.isAnimating(id) })
             borders?.update(config: config.borders)
@@ -316,7 +317,13 @@ final class Coordinator {
         if ordering {
             telemetry.pinsRaised(only ?? keys[0], raise, cause + ", through Dock")
             let pids = Dictionary(raise.compactMap { id in model.windows[id].map { (id, $0.pid) } }) { first, _ in first }
-            return applier.raisePins(raise, pids: pids, front: focusedWindow, ordering: true)
+            // Each ring in the same order, next to its pin, so a band window never comes between them.
+            let above = config.borders.order == .above
+            let ordered = raise.flatMap { pin -> [WindowID] in
+                guard let ring = borders?.ring(of: pin) else { return [pin] }
+                return above ? [pin, ring] : [ring, pin]
+            }
+            return applier.raisePins(ordered, pids: pids, front: focusedWindow, ordering: true)
         }
         // A pin of an app in the background becomes its main window as it is raised: the window of that app the user
         // had goes back on top of its app's after it, where it covers no pin, so the app comes to the front on it.
@@ -345,6 +352,8 @@ final class Coordinator {
         }
         telemetry.pinsRaised(only ?? keys[0], ids, cause)
         applier.raisePins(ids, pids: pids, front: focusedWindow)
+        // The rings go back next to their pins once they are raised.
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { [weak self] in self?.borders?.replaceRings(raise) }
     }
 
     private func handle(_ event: WindowEvent) {
@@ -1145,8 +1154,15 @@ final class Coordinator {
         dirty = []
         // A strip the fingers hold is laid out once they let go: till then it stays dirty.
         if let key = stripScroll?.key, keys.remove(key) != nil { dirty.insert(key) }
-        guard enabled else { return }
+        guard enabled else {
+            borders?.setPinned([])
+            return
+        }
         for key in keys where isVisible(key) { apply(key) }
+        // The pins shown now get their rings; those gone, hidden or on a Space not shown lose them.
+        if let borders {
+            borders.setPinned(Set(workspaces.filter { isVisible($0.key) }.flatMap { $0.value.ringedPins }))
+        }
     }
 
     /// Tells `PeekClicks` which of the strip's windows only peek in at a screen edge as this pass lays them out, and

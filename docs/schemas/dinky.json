@@ -206,7 +206,10 @@
         "noop-flash-color": { "$ref": "#/definitions/highlight", "description": "Colour of the ring around the window and of the glow inside it. Unset, the top-level highlight-color, or #d97757 (Claude's orange) without one." },
         "noop-flash-width": { "type": "number", "minimum": 0, "maximum": 8, "default": 2, "description": "The ring around the window, in points; 0 leaves it out." },
         "noop-flash-spread": { "type": "number", "minimum": 8, "maximum": 160, "default": 100, "description": "How far the glow inside the window reaches in, fading as it goes, in points." },
-        "noop-flash-opacity": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.6, "description": "The glow's opacity at the window's edge, as a share of the colour's own; 0 leaves it out." }
+        "noop-flash-opacity": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.6, "description": "The glow's opacity at the window's edge, as a share of the colour's own; 0 leaves it out." },
+        "pinned": { "type": "boolean", "default": true, "description": "Ring the windows of a pinned column in pinned-color, focused or not. Drawn even when borders are off." },
+        "pinned-color": { "$ref": "#/definitions/highlight", "description": "Colour of the pinned windows' ring. Unset, the top-level highlight-color, or #d97757 (Claude's orange) without one." },
+        "pinned-width": { "type": "number", "minimum": 0, "maximum": 8, "default": 2, "description": "The pinned windows' ring, in points; 0 leaves it out." }
       }
     },
     "focus-follows-mouse": {

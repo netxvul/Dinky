@@ -967,3 +967,45 @@ struct PinWideWindowTests {
         #expect(abs(frame.midX - ws.stripArea.midX) <= 1)
     }
 }
+
+struct PinRingTests {
+    @Test func `A lone pin and each window of a pinned stack get a ring, the band none`() throws {
+        let lone = try pinned(strip(4), 1, .left)
+        #expect(lone.ringedPins == [1])
+        var stack = try pinned(strip(4), 1, .left)
+        stack.focus(2)
+        do { let r = stack.join(.left); #expect(r) }
+        #expect(Set(stack.ringedPins) == [1, 2])
+        #expect(strip(4).ringedPins.isEmpty)
+    }
+
+    @Test func `A pinned accordion rings only the window in front`() throws {
+        var ws = try pinned(strip(4), 1, .left)
+        ws.focus(2)
+        do { let r = ws.join(.left); #expect(r) }
+        ws.setLayout(.accordion, nil)
+        ws.focus(2)
+        #expect(ws.ringedPins == [2])
+        ws.focus(1)
+        #expect(ws.ringedPins == [1])
+    }
+
+    @Test func `Both sides' pins get rings, none outside the scrolling layout`() throws {
+        var ws = try pinned(pinned(strip(4, width: 0.3), 1, .left), 4, .right)
+        #expect(Set(ws.ringedPins) == [1, 4])
+        ws.setAlgorithm(.dwindle(.tiles))
+        #expect(ws.ringedPins.isEmpty)
+    }
+
+    @Test func `A window fullscreen over the strip hides the rings, a pinned one keeps its own`() throws {
+        var ws = try pinned(strip(5), 1, .left)
+        ws.fullscreenPushesStrip = false
+        ws.focus(3)
+        ws.toggleFullscreen()
+        #expect(ws.ringedPins.isEmpty)
+        ws.toggleFullscreen()
+        ws.focus(1)
+        ws.toggleFullscreen()
+        #expect(ws.ringedPins == [1])
+    }
+}

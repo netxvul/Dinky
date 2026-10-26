@@ -72,6 +72,9 @@ extension Config {
     noop-flash-width = 2            # the ring around the window, 0 to 8 points
     noop-flash-spread = 100         # points the glow fades over inside the window, 8 to 160
     noop-flash-opacity = 0.6        # its opacity at the window's edge, 0 to 1
+    pinned = true                   # a pinned column's windows get a ring, even with enabled = false
+    # pinned-color = '#d97757'      # '#rrggbb', '#rrggbbaa' or 'accent'; unset is highlight-color, else '#d97757'
+    pinned-width = 2                # the pinned windows' ring, 0 to 8 points
 
     [focus-follows-mouse]
     enabled = false

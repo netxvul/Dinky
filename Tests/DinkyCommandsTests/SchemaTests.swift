@@ -275,6 +275,9 @@ struct SchemaTests {
         noop-flash-width = 3.5
         noop-flash-spread = 20
         noop-flash-opacity = 0.5
+        pinned = true
+        pinned-color = '#ff8800'
+        pinned-width = 3
 
         [focus-follows-mouse]
         enabled = true
