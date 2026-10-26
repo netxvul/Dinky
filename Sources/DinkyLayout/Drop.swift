@@ -83,14 +83,17 @@ extension Workspace {
     /// counts where it is inside the outer gaps, so over the menu bar, the Dock or an outer gap it is over the tile along
     /// that edge. In a strip, past the columns in view, over a parked sliver or the gutter, it goes beside the nearest
     /// one in view. Over an inner gap it is over the nearest tile, or the window's own place when that is nearest.
-    /// Over a tile, the frontmost where tiles overlap, it is over the zone of it there.
+    /// Over a tile, the frontmost where tiles overlap, it is over the zone of it there; over its own place only where
+    /// that is the frontmost, not where a pin is in front of it hanging under.
     public func dropHit(at point: CGPoint, in layout: Layout, excluding id: WindowID) -> DropHit {
         let area = gaps.inset(bounds)
         guard area.width > 1, area.height > 1 else { return .none }
         let p = CGPoint(x: min(max(point.x, area.minX), area.maxX - 1), y: min(max(point.y, area.minY), area.maxY - 1))
-        if layout.frames[id]?.contains(p) == true { return .own }
+        // The frontmost tile there: a pin is in front of a band window hanging under it, the dragged one too.
+        let front = layout.order.first { layout.frames[$0]!.contains(p) }
+        if front == id { return .own }
         if let edge = edgeDrop(at: p, in: layout, excluding: id) { return .tile(edge.target, edge.zone) }
-        if let target = layout.order.first(where: { $0 != id && layout.frames[$0]!.contains(p) }) {
+        if let target = front {
             return .tile(target, dropZone(at: p, onto: target, in: layout) ?? .swap)
         }
         // In a gap: the nearest of what shows, the window's own place included.
@@ -163,7 +166,9 @@ extension Workspace {
         endFullscreen()
         guard case .split(let side) = zone, splitsOnDrop else {
             if isScrolling, hasPins { return swapBesidePins(id, target) }
+            let shares = columnShares(id, target)
             guard swap(id, target) else { return false }
+            if let shares { keepColumnShares(shares) }
             focus(id)
             return true
         }
@@ -171,11 +176,15 @@ extension Workspace {
             dropColumn(id, beside: target, forward: side.isForward)
             normalize()
         } else {
+            var stacked = self
             let share = isScrolling ? root.path(of: target).map { width(ofColumn: $0[0]) } : nil
-            splitTile(of: target, with: id, side)
-            normalize()
-            if isScrolling { shareStack(with: id, besides: target) }
-            if let share, let column = root.path(of: id)?.first { setWidth(ofColumn: column, share) }
+            stacked.splitTile(of: target, with: id, side)
+            stacked.normalize()
+            if isScrolling { stacked.shareStack(with: id, besides: target) }
+            if let share, let column = stacked.root.path(of: id)?.first { stacked.setWidth(ofColumn: column, share) }
+            // Into a pin, not where the pin then leaves the band too little room.
+            if isScrolling, stacked.pinSide(of: id) != nil, lacksRoom(after: stacked) { return false }
+            self = stacked
         }
         focus(id)
         return true
@@ -253,6 +262,20 @@ extension Workspace {
             ratios[mine] = 1 / n
             column.setRatios(ratios)
         }
+    }
+
+    /// In a strip, the shares of the columns of `a` and `b` where a swap of the two would leave a column with windows of
+    /// two widths: one of them holds more than one window. Nil anywhere else.
+    func columnShares(_ a: WindowID, _ b: WindowID) -> [(column: Int, share: Double)]? {
+        guard isScrolling, let x = root.path(of: a)?.first, let y = root.path(of: b)?.first, x != y,
+              root.children[x].windows.count > 1 || root.children[y].windows.count > 1 else { return nil }
+        return [(x, width(ofColumn: x)), (y, width(ofColumn: y))]
+    }
+
+    /// Gives each column back its share, every window of it the same width, after a swap that moved windows between
+    /// them, as `columnShares` read them.
+    mutating func keepColumnShares(_ shares: [(column: Int, share: Double)]) {
+        for (column, share) in shares { setWidth(ofColumn: column, share) }
     }
 
     /// Take `id` out of its column into a new one beside `target`'s, keeping its width.

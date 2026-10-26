@@ -286,12 +286,11 @@ extension Workspace {
         if let focused { reveal(focused) }
     }
 
-    /// Whether focusing with `holdingScroll` holds the strip still: only where focusing can scroll a column to the
-    /// middle, which takes the window from under the pointer that pressed it. Scrolling as little as shows the column
-    /// whole leaves the pointer over the window, the part of it that showed staying on screen, so that scrolls at once as
-    /// it always has. Not while a window is fullscreen: focusing ends fullscreen or hands it on, laying the strip out
-    /// afresh anyway.
-    var canHoldScroll: Bool { isScrolling && columnCentring != .never && fullscreenWindows.isEmpty }
+    /// Whether focusing with `holdingScroll` holds the strip still: wherever focusing can scroll it, to the middle or as
+    /// little as shows the column whole, since either takes the tree from under the pointer that pressed it while the
+    /// screen has not moved yet, and a drag the press starts is measured against the tree. Not while a window is
+    /// fullscreen: focusing ends fullscreen or hands it on, laying the strip out afresh anyway.
+    var canHoldScroll: Bool { isScrolling && fullscreenWindows.isEmpty }
 
     /// The scroll offset the strip shows at: `scrollOffset` as the layout takes it, within the ends, the focused
     /// column whole.
@@ -588,7 +587,12 @@ extension Workspace {
     /// width; up and down work as in any tree, within the column.
     mutating func joinInStrip(_ direction: Direction) -> Bool {
         guard direction.orientation == .horizontal, let focused, let column = root.path(of: focused)?.first else {
-            return joinInTree(direction)
+            // Up or down, within a column: never into columns of their own, nor out of a pin or into one.
+            var joining = self
+            guard joining.joinInTree(direction), joining.root.children.count == root.children.count,
+                  joining.pins == pins, Set(joining.pinnedWindows) == Set(pinnedWindows) else { return false }
+            self = joining
+            return true
         }
         let neighbour = column + (direction.isForward ? 1 : -1)
         guard root.children.indices.contains(neighbour) else { return false }
@@ -598,8 +602,10 @@ extension Workspace {
         var joining = self
         joining.rekeyPins(leaving: focused)
         guard joining.joinInTree(direction), let joined = joining.root.path(of: focused)?.first else { return false }
+        joining.setWidth(ofColumn: joined, share)
+        // Into a pin, not where the pin then leaves the band too little room.
+        if joining.pinSide(ofColumn: joined) != nil, lacksRoom(after: joining) { return false }
         self = joining
-        setWidth(ofColumn: joined, share)
         reveal(focused)
         return true
     }
