@@ -21,7 +21,8 @@ extension Workspace {
     public func scrollShortcut(from starts: [WindowID: CGRect], to targets: [WindowID: CGRect])
         -> (starts: [WindowID: CGRect], targets: [WindowID: CGRect])? {
         guard isScrolling else { return nil }
-        let screen = bounds, columns = root.children.map { $0.windows.filter { starts[$0] != nil && targets[$0] != nil } }
+        let screen = bounds
+        let columns = root.children[bandRange].map { $0.windows.filter { starts[$0] != nil && targets[$0] != nil } }
         func shows(_ r: CGRect) -> Bool { min(r.maxX, screen.maxX) - max(r.minX, screen.minX) > Self.inView }
         var starts = starts, targets = targets, changed = false
         var before: [Int] = [], after: [Int] = []

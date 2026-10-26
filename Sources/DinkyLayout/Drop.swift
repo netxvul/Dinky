@@ -115,7 +115,7 @@ extension Workspace {
 
     /// In a strip, where `id`'s column starts on screen as the strip lays it out, before parking; nil anywhere else.
     public func columnStart(of id: WindowID) -> CGFloat? {
-        guard isScrolling, let index = root.path(of: id)?.first else { return nil }
+        guard isScrolling, let index = bandIndex(of: id) else { return nil }
         let area = stripArea, spans = columnSpans(in: area)
         return area.minX + spans[index].start - offset(for: spans, in: area)
     }
@@ -127,8 +127,8 @@ extension Workspace {
     /// start and the next come in under the pointer. Not for no more than an end column reaching into its gutter, as it
     /// does within the ends: the drop would land that far from where it showed. Nothing anywhere else.
     public mutating func scroll(columnOf id: WindowID, to x: CGFloat, pastEnds: Bool = false) {
-        guard isScrolling, let index = root.path(of: id)?.first else { return }
-        let area = stripArea, spans = columnSpans(in: area), inset = gaps.inset(bounds)
+        guard isScrolling, let index = bandIndex(of: id) else { return }
+        let area = stripArea, spans = columnSpans(in: area), inset = stripInset
         scrollOffset = area.minX + spans[index].start - x
         keepsScroll = false
         let within = offset(for: spans, in: area)

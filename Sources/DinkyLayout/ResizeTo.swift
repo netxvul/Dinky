@@ -17,9 +17,9 @@ extension Workspace {
             guard let frame = tiledLayout().frames[id] else { return false }
             let delta = axis == .horizontal ? size.width - frame.width : size.height - frame.height
             guard abs(delta) >= 0.5 else { continue }
-            if isScrolling, axis == .horizontal, let column = root.path(of: id)?.first, root.children.count > 1 {
+            if isScrolling, axis == .horizontal, let column = bandIndex(of: id), bandRange.count > 1 {
                 // The column takes the width; its neighbours keep theirs and move along.
-                let area = stripArea, share = Double((columnSpans(in: area)[column].width + delta) / area.width)
+                let share = Double((columnSpans(in: stripArea)[column].width + delta) / shareWidth)
                 setWidth(ofColumn: column, share)
                 reveal(id)
                 changed = true

@@ -72,20 +72,21 @@ extension Workspace {
     /// area, the focused one on a tie, or at an end of the strip, the column there, which the middle cannot reach once
     /// it shows whole; of a column of several, the one most recently focused.
     var snappedWindow: WindowID? {
-        guard isScrolling, !root.children.isEmpty else { return nil }
+        let band = bandRange
+        guard isScrolling, let first = band.first, let last = band.last else { return nil }
         let area = stripArea, spans = columnSpans(in: area)
         let offset = offset(for: spans, in: area, showingFocus: false)
         let away = { (i: Int) in abs(spans[i].start + spans[i].width / 2 - offset - area.width / 2) }
-        var index = focused.flatMap { root.path(of: $0)?.first } ?? 0
-        for i in spans.indices where away(i) < away(index) { index = i }
+        var index = focused.flatMap { bandIndex(of: $0) } ?? first
+        for i in band where away(i) < away(index) { index = i }
         if let limits = scrollLimits(for: spans, in: area) {
             let stays = { (i: Int) in
                 min(max(showing(spans[i], from: offset, in: area), limits.lowerBound), limits.upperBound) == offset
             }
-            if offset <= limits.lowerBound + 0.5, stays(0) {
-                index = 0
-            } else if offset >= limits.upperBound - 0.5, stays(spans.count - 1) {
-                index = spans.count - 1
+            if offset <= limits.lowerBound + 0.5, stays(first) {
+                index = first
+            } else if offset >= limits.upperBound - 0.5, stays(last) {
+                index = last
             }
         }
         switch root.children[index] {

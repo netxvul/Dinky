@@ -42,19 +42,37 @@ extension Workspace {
 
     public var isScrolling: Bool { algorithm == .scrolling }
 
+    /// The columns that scroll, as indices of the root's children: the band between the columns pinned to the
+    /// screen's sides, which are the first and the last. All of them when nothing is pinned.
+    var bandRange: Range<Int> { root.children.indices }
+
+    /// The index of `id`'s column while it is in the band; nil for a pinned column or a window not here.
+    func bandIndex(of id: WindowID) -> Int? {
+        root.path(of: id).flatMap { bandRange.contains($0[0]) ? $0[0] : nil }
+    }
+
+    /// The area inside the outer gaps the band has: all of it but a pinned column and an inner gap beside it on each
+    /// side pinned. The whole area inside the outer gaps when nothing is pinned.
+    var stripInset: CGRect { gaps.inset(bounds) }
+
+    /// The width a column's share is of: the strip's area as it is with nothing pinned, so pinning leaves the other
+    /// columns' widths alone.
+    var shareWidth: CGFloat { stripArea.width }
+
     /// Whether fullscreen here widens the window's column and pushes its neighbours off, rather than covering them.
     public var pushesFullscreen: Bool { isScrolling && fullscreenPushesStrip }
 
     /// The columns fullscreen widens to the whole screen: those holding a fullscreen window, when it pushes.
     var pushedColumns: Set<Int> {
         guard pushesFullscreen else { return [] }
-        return Set(fullscreenWindows.compactMap { root.path(of: $0)?.first })
+        return Set(fullscreenWindows.compactMap { bandIndex(of: $0) })
     }
 
     /// Put a window in a new column right of the focused one, at the default width.
     mutating func insertColumn(_ id: WindowID) {
-        let index = focused.flatMap { root.path(of: $0) }.map { $0[0] + 1 } ?? root.children.count
-        root.insert(.window(id), at: index)
+        let band = bandRange
+        let index = focused.flatMap { root.path(of: $0) }.map { $0[0] + 1 } ?? band.upperBound
+        root.insert(.window(id), at: min(max(index, band.lowerBound), band.upperBound))
         columnWidths[id] = columnWidth
     }
 
@@ -76,9 +94,10 @@ extension Workspace {
     /// does a lone column. A fullscreen column pushing the others off parks them, so it keeps them. Column widths
     /// are shares of its width.
     var stripArea: CGRect {
-        let area = gaps.inset(bounds)
-        guard root.children.count > 1 else { return area }
-        if pushedColumns.isEmpty, let end = columnSpans(in: area).last, end.start + end.width <= area.width { return area }
+        let area = stripInset, band = bandRange
+        guard band.count > 1 else { return area }
+        if pushedColumns.isEmpty, let end = columnSpans(in: area)[safe: band.upperBound - 1],
+           end.start + end.width <= area.width { return area }
         let clear = Self.peek + gaps.horizontal / 2
         let left = walls.contains(.left) ? 0 : max(clear - gaps.left, 0)
         let right = walls.contains(.right) ? 0 : max(clear - gaps.right, 0)
@@ -91,14 +110,14 @@ extension Workspace {
     /// `pushed` is as wide as `area`, so with its half gaps it stays a whole gap from the gutters either side; at
     /// an end of the strip, where nothing is parked, it reaches on through the gutter out to the outer gap.
     func columnSpans(in area: CGRect, pushed: Set<Int> = []) -> [(start: CGFloat, width: CGFloat)] {
-        let count = root.children.count, gap = gaps.horizontal
+        let band = bandRange, gap = gaps.horizontal
         var start: CGFloat = 0
         return root.children.indices.map { i in
-            let insets = (i > 0 ? gap / 2 : 0) + (i < count - 1 ? gap / 2 : 0)
+            let insets = (i > band.lowerBound ? gap / 2 : 0) + (i < band.upperBound - 1 ? gap / 2 : 0)
             let minimum = root.children[i].minimumExtent(.horizontal, gap: gap, padding: accordionPadding, minimumSizes)
             let share = pushed.contains(i) ? area.width + endGutters(of: i, area).left + endGutters(of: i, area).right
                 : (area.width * CGFloat(width(ofColumn: i))).rounded()
-            let width = count == 1 ? area.width : max(share, minimum + insets)
+            let width = band.count == 1 ? area.width : max(share, minimum + insets)
             defer { start += width }
             return (start, width)
         }
@@ -107,8 +126,9 @@ extension Workspace {
     /// The gutters beside column `index` at the ends of the strip, where nothing is parked: the width between `area`
     /// and the outer gap on the side with no column beyond it.
     func endGutters(of index: Int, _ area: CGRect) -> (left: CGFloat, right: CGFloat) {
-        let inset = gaps.inset(bounds)
-        return (index == 0 ? area.minX - inset.minX : 0, index == root.children.count - 1 ? inset.maxX - area.maxX : 0)
+        let inset = stripInset, band = bandRange
+        return (index == band.lowerBound ? area.minX - inset.minX : 0,
+                index == band.upperBound - 1 ? inset.maxX - area.maxX : 0)
     }
 
     /// The scroll offset the layout uses. The strip never scrolls past either end (`scrollLimits`), and the column at
@@ -119,10 +139,10 @@ extension Workspace {
     /// (`holdsScroll`) or fingers scroll it freely (`freeScrollFrom`), the offset is only kept within the ends.
     func offset(for spans: [(start: CGFloat, width: CGFloat)], in area: CGRect, showingFocus: Bool = true) -> CGFloat {
         let wanted = showingFocus && !holdsScroll && freeScrollFrom == nil
-            ? focused.flatMap { root.path(of: $0)?.first }.map { showing(spans[$0], from: scrollOffset, in: area) } : nil
+            ? focused.flatMap { bandIndex(of: $0) }.map { showing(spans[$0], from: scrollOffset, in: area) } : nil
         if keepsScroll { return wanted ?? scrollOffset }
         guard let limits = scrollLimits(for: spans, in: area) else {
-            let total = spans.last.map { $0.start + $0.width } ?? 0, inset = gaps.inset(bounds)
+            let total = bandEnd(of: spans), inset = stripInset
             return (area.minX - inset.minX + (total - inset.width) / 2).rounded()
         }
         return min(max(wanted ?? scrollOffset, limits.lowerBound), limits.upperBound)
@@ -133,11 +153,17 @@ extension Workspace {
     /// centres the column there, the screen bare beyond it; `alwaysFill` keeps them, so the column there goes to the
     /// screen's edge and the columns beside it fill the rest.
     func scrollLimits(for spans: [(start: CGFloat, width: CGFloat)], in area: CGRect) -> ClosedRange<CGFloat>? {
-        let total = spans.last.map { $0.start + $0.width } ?? 0, inset = gaps.inset(bounds)
+        let total = bandEnd(of: spans), inset = stripInset, band = bandRange
         let first = area.minX - inset.minX, last = total - area.width - (inset.maxX - area.maxX)
         guard first < last else { return nil }
-        guard columnCentring.centresEnds, let start = spans.first, let end = spans.last else { return first...last }
+        guard columnCentring.centresEnds, !band.isEmpty else { return first...last }
+        let start = spans[band.lowerBound], end = spans[band.upperBound - 1]
         return min(first, centred(start, in: area))...max(last, centred(end, in: area))
+    }
+
+    /// Where the band ends along the strip: the end of its last column, 0 with none.
+    func bandEnd(of spans: [(start: CGFloat, width: CGFloat)]) -> CGFloat {
+        spans[safe: bandRange.upperBound - 1].map { $0.start + $0.width } ?? 0
     }
 
     /// The offset that puts `column` in the middle of the area.
@@ -160,7 +186,7 @@ extension Workspace {
     mutating func reveal(_ id: WindowID) {
         holdsScroll = false
         freeScrollFrom = nil
-        guard isScrolling, let index = root.path(of: id)?.first else { return }
+        guard isScrolling, let index = bandIndex(of: id) else { return }
         let area = stripArea, spans = columnSpans(in: area), column = spans[index]
         let shown = showing(column, from: offset(for: spans, in: area), in: area)
         switch columnCentring {
@@ -204,9 +230,9 @@ extension Workspace {
     func stripLayout(pushed: Set<Int> = []) -> Layout {
         var result = Layout()
         let area = stripArea, spans = columnSpans(in: area, pushed: pushed), inset = gaps.inset(bounds)
-        let gap = gaps.horizontal, last = root.children.count - 1
+        let gap = gaps.horizontal, band = bandRange, first = band.lowerBound, last = band.upperBound - 1
         var offset = offset(for: spans, in: area)
-        let focusedColumn = focused.flatMap { root.path(of: $0)?.first }
+        let focusedColumn = focused.flatMap { bandIndex(of: $0) }
         if let column = focusedColumn, pushed.contains(column) {
             offset = spans[column].start + endGutters(of: column, area).left
         }
@@ -216,7 +242,7 @@ extension Workspace {
         let unpushed = pushed.isEmpty ? spans : columnSpans(in: area)
         let edges = spans.indices.map { i -> (left: CGFloat, right: CGFloat) in
             let x = area.minX + spans[i].start - offset
-            return ((x + (i > 0 ? gap / 2 : 0)).rounded(), (x + spans[i].width - (i < last ? gap / 2 : 0)).rounded())
+            return ((x + (i > first ? gap / 2 : 0)).rounded(), (x + spans[i].width - (i < last ? gap / 2 : 0)).rounded())
         }
         // Not while fingers scroll the strip freely: a column would change width under them as it came to the wall.
         let reaching: (left: Int?, right: Int?) = pushed.isEmpty && freeScrollFrom == nil ? reachingWalls(edges, in: area)
@@ -253,14 +279,14 @@ extension Workspace {
     /// gap. Only less room than the narrowest column takes: more is a column's worth, as columns of other widths can
     /// leave, and the column keeps its width. `edges` are each column's window edges where the strip has it.
     func reachingWalls(_ edges: [(left: CGFloat, right: CGFloat)], in area: CGRect) -> (left: Int?, right: Int?) {
-        let inset = gaps.inset(bounds), most = area.width * CGFloat(Self.minimumColumnWidth)
-        let inView = edges.indices.filter { edges[$0].left >= bounds.minX - 1 && edges[$0].right <= bounds.maxX + 1 }
+        let inset = stripInset, band = bandRange, most = area.width * CGFloat(Self.minimumColumnWidth)
+        let inView = band.filter { edges[$0].left >= bounds.minX - 1 && edges[$0].right <= bounds.maxX + 1 }
         let reaches = { (room: CGFloat) in room > 0 && room < most }
         let left = inView.first.flatMap { i in
-            i > 0 && walls.contains(.left) && reaches(edges[i].left - inset.minX) ? i : nil
+            i > band.lowerBound && walls.contains(.left) && reaches(edges[i].left - inset.minX) ? i : nil
         }
         let right = inView.last.flatMap { i in
-            i < edges.count - 1 && walls.contains(.right) && reaches(inset.maxX - edges[i].right) ? i : nil
+            i < band.upperBound - 1 && walls.contains(.right) && reaches(inset.maxX - edges[i].right) ? i : nil
         }
         return (left, right)
     }
@@ -292,8 +318,10 @@ extension Workspace {
     /// The windows of `id`'s column, and of the columns left and right of it, each side nearest column first.
     public func columns(around id: WindowID) -> (own: [WindowID], left: [[WindowID]], right: [[WindowID]]) {
         guard isScrolling, let column = root.path(of: id)?.first else { return ([], [], []) }
-        let columns = root.children.map(\.windows)
-        return (columns[column], columns[..<column].reversed(), Array(columns[(column + 1)...]))
+        let columns = root.children.map(\.windows), band = bandRange
+        let left = columns[band.lowerBound..<max(min(column, band.upperBound), band.lowerBound)]
+        let right = columns[min(max(column + 1, band.lowerBound), band.upperBound)..<band.upperBound]
+        return (columns[column], left.reversed(), Array(right))
     }
 
     /// Where the strip's windows go on screen. A window stays where the strip puts it while more of it shows than
@@ -410,7 +438,7 @@ extension Workspace {
                 columnWidths[focused] = share
             } else {
                 let other = column + (forward ? 1 : -1)
-                guard root.children.indices.contains(other) else { return false }
+                guard bandRange.contains(other), bandRange.contains(column) else { return false }
                 let node = root.children[other]
                 root.replace(at: other, with: root.children[column])
                 root.replace(at: column, with: node)
@@ -442,7 +470,7 @@ extension Workspace {
         guard let focused, let column = root.path(of: focused)?.first else { return false }
         let old = width(ofColumn: column)
         let (before, offset) = (tiledLayout(), scrollOffset)
-        setWidth(ofColumn: column, old + Double(delta / stripArea.width))
+        setWidth(ofColumn: column, old + Double(delta / shareWidth))
         reveal(focused)
         // A step a lone column or the minimum sizes swallow whole is undone, so the width does not drift out of sight.
         guard tiledLayout() == before else { return true }
