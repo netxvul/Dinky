@@ -1084,7 +1084,7 @@ final class Coordinator {
         stripScroll?.ticked = target
         guard now - scroll.tickedAt >= Self.stripTickGap else { return }
         stripScroll?.tickedAt = now
-        tapTrackpad("strip column \(target)")
+        tapTrackpad("strip column \(target)", actuation: config.gestures.scroll.hapticStrength.actuation)
     }
 
     /// The fingers push the strip on display `uuid` on past an end, its `last` or its first: the display's side there

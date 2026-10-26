@@ -701,6 +701,7 @@ off.
 | `switcher-ms` | `1000` | How long it shows, the window taking focus picked, `100` to `5000`. |
 | `edge-flash` | `true` | `false` keeps the display's side from glowing as the fingers push the strip on past that end. |
 | `haptic` | `true` | The trackpad ticks, as the switchers' picks do, each time the column a let-go would settle on changes under the fingers: the next comes to the middle, or an end of the strip shows. Felt only while the fingers touch the trackpad, so only as they move it, one tick in 55 ms at most. `false` keeps it still. |
+| `haptic-strength` | `'medium'` | How strongly it ticks: `'light'`, as the switchers' picks, which a built-in trackpad can barely give under moving fingers; `'medium'`, as a bound swipe's tap; or `'strong'`. |
 
 </div>
 
@@ -1022,6 +1023,7 @@ thumbnails = 'windows'          # windows (pictures, need Screen Recording) | ic
 # switcher-ms = 1000            # for this long, 100 to 5000
 # edge-flash = true             # pushed on past an end, the display's side there glows
 # haptic = true                 # the trackpad ticks as each column comes to the middle under the fingers
+# haptic-strength = 'medium'     # light | medium (as a bound swipe's tap) | strong
 
 # Which key of each pair bindings answer to: both | left | right. With alt = 'left',
 # right Option still types special characters.

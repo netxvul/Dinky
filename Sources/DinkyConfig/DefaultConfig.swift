@@ -162,6 +162,7 @@ extension Config {
     # switcher-ms = 1000            # for this long, 100 to 5000
     # edge-flash = true             # pushed on past an end, the display's side there glows
     # haptic = true                 # the trackpad ticks as each column comes to the middle under the fingers
+    # haptic-strength = 'medium'     # light | medium (as a bound swipe's tap) | strong
 
     # Which key of each pair bindings answer to: both | left | right. With alt = 'left',
     # right Option still types special characters.

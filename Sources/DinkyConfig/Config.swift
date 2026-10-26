@@ -548,6 +548,20 @@ public struct MouseSwipes: Equatable {
 /// go, it coasts on at their speed and settles with the column nearest the middle in view, and once it rests the
 /// window switcher shows it for `switcher-ms`, that column's window picked, unless not `show-switcher`. Pushed on past
 /// an end, the display's side there glows, unless not `edge-flash`. Off until `enabled`. Never on a mouse.
+/// How strongly the trackpad taps.
+public enum HapticStrength: String, CaseIterable, Equatable, Sendable {
+    case light, medium, strong
+
+    /// The trackpad actuator's actuation for it.
+    public var actuation: Int32 {
+        switch self {
+        case .light: 3
+        case .medium: 4
+        case .strong: 6
+        }
+    }
+}
+
 public struct ScrollGesture: Equatable {
     public var enabled = false
     /// How many fingers scroll, 3 to 5.
@@ -562,6 +576,8 @@ public struct ScrollGesture: Equatable {
     /// Whether the trackpad ticks, as the switchers' picks do, each time the column a let-go would settle on changes
     /// under the fingers.
     public var haptic = true
+    /// How strongly: the trackpad's actuation, 3 light, 4 medium as a bound swipe's tap, 6 strong.
+    public var hapticStrength = HapticStrength.medium
 
     public init() {}
 
@@ -574,6 +590,7 @@ public struct ScrollGesture: Equatable {
         showSwitcher = try t.bool("show-switcher") ?? showSwitcher
         edgeFlash = try t.bool("edge-flash") ?? edgeFlash
         haptic = try t.bool("haptic") ?? haptic
+        hapticStrength = try t.choice("haptic-strength") ?? hapticStrength
         switcherMs = try t.int("switcher-ms") ?? switcherMs
         guard (100...5000).contains(switcherMs) else {
             throw ConfigError(path: t.path("switcher-ms"), "must be 100 to 5000")
