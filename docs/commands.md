@@ -98,7 +98,10 @@ a single window or a stack. A pinned column keeps its width, a share of the
 screen inside the outer gaps, and the band keeps at least a quarter of it; a
 pin or a resize that would leave less is refused, with the noop flash. A band
 window wider than the band, as an app's minimum width can make it, hangs past
-the band's edge, under a pin there, the pins staying in front. A band left under
+the band's edge, under a pin there. With dinky's Dock scripting addition the
+pins stay in front of every window; without it the active app's windows, and
+the focused window of a pin's own app, can show over a pin, sliding past or
+hanging under it. A band left under
 a quarter later, as when a pinned app turns out to need a wider window, takes
 the room from the pins, the one pinned last first, down to what their windows
 need; they keep the narrower width and are never unpinned for it.

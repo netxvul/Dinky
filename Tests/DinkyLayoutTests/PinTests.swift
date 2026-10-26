@@ -1068,3 +1068,16 @@ struct PinReviewTests {
         #expect(ws.pinsToRaise(stack: [own, pin], candidates: [3], takingHold: true).isEmpty, "the pin's own app's")
     }
 }
+
+struct PinMiniatureWideTests {
+    @Test func `The miniature shows a band column wider than the band, clipped to it`() throws {
+        var ws = try pinned(strip(5), 5, .right)
+        ws.minimumSizes[4] = CGSize(width: 900, height: 100)
+        ws.focus(1)
+        ws.focus(4)
+        try #require(!ws.isInView(4))
+        let mini = Miniature(screen: ws.bounds, height: 60, workspace: ws)
+        #expect(mini.tiles.map(\.id).contains(4))
+        #expect(mini.tiles.last?.id == 5, "the pin drawn over it")
+    }
+}

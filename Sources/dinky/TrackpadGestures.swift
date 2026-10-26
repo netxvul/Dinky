@@ -267,7 +267,11 @@ final class TrackpadGestures {
             case .run(let commands):
                 guard AppState.shared.enabled else { return }
                 // A mouse has nothing to tick; the trackpad would, under the other hand.
-                if !mouse { _ = dinky_trackpad_tap(4) }
+                if !mouse {
+                    print("\(stamp()) haptic: trackpad swipe ran \(commands.joined(separator: ", "))")
+                    fflush(stdout)
+                    _ = dinky_trackpad_tap(4)
+                }
                 ModifierHold.gesturing = true
                 ModifierHold.fingersOnMouse = mouse
                 defer { ModifierHold.gesturing = false }

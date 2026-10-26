@@ -440,7 +440,7 @@ final class WindowSwitcher {
         guard let index, index != view.picked else { return }
         view.pick(index)
         // Felt, as a pointer's pick is, when the swiping fingers move it.
-        if hold.byFingers { tapTrackpad() }
+        if hold.byFingers { tapTrackpad("window switcher pick moved by the fingers") }
     }
 
     private func pointerMoved(to point: CGPoint) {
@@ -451,7 +451,7 @@ final class WindowSwitcher {
         let local = CGPoint(x: point.x - origin.x, y: point.y - origin.y)
         guard let index = arrangement.index(at: local), index != view.picked else { return }
         view.pick(index)
-        tapTrackpad()
+        tapTrackpad("window switcher pick moved by the pointer")
     }
 
     /// Focuses the picked window, if it is not the focused one already, and closes the capsule.

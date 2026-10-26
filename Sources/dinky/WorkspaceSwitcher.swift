@@ -246,7 +246,7 @@ final class WorkspaceSwitcher {
         guard index != view.picked else { return }
         view.pick(index)
         // Felt, as a pointer's pick is, when the swiping fingers move it.
-        if hold.byFingers { tapTrackpad() }
+        if hold.byFingers { tapTrackpad("workspace switcher pick moved by the fingers") }
     }
 
     private func pointerMoved(to point: CGPoint) {
@@ -256,7 +256,7 @@ final class WorkspaceSwitcher {
         }
         guard let index = layout.index(atX: point.x - origin.x), index != view.picked else { return }
         view.pick(index)
-        tapTrackpad()
+        tapTrackpad("workspace switcher pick moved by the pointer")
     }
 
     /// Switches to the picked workspace, or focuses the picked display's Space, and closes the capsule.

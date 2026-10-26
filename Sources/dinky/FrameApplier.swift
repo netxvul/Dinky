@@ -37,6 +37,8 @@ final class FrameApplier {
     /// The windows a raise is putting into order behind its front one, so that macOS reporting focus on them on the
     /// way is not taken for the user's doing. Under `lock`.
     private var raising = RaiseEchoes()
+    /// Apps that did not answer a raise, till when they are left out of raises: on raiseQueue only.
+    private var unansweredRaises: [pid_t: CFTimeInterval] = [:]
     private static let minimumsURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("dinky/minimum-sizes.json")
 
@@ -200,17 +202,20 @@ final class FrameApplier {
     /// the band's windows sliding under them. Not when that could move focus (see `raisingKeepsFocus`). `ordering`, they
     /// are ordered through Dock's scripting addition instead, which also puts them in front of the active app's windows,
     /// where Accessibility cannot, and makes none its app's main window.
-    /// `done` runs on the main thread once they are, as their rings are placed next to them again then.
+    /// `done` runs on the main thread once they are, or once that was refused, told which: their rings are placed next
+    /// to them again then.
     func raisePins(_ ids: [WindowID], pids: [WindowID: pid_t], front: WindowID?, ordering: Bool = false,
-                   done: @escaping () -> Void = {}) {
+                   done: @escaping (Bool) -> Void = { _ in }) {
         raiseQueue.async {
-            guard Self.raisingKeepsFocus(ids, front: front, pids: pids) else { return }
+            guard Self.raisingKeepsFocus(ids, front: front, pids: pids) else {
+                return DispatchQueue.main.async { done(false) }
+            }
             if ordering {
                 dinky_sa_order_batch(ids, Int32(ids.count))
             } else {
                 self.raise(ids, pids: pids, front: front)
             }
-            DispatchQueue.main.async(execute: done)
+            DispatchQueue.main.async { done(true) }
         }
     }
 
@@ -294,8 +299,11 @@ final class FrameApplier {
         }
         defer { if !echoing.isEmpty { endRaise() } }
         var unanswered: Set<pid_t> = []
+        let now = CACurrentMediaTime()
+        unansweredRaises = unansweredRaises.filter { $0.value > now }
         for id in ids {
-            guard let pid = pids[id], !unanswered.contains(pid), !scheduler.isBusy(pid) else { continue }
+            guard let pid = pids[id], !unanswered.contains(pid), !scheduler.isBusy(pid), unansweredRaises[pid] == nil
+            else { continue }
             switch element(pid: pid, id: id) {
             case .found(let element):
                 let started = Date()
@@ -305,6 +313,9 @@ final class FrameApplier {
             case .gone: continue
             }
         }
+        // An app that did not answer is not asked again for a while, as raises come up to ten times a second while
+        // fingers hold a strip.
+        for pid in unanswered { unansweredRaises[pid] = now + 2 }
     }
 
     /// Ends the raise under way: its windows settle for `RaiseEchoes.settle`, and then focus is read again, a little
