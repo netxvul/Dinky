@@ -49,6 +49,20 @@ public enum DropHit: Equatable, Sendable {
     case none
 }
 
+extension DropHit {
+    /// Whether this hit, in the tree as it is, asks for its own drop although the pointer is over the dragged window's
+    /// place in a drop shown beside a tile (`shown` split left or right, `shows` the hit in the tree as that drop leaves
+    /// it, `.own`). Making room for that drop slides the column aimed at out from under the pointer, so the pointer goes
+    /// on over the preview where the column showed: its top or bottom band there, the stacking zone of a tile as the
+    /// tree is, asks to stack onto it. Anywhere else over the preview the drop shown stays, as it does for every other
+    /// drop shown, so windows making room cannot send it back and forth.
+    public func stacks(overBeside shown: DropZone, shows: DropHit) -> Bool {
+        guard shows == .own, case .split(let side) = shown, side.orientation == .horizontal,
+              case .tile(_, .split(let way)) = self else { return false }
+        return way.orientation == .vertical
+    }
+}
+
 /// Dropping a dragged window onto another tile.
 extension Workspace {
     /// Whether a drop beside a tile splits it. A fixed layout's template only swaps.

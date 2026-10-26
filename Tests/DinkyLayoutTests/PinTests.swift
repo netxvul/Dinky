@@ -1461,3 +1461,68 @@ struct StripTickerEndTests {
         #expect(ticked.filter { $0 == 1 }.count == 1, "\(ticked)")
     }
 }
+
+/// The top or bottom band of `rect`, as the pointer aims at it to stack.
+private func band(_ rect: CGRect, top: Bool) -> CGPoint {
+    CGPoint(x: rect.midX, y: top ? rect.minY + 0.1 * rect.height : rect.maxY - 0.1 * rect.height)
+}
+
+struct BesideDropStackingTests {
+    /// A strip of six at 30%, 1 and 2 stacked in the left pin, as `pinned` and `join` leave it.
+    private func pinnedStack() throws -> Workspace {
+        var ws = try pinned(strip(6, width: 0.3), 1, .left)
+        ws.focus(2)
+        do { let r = ws.join(.left); #expect(r) }
+        try #require(shape(ws.root) == "h[v[1 2] 3 4 5 6]")
+        return ws
+    }
+
+    @Test func `Out of a pinned stack onto the column next to the pin, after a drop beside the pin showed`() throws {
+        let ws = try pinnedStack()
+        let real = ws.layout()
+        for top in [true, false] {
+            let point = band(real.frames[3]!.intersection(ws.bounds), top: top)
+            #expect(ws.dropHit(at: point, in: real, excluding: 2) == .tile(3, .split(top ? .up : .down)))
+            // The pointer crossed the pin's right zone on the way: the drop beside it shows, 2 where 3 was.
+            var shows = ws
+            do { let r = shows.drop(2, onto: 1, .split(.right)); #expect(r) }
+            let hit = shows.dropHit(at: point, in: shows.layout(), excluding: 2)
+            #expect(hit == .own, "the preview took 3's place under the pointer")
+            #expect(ws.dropHit(at: point, in: real, excluding: 2).stacks(overBeside: .split(.right), shows: hit))
+            var stacked = ws
+            do { let r = stacked.drop(2, onto: 3, .split(top ? .up : .down)); #expect(r) }
+            #expect(shape(stacked.root) == (top ? "h[1 v[2 3] 4 5 6]" : "h[1 v[3 2] 4 5 6]"))
+            marked(stacked, pins: [.left: 1])
+        }
+    }
+
+    @Test func `Across a column's left zone and up into its top band stacks onto it`() {
+        let ws = strip(5, width: 0.3)
+        let real = ws.layout()
+        let point = band(real.frames[3]!.intersection(ws.bounds), top: true)
+        var shows = ws
+        do { let r = shows.drop(5, onto: 3, .split(.left)); #expect(r) }
+        let hit = shows.dropHit(at: point, in: shows.layout(), excluding: 5)
+        try? #require(hit == .own)
+        #expect(ws.dropHit(at: point, in: real, excluding: 5).stacks(overBeside: .split(.left), shows: hit))
+    }
+
+    @Test func `A drop beside a column the pointer rests on stays`() {
+        let ws = strip(5, width: 0.3)
+        let real = ws.layout(), r3 = real.frames[3]!.intersection(ws.bounds)
+        // Left of the middle of 3, half way down: beside it.
+        let point = CGPoint(x: r3.minX + 0.2 * r3.width, y: r3.midY)
+        let asked = ws.dropHit(at: point, in: real, excluding: 5)
+        #expect(asked == .tile(3, .split(.left)))
+        #expect(!asked.stacks(overBeside: .split(.left), shows: .own))
+        #expect(!DropHit.tile(3, .swap).stacks(overBeside: .split(.left), shows: .own))
+    }
+
+    @Test func `A stacking drop shown stays while the pointer is over its preview`() {
+        // Shown stacked, the pointer over the window's place in it: nothing to switch to.
+        #expect(!DropHit.tile(3, .split(.up)).stacks(overBeside: .split(.up), shows: .own))
+        #expect(!DropHit.tile(3, .split(.up)).stacks(overBeside: .swap, shows: .own))
+        // Not over its preview: the hit in the tree as shown counts as ever.
+        #expect(!DropHit.tile(3, .split(.up)).stacks(overBeside: .split(.right), shows: .tile(4, .swap)))
+    }
+}
