@@ -205,7 +205,8 @@ final class FrameApplier {
     /// `done` runs on the main thread once they are, given the ones raised or ordered, none where that was refused:
     /// their rings are placed next to them again then.
     func raisePins(_ ids: [WindowID], pids: [WindowID: pid_t], front: WindowID?, frontPid: pid_t = 0,
-                   pinned: Set<WindowID> = [], ordering: Bool = false, done: @escaping ([WindowID]) -> Void = { _ in }) {
+                   asked: WindowID = 0, pinned: Set<WindowID> = [], ordering: Bool = false,
+                   done: @escaping ([WindowID]) -> Void = { _ in }) {
         raiseQueue.async {
             if ordering {
                 // Ordering moves no focus, but a pin of an app focused now, other than the one dinky has in front, could
@@ -216,7 +217,9 @@ final class FrameApplier {
                 // TODO: check SLSWindowIsOrderedIn in the payload's order too, at its next version.
                 let focused = dinky_border_focused_window()
                 let live = focused != 0 ? dinky_window_info(focused).pid : 0
-                let owner = live != frontPid || (focused != front && !pinned.contains(focused)) ? live : 0
+                // Against what the window server had in front as it was asked (`asked`), not the window dinky may be about
+                // to focus, which it has not activated yet.
+                let owner = live != frontPid || (focused != asked && !pinned.contains(focused)) ? live : 0
                 let shown = Set(onScreenOrder())
                 let ordered = ids.filter { shown.contains($0) && (owner == 0 || pids[$0] != owner) }
                 if !ordered.isEmpty { dinky_sa_order_batch(ordered, Int32(ordered.count)) }

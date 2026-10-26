@@ -169,8 +169,14 @@ bool dinky_touches_start(DinkyTouchFrame frame)
     [handlers addObject:copied];
     handler = copied;
     startAll();
-    if (!port) watchDevices();
+    dinky_devices_watch();
     return true;
+}
+
+void dinky_devices_watch(void)
+{
+    if (port) return;
+    watchDevices();
 }
 
 void dinky_touches_stop(void)

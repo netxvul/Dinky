@@ -35,14 +35,16 @@ public struct StripTicker: Equatable, Sendable {
         feltOffset = offset
     }
 
-    /// The strip is at `offset`, a let-go settling on `target`, at time `now`.
-    public mutating func moved(to target: WindowID?, offset: CGFloat, at now: CFTimeInterval) -> Decision {
+    /// The strip is at `offset`, a let-go settling on `target`, at time `now`; `atEnd` where it can go no further that
+    /// way, as an end's column becomes the target only there and would never be `margin` from where the last was felt.
+    public mutating func moved(to target: WindowID?, offset: CGFloat, at now: CFTimeInterval,
+                               atEnd: Bool = false) -> Decision {
         guard let target else { return .none }
         if target == felt {
             feltOffset = offset
             return .none
         }
-        guard abs(offset - feltOffset) >= Self.margin else { return .none }
+        guard atEnd || abs(offset - feltOffset) >= Self.margin else { return .none }
         // A millisecond's grace, so a check scheduled for the gap's end is not a hair early.
         guard now - tickedAt >= Self.gap - 0.001 else { return .later(tickedAt + Self.gap) }
         felt = target

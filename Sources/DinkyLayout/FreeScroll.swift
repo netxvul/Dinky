@@ -68,6 +68,16 @@ extension Workspace {
         freeScrollFrom = nil
     }
 
+    /// While fingers hold the strip, whether it is at an end of where it can scroll, as near as a let-go takes for the
+    /// column there.
+    public var heldAtEnd: Bool {
+        guard isScrollingFreely else { return false }
+        let area = stripArea
+        guard let limits = heldLimits(for: columnSpans(in: area), in: area) else { return true }
+        let offset = shownOffset
+        return offset <= limits.lowerBound + 0.5 || offset >= limits.upperBound - 0.5
+    }
+
     /// While fingers hold the strip, the window a let-go now, with no momentum, would settle on: what the trackpad
     /// ticks for as it changes. Nil while nothing holds it.
     public var heldTarget: WindowID? { isScrollingFreely ? snappedWindow : nil }

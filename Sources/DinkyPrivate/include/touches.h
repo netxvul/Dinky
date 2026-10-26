@@ -13,3 +13,7 @@ typedef void (^DinkyTouchFrame)(int fingers, double x, double y, double time, ui
 bool dinky_touches_start(DinkyTouchFrame frame);
 // Stops them all.
 void dinky_touches_stop(void);
+
+// Watches trackpads come and go and the Mac wake, so the touches restart and the haptics' actuators are found
+// afresh. Started by dinky_touches_start, and by the first tap where no gesture reads touches. Main thread.
+void dinky_devices_watch(void);

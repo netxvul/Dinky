@@ -1,5 +1,7 @@
 #include <dlfcn.h>
 #import "haptics.h"
+#import "touches.h"
+#include <time.h>
 
 typedef CFArrayRef (*DeviceCreateList)(void);
 typedef OSStatus (*DeviceGetDeviceID)(CFTypeRef device, uint64_t *deviceID);
@@ -19,7 +21,7 @@ static ActuatorClose closeActuator;
 // (`dinky_trackpad_actuators_reset`), so a Magic Trackpad that connects later gets the taps too. Main thread.
 static NSMutableArray *actuators;
 // When none was found, so a Mac without one is not searched on every tap: again only after a reset or a while.
-static CFAbsoluteTime noneFoundAt;
+static double noneFoundAt;
 
 static bool load(void)
 {
@@ -56,17 +58,14 @@ static void openAll(void)
     }
 }
 
-// Taps them all; true when every one took it, `any` set when at least one did.
-static bool tapAll(int32_t actuation, bool *any)
+// Now, on a clock that only goes forward, in seconds.
+static double now(void)
 {
-    bool all = true;
-    *any = false;
-    for (id actuator in actuators) {
-        if (actuate((__bridge CFTypeRef)actuator, actuation, 0, 1.0f, 2.0f) == kIOReturnSuccess) *any = true;
-        else all = false;
-    }
-    return all;
+    return (double)clock_gettime_nsec_np(CLOCK_UPTIME_RAW) / 1e9;
 }
+
+// When the actuators were last found afresh because none took a tap.
+static double lastRescanAt;
 
 void dinky_trackpad_actuators_reset(void)
 {
@@ -75,23 +74,46 @@ void dinky_trackpad_actuators_reset(void)
     noneFoundAt = 0;
 }
 
+// Finds the actuators; none found is remembered (`noneFoundAt`), the array left nil. True when there is one.
+static bool find(void)
+{
+    openAll();
+    if (actuators.count) return true;
+    actuators = nil;
+    noneFoundAt = now();
+    return false;
+}
+
+// Taps every actuator; those that fail are closed and dropped. True when at least one took it.
+static bool tapAll(int32_t actuation)
+{
+    bool any = false;
+    NSMutableArray *failed = [NSMutableArray array];
+    for (id actuator in actuators) {
+        if (actuate((__bridge CFTypeRef)actuator, actuation, 0, 1.0f, 2.0f) == kIOReturnSuccess) any = true;
+        else [failed addObject:actuator];
+    }
+    for (id actuator in failed) {
+        closeActuator((__bridge CFTypeRef)actuator);
+        [actuators removeObject:actuator];
+    }
+    return any;
+}
+
 bool dinky_trackpad_tap(int32_t actuation)
 {
     if (!load()) return false;
+    // So a trackpad coming or going, or a wake, finds them afresh, whether or not a gesture reads touches.
+    dinky_devices_watch();
     if (!actuators) {
-        if (noneFoundAt != 0 && CFAbsoluteTimeGetCurrent() - noneFoundAt < 5) return false;
-        openAll();
+        if (noneFoundAt != 0 && now() - noneFoundAt < 5) return false;
+        if (!find()) return false;
     }
-    bool any = false;
-    // One that failed, as a Magic Trackpad gone to sleep, is found afresh, the others with it; the tap tried again.
-    if (actuators.count && tapAll(actuation, &any)) return true;
+    if (tapAll(actuation)) return true;
+    // None took it, as after sleep: found afresh and tried once more, not more than every few seconds.
+    if (now() - lastRescanAt < 3) return false;
+    lastRescanAt = now();
     dinky_trackpad_actuators_reset();
-    openAll();
-    if (!actuators.count) {
-        noneFoundAt = CFAbsoluteTimeGetCurrent();
-        return any;
-    }
-    bool again = false;
-    tapAll(actuation, &again);
-    return any || again;
+    if (!find()) return false;
+    return tapAll(actuation);
 }
