@@ -938,3 +938,32 @@ struct PinCleanupTests {
 private extension Array {
     func prepending(_ element: Element) -> [Element] { [element] + self }
 }
+
+struct PinWideWindowTests {
+    @Test func `A focused band window wider than the band shows from the band's start, the rest under a right pin`() throws {
+        var ws = try pinned(strip(5), 5, .right)
+        ws.minimumSizes[4] = CGSize(width: 900, height: 100)
+        ws.focus(1)
+        ws.focus(4)
+        let frame = ws.layout().frames[4]!
+        #expect(frame.minX == ws.stripArea.minX, "its title bar at the band's start, past the parked columns' peek")
+        #expect(frame.maxX > ws.pinRect(4).minX, "the rest under the pin")
+        #expect(ws.layout().order.first == 5, "the pin in front")
+    }
+
+    @Test func `With a left pin it shows from the band's start too, the rest past the screen's edge`() throws {
+        var ws = try pinned(strip(5), 1, .left)
+        ws.minimumSizes[3] = CGSize(width: 900, height: 100)
+        ws.focus(5)
+        ws.focus(3)
+        #expect(ws.layout().frames[3]!.minX == ws.stripArea.minX)
+    }
+
+    @Test func `Without a pin a column wider than the screen is still centred`() {
+        var ws = strip(4)
+        ws.minimumSizes[2] = CGSize(width: 1200, height: 100)
+        ws.focus(2)
+        let frame = ws.tiledLayout().frames[2]!
+        #expect(abs(frame.midX - ws.stripArea.midX) <= 1)
+    }
+}

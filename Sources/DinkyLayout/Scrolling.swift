@@ -191,7 +191,11 @@ extension Workspace {
             let total = bandEnd(of: spans), inset = stripInset
             return (area.minX - inset.minX + (total - inset.width) / 2).rounded()
         }
-        return min(max(wanted ?? scrollOffset, limits.lowerBound), limits.upperBound)
+        // A focused column wider than the band, beside a pin, shows from the band's start though that scrolls the
+        // strip on past its end, the rest of it under the pin.
+        let wide = hasPins && focused.flatMap { bandIndex(of: $0) }.map { spans[$0].width > area.width } == true
+        let upper = wide ? max(limits.upperBound, wanted ?? limits.upperBound) : limits.upperBound
+        return min(max(wanted ?? scrollOffset, limits.lowerBound), upper)
     }
 
     /// How far the strip scrolls, from its first column at its start to its last at its end; nil for a strip that fits
@@ -219,11 +223,13 @@ extension Workspace {
     }
 
     /// The offset nearest `offset` that shows `column` whole, as Hyprland's `fit` does. A column wider than the
-    /// area is centred.
+    /// area is centred; with a pin it starts at the band's start instead, its title bar and as much as fits showing,
+    /// the rest under the pin beyond.
     func showing(_ column: (start: CGFloat, width: CGFloat), from offset: CGFloat, in area: CGRect) -> CGFloat {
-        column.width > area.width
-            ? column.start - (area.width - column.width) / 2
-            : min(max(offset, column.start + column.width - area.width), column.start)
+        guard column.width > area.width else {
+            return min(max(offset, column.start + column.width - area.width), column.start)
+        }
+        return hasPins ? column.start : column.start - (area.width - column.width) / 2
     }
 
     /// Scroll to the window's column as `columnCentring` says: as little as shows it whole, to the middle of the
