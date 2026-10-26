@@ -1271,6 +1271,12 @@ final class Coordinator {
         handBack(key)
         dirty.insert(key)
         guard let target else { return flush() }
+        // A flick the fingers' frames never carried past a column, or one that settles back, lands on another column
+        // than the trackpad last ticked for: it ticks now, as the first finger lifts, the others still on it, so a
+        // column taking focus is always felt.
+        if config.gestures.scroll.haptic, target != scroll.ticker.felt {
+            tapTrackpad("strip settled on \(target)", actuation: config.gestures.scroll.hapticStrength.actuation)
+        }
         if glance { glanceOnceStill(target, in: key, display: scroll.display) }
         // As SlideScroll does, the window is focused when it is another than before, or focus was on another Space.
         guard target != before || placements[lastFocused]?.space != key else { return flush() }

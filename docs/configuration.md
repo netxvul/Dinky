@@ -677,8 +677,9 @@ while the fingers push, fading once they stop. `edge-flash = false` turns it
 off, whatever `[borders] noop-flash` says.
 
 As the fingers move the strip, the trackpad ticks each time the column a
-let-go would settle on changes, as the switchers' picks do. `haptic = false`
-turns it off.
+let-go would settle on changes, as the switchers' picks do, and once more as
+they let go when a flick carries it on to a column it did not tick for.
+`haptic = false` turns it off.
 
 The fingers may rest before they move. With the same fingers as
 `[gestures.trackpad]`, they still swipe up and down soon after they land, but
