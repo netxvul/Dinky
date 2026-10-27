@@ -18,7 +18,7 @@ func frontmostWindow(at point: CGPoint, in info: [[String: Any]]) -> ScreenWindo
         .map(CGDisplayBounds)
     // Near an edge only, where a Dock can be: its bar is read through Accessibility, at most once a second.
     let onDockBar = displays.contains { $0.contains(point) && $0.insetBy(dx: 200, dy: 200).contains(point) == false }
-        && dockBarFrame()?.contains(point) == true
+        && dockBarFrame(at: point, on: displays)?.contains(point) == true
     for w in info {
         guard let layer = w[kCGWindowLayer as String] as? Int, layer < screenSaver,
               (w[kCGWindowAlpha as String] as? Double ?? 0) > 0, let owner = w[kCGWindowOwnerPID as String] as? pid_t,
@@ -37,18 +37,39 @@ func frontmostWindow(at point: CGPoint, in info: [[String: Any]]) -> ScreenWindo
 }
 
 /// The Dock's bar, as Accessibility has it (its list of items), in global top-left coordinates: nil with no Dock, or
-/// none read. Read at most once a second. Main thread.
-func dockBarFrame() -> CGRect? {
+/// none read. A read is kept by what it found, `point` on one of `displays`: a bar on that display along one of its
+/// edges, the Dock shown there, for 0.3 s; one elsewhere or touching no edge, as hidden, sliding or on another display,
+/// only till the next look, 0.1 s; a failed read for a second. Each element is asked with a 50 ms timeout, and the
+/// whole read gives up after 50 ms. With the Dock shown at the bottom, AX gives the bar's own frame, along the edge (163,
+/// 1101, 1474 x 58 on a 1800 x 1169 display); what it gives for an auto-hidden Dock while hidden is unmeasured (Netx's
+/// Dock does not hide). Main thread.
+func dockBarFrame(at point: CGPoint, on displays: [CGRect]) -> CGRect? {
     let now = CACurrentMediaTime()
-    if now - DockBar.readAt < 1 { return DockBar.frame }
-    DockBar.readAt = now
-    DockBar.frame = nil
+    if now < DockBar.keptTill { return DockBar.frame }
+    let frame = readDockBar(by: now + 0.05)
+    DockBar.frame = frame
+    if let frame {
+        let display = displays.first { $0.contains(point) }
+        let alongEdge = display.map { d in
+            d.contains(frame) && (abs(frame.maxY - d.maxY) < 2 || abs(frame.minX - d.minX) < 2 || abs(frame.maxX - d.maxX) < 2)
+        } ?? false
+        DockBar.keptTill = now + (alongEdge ? 0.3 : 0.1)
+    } else {
+        DockBar.keptTill = now + 1
+    }
+    return frame
+}
+
+/// The Dock's list of items, read before `deadline`, or nil.
+private func readDockBar(by deadline: CFTimeInterval) -> CGRect? {
     guard let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first else { return nil }
     let app = AXUIElementCreateApplication(dock.processIdentifier)
     AXUIElementSetMessagingTimeout(app, 0.05)
     var children: AnyObject?
     guard AXUIElementCopyAttributeValue(app, kAXChildrenAttribute as CFString, &children) == .success else { return nil }
     for child in children as? [AXUIElement] ?? [] {
+        guard CACurrentMediaTime() < deadline else { return nil }
+        AXUIElementSetMessagingTimeout(child, 0.05)
         var role: AnyObject?, position: AnyObject?, size: AnyObject?
         guard AXUIElementCopyAttributeValue(child, kAXRoleAttribute as CFString, &role) == .success,
               role as? String == kAXListRole,
@@ -59,15 +80,14 @@ func dockBarFrame() -> CGRect? {
         var origin = CGPoint.zero, extent = CGSize.zero
         AXValueGetValue(position as! AXValue, .cgPoint, &origin)
         AXValueGetValue(size as! AXValue, .cgSize, &extent)
-        DockBar.frame = CGRect(origin: origin, size: extent)
-        break
+        return CGRect(origin: origin, size: extent)
     }
-    return DockBar.frame
+    return nil
 }
 
-/// The last read of the Dock's bar (`dockBarFrame`).
+/// The last read of the Dock's bar (`dockBarFrame`), and till when it holds.
 private enum DockBar {
-    static var readAt = -CFTimeInterval.infinity
+    static var keptTill = -CFTimeInterval.infinity
     static var frame: CGRect?
 }
 

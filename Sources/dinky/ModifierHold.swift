@@ -48,6 +48,8 @@ final class ModifierHold {
     private static let timedOut: CFTimeInterval = 1
     /// When the swallowing tap last timed out.
     private var swallowerTimedOutAt = -CFTimeInterval.infinity
+    /// The press whose release `swallowUp` or `swallowRightUp` waits for, by type and timestamp.
+    private var swallowedPress: (type: CGEventType, time: CGEventTimestamp)?
 
     /// What the swallowing tap takes; everything else is only ever listened to.
     private static let swallowable: [CGEventType] = [.keyDown, .leftMouseDown, .leftMouseUp, .rightMouseDown,
@@ -389,7 +391,16 @@ final class ModifierHold {
     fileprivate func intercepted(_ type: CGEventType, _ event: CGEvent) -> Bool {
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
-            if type == .tapDisabledByTimeout { swallowerTimedOutAt = CACurrentMediaTime() }
+            if type == .tapDisabledByTimeout {
+                swallowerTimedOutAt = CACurrentMediaTime()
+                // The notice comes behind the event the tap timed out on, so that one was handled as swallowed before
+                // the timeout could be known: where it was the press now waiting for its release, the app had the press,
+                // and its release goes to the app too, or the app is left with a button down.
+                if let press = swallowedPress, let last = passedOn.last, last.type == press.type, last.time == press.time {
+                    if press.type == .leftMouseDown, swallowUp { released() }
+                    if press.type == .rightMouseDown, swallowRightUp { rightReleased() }
+                }
+            }
             // What went by meanwhile, the listener heard.
             if swallowing { swallower?.enable(true) }
             return true
@@ -446,6 +457,7 @@ final class ModifierHold {
                 return true
             }
             // The taps stay on for its release, swallowed too, and go only then.
+            swallowedPress = (type, event.timestamp)
             swallowRightUp = true
             lastTap = nil
             state = .idle
@@ -469,6 +481,7 @@ final class ModifierHold {
                 return false
             }
             // The commit waits for the release, so the swallowing tap is off before it can wait on another app.
+            swallowedPress = (type, event.timestamp)
             swallowUp = true
             awaitRelease()
             return false
