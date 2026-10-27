@@ -76,6 +76,16 @@ final class HoverFocus {
         (self.tap, source) = (nil, nil)
     }
 
+    /// Looks under the pointer again, as when the mouse's hand went: the move posted then is too short to count.
+    func recheck() {
+        guard tap != nil, let point = CGEvent(source: nil)?.location else { return }
+        latestPoint = point
+        lastPoint = CGPoint(x: -1, y: -1)
+        guard !evaluationPending else { return }
+        evaluationPending = true
+        DispatchQueue.main.async { [weak self] in self?.evaluate() }
+    }
+
     fileprivate func handle(_ type: CGEventType, at location: CGPoint) {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
@@ -202,7 +212,8 @@ private struct OnScreenWindows {
             if w[kCGWindowOwnerPID as String] as? pid_t == own {
                 // dinky is an accessory app, so a dialog of its own never makes it the front app: the front
                 // app's focused window stays a tile, and only the window list shows the dialog.
-                if AppState.shared.coordinator?.isBorderWindow(id ?? 0) != true { blocked = true }
+                // The mouse's hand over a strip window is looked through too.
+                if AppState.shared.coordinator?.isBorderWindow(id ?? 0) != true, !GrabCursor.isPanel(id ?? 0) { blocked = true }
                 continue
             }
             guard let id, (w[kCGWindowAlpha as String] as? Double ?? 0) > 0,

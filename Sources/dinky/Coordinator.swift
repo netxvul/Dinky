@@ -26,7 +26,11 @@ final class Coordinator {
                 dropStripScroll()
                 mouseStripScroll.stopCursor()
             }
-            if enabled, !oldValue { reconcile() }
+            if enabled, !oldValue {
+                reconcile()
+                // The modifier may be held already: the hand follows it again.
+                mouseStripScroll.rearm()
+            }
         }
     }
 
@@ -1218,11 +1222,14 @@ final class Coordinator {
     }
 
     /// The window of the strip a press at `point` would take hold of: under the pointer, with no drag under way nor a
-    /// switcher shown from the keyboard over it. The press and the hand over it ask this alike, so they never disagree.
+    /// switcher shown from the keyboard over it, and in front there at any level, so not under a menu, a popover, a
+    /// banner or the menu bar. The press and the hand over it ask this alike, so they never disagree.
     func mousePressWindow(at point: CGPoint) -> ScreenWindow? {
         guard dragging == nil, let display = mouseStripDisplay(at: point),
-              !WindowSwitcher.shared.covers(point), !WorkspaceSwitcher.shared.covers(point),
-              let window = pressedWindow(at: point), placements[window.id]?.space == display.currentSpaceID else { return nil }
+              !WindowSwitcher.shared.covers(point), !WorkspaceSwitcher.shared.covers(point) else { return nil }
+        let info = onScreenWindowInfo()
+        guard let window = pressedWindow(at: point, in: info), placements[window.id]?.space == display.currentSpaceID,
+              frontmostWindow(at: point, in: info)?.id == window.id else { return nil }
         return window
     }
 
@@ -1243,8 +1250,10 @@ final class Coordinator {
 
     /// Something the mouse's hand has no place over came, as a Space changing, Mission Control, a switcher or a drag
     /// showing, or a hold of the strip ending: it goes, and shows again where it belongs once the pointer is looked at.
-    func mouseCursorInterrupted() {
-        mouseStripScroll.interruptCursor()
+    /// `settle` waits as after the modifier goes down before looking again; without, the pointer is looked at at once,
+    /// as when a hold of the strip ends.
+    func mouseCursorInterrupted(settle: Bool = true) {
+        mouseStripScroll.interruptCursor(settle: settle)
     }
 
     /// Whether a notch of a wheel without phases at `point` steps a strip: one the mouse could hold, nothing holding it.
@@ -1496,7 +1505,7 @@ final class Coordinator {
     private func handBack(_ key: UInt64) {
         guard let scroll = stripScroll, scroll.key == key else { return }
         stripScroll = nil
-        mouseCursorInterrupted()
+        mouseCursorInterrupted(settle: false)
         stripScrollWatch?.invalidate()
         stripScrollWatch = nil
         if animates, !snap.contains(key) {
@@ -1553,7 +1562,7 @@ final class Coordinator {
 
     /// dinky turned off: the fingers hold nothing, and the strip they held forgets it was scrolled freely.
     private func dropStripScroll() {
-        if stripScroll != nil { mouseCursorInterrupted() }
+        if stripScroll != nil { mouseCursorInterrupted(settle: false) }
         if let key = stripScroll?.key { workspaces[key]?.cancelFreeScroll() }
         stripScroll = nil
         stripScrollWatch?.invalidate()

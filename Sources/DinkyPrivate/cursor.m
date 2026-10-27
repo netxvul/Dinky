@@ -53,6 +53,12 @@ bool dinky_window_cursor_tag(uint32_t wid)
     return setWindowTags(dinky_connection(), wid, tags, 64) == kCGErrorSuccess;
 }
 
+bool dinky_cursor_available(void)
+{
+    load();
+    return setConnectionProperty && orderWindow;
+}
+
 bool dinky_window_order_out(uint32_t wid)
 {
     load();

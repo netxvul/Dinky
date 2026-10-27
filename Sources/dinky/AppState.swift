@@ -29,6 +29,9 @@ final class AppState {
     let recovery = Recovery()
     private let hooks = Hooks()
     private let hoverFocus = HoverFocus()
+
+    /// Hover focus looks under the pointer again (`HoverFocus.recheck`).
+    func recheckHover() { hoverFocus.recheck() }
     private var watcher: ConfigWatcher?
 
     private init() {

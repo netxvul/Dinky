@@ -17,6 +17,9 @@ int32_t dinky_cursor_seed(void);
 // False where the call is missing or refused.
 bool dinky_window_cursor_tag(uint32_t wid);
 
+// Whether the calls the hand needs are there: the background setting and the order-out. Without them it never shows.
+bool dinky_cursor_available(void);
+
 // Orders dinky's own window `wid` out through the window server at once, not on AppKit's next turn: an event let
 // through after this returns reaches the window under it. False where the call is missing or refused.
 bool dinky_window_order_out(uint32_t wid);

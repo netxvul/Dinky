@@ -207,9 +207,9 @@ func exactlyHeld(_ modifiers: KeyCombo.Modifiers, sides: ModifierSides, in flags
 }
 
 /// The window a press at `point` lands in: the frontmost at the normal and floating levels, dinky's own windows looked
-/// through, as the placeholders and the borders are clicked through.
-func pressedWindow(at point: CGPoint) -> ScreenWindow? {
-    let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+/// through, as the placeholders and the borders are clicked through. `info`, a read of `onScreenWindowInfo` to share.
+func pressedWindow(at point: CGPoint, in info: [[String: Any]]? = nil) -> ScreenWindow? {
+    let info = info ?? onScreenWindowInfo()
     let levels = 0...Int(CGWindowLevelForKey(.floatingWindow)), own = getpid()
     let windows = info.compactMap { w -> ScreenWindow? in
         guard let layer = w[kCGWindowLayer as String] as? Int, levels.contains(layer),

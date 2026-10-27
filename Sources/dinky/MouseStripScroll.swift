@@ -24,8 +24,8 @@ import DinkyLayout
 // With `cursor`, the pointer shows the hand for the drag (`GrabCursor`): open over a window a press would take
 // (`Coordinator.mousePressWindow`, which the press asks too), looked at as the pointer moves with the modifier held
 // (`HoverThrottle`), and closed while a press is taken or holds the strip (`GrabCursorRule`). Its panel takes what lands
-// on it, so nothing that is not the strip's may find it there: each tap that lets such an event through, and one more
-// for right and other presses while it shows, clears it first.
+// on it, so nothing that is not the strip's may find it there: each tap that lets such an event through clears it
+// first, and `GrabGuard`, behind them all, orders it out for anything else that would land on it.
 final class MouseStripScroll {
     /// A press with the modifier, taken.
     private struct Press {
@@ -78,10 +78,13 @@ final class MouseStripScroll {
     private let grab = GrabCursor()
     /// Hears moves and keys while armed with the hand on (`hovered`).
     private var hoverTap: MainEventTap?
-    /// Clears the hand for right and other presses, and for scrolls while `wheelTap` is off, letting them through; on
-    /// only while the hand shows.
-    private var guardTap: MainEventTap?
+    /// Orders the hand's panel out for what goes past the other taps to the window under it.
+    private let grabGuard = GrabGuard()
     private var throttle: HoverThrottle?
+    /// A scroll the app had: no open hand while its stroke or the momentum after it goes on, or `scrollQuiet` after.
+    private var passedScrollAt: CFTimeInterval = -.infinity
+    private var momentumPassing = false
+    private static let scrollQuiet: CFTimeInterval = 0.15
     /// Bumped as the modifier goes down or the hand is interrupted, so a look scheduled before does nothing.
     private var hoverGeneration = 0
     private var armedAt: CFTimeInterval = 0
@@ -91,10 +94,15 @@ final class MouseStripScroll {
     /// Every frame while armed with the hand on, or while it shows (`tick`).
     private var keeper: Timer?
     private var lookedAt: CFTimeInterval = 0
-    private var cursorOn: Bool { settings.enabled && settings.drag && settings.cursor }
+    /// The hand on, and all it needs there: its taps and the private calls that order its panel out.
+    private var cursorOn: Bool {
+        settings.enabled && settings.drag && settings.cursor && hoverTap != nil && grabGuard.isRunning && GrabCursor.available
+    }
 
     init(coordinator: Coordinator) {
         self.coordinator = coordinator
+        grabGuard.onOrderedOut = { [weak self] type, momentum in self?.guardOrderedOut(type, momentum: momentum) }
+        grab.onExit = { [weak self] in self?.updateCursor() }
     }
 
     func update(_ settings: MouseScroll, sides: ModifierSides) {
@@ -114,6 +122,8 @@ final class MouseStripScroll {
 
     private func start() {
         guard modifierTap == nil else { return }
+        // First, so it goes in behind every tap made after it.
+        if GrabCursor.available { grabGuard.start() }
         let presses = MainEventTap([.leftMouseDown], options: .defaultTap, enabled: false, owner: self,
                                    callback: mouseScrollPressCallback)
         let grabs = MainEventTap([.leftMouseDown, .leftMouseDragged, .leftMouseUp, .mouseMoved], options: .defaultTap,
@@ -123,14 +133,12 @@ final class MouseStripScroll {
         let flags = MainEventTap([.flagsChanged], options: .listenOnly, owner: self, callback: mouseScrollModifierCallback)
         let hovers = MainEventTap([.mouseMoved, .keyDown], options: .listenOnly, enabled: false, owner: self,
                                   callback: mouseScrollHoverCallback)
-        let guards = MainEventTap([.rightMouseDown, .otherMouseDown, .scrollWheel], options: .defaultTap, enabled: false,
-                                  owner: self, callback: mouseScrollGuardCallback)
-        guard let presses, let grabs, let wheels, let flags, let hovers, let guards else {
-            [presses, grabs, wheels, flags, hovers, guards].forEach { $0?.remove() }
+        guard let presses, let grabs, let wheels, let flags, let hovers else {
+            [presses, grabs, wheels, flags, hovers].forEach { $0?.remove() }
             fputs("mouse-scroll: could not create event tap (Accessibility?)\n", stderr)
             return
         }
-        (pressTap, grabTap, wheelTap, modifierTap, hoverTap, guardTap) = (presses, grabs, wheels, flags, hovers, guards)
+        (pressTap, grabTap, wheelTap, modifierTap, hoverTap) = (presses, grabs, wheels, flags, hovers)
     }
 
     private func stop() {
@@ -138,8 +146,8 @@ final class MouseStripScroll {
         if case .holding(let hold, _, _) = stroke { coordinator.mouseLetGo(velocity: 0, hold: hold) }
         stroke = .idle
         stopCursor()
-        [pressTap, grabTap, wheelTap, modifierTap, hoverTap, guardTap].forEach { $0?.remove() }
-        (pressTap, grabTap, wheelTap, modifierTap, hoverTap, guardTap, armed, wheelOn) = (nil, nil, nil, nil, nil, nil, false, false)
+        [pressTap, grabTap, wheelTap, modifierTap, hoverTap].forEach { $0?.remove() }
+        (pressTap, grabTap, wheelTap, modifierTap, hoverTap, armed, wheelOn) = (nil, nil, nil, nil, nil, false, false)
     }
 
     private func arm(_ held: Bool) {
@@ -263,6 +271,8 @@ final class MouseStripScroll {
                 return
             }
             press.hold = hold
+            // A stroke going to the app meanwhile, begun while the press was taken, is the press's now: swallowed.
+            if case .passing = stroke { stroke = .spent }
             // From where it was pressed: the strip has the grabbed point under the pointer.
             press.last = press.at
             // A hold ended to take this one cleared the hand: closed again, once the press is noted holding.
@@ -301,7 +311,7 @@ final class MouseStripScroll {
     /// A scroll; whether it goes on to the app, the hand cleared first if it does.
     fileprivate func scrolled(_ type: CGEventType, _ event: CGEvent) -> Bool {
         let passes = scroll(type, event)
-        if passes, type == .scrollWheel { letThrough() }
+        if passes, type == .scrollWheel { scrollPassed(momentum: event.getIntegerValueField(.scrollWheelEventMomentumPhase)) }
         return passes
     }
 
@@ -350,6 +360,9 @@ final class MouseStripScroll {
             guard held else { return true }
             if pressHolds { return false }
             guard coordinator.mouseCanStep(at: event.location) else { return true }
+            // A capsule up closes, as for a press with the modifier.
+            WindowSwitcher.shared.dismiss()
+            WorkspaceSwitcher.shared.dismiss()
             spoilSwitcherTaps()
             notch(x != 0 ? x : y, continuous: continuous)
             return false
@@ -357,25 +370,26 @@ final class MouseStripScroll {
             // Fingers resting on the surface before a stroke.
             switch stroke {
             case .holding, .spent: return false
-            case .idle, .passing, .coasting: return !(held && coordinator.mouseCanHold(at: event.location, press: false))
+            case .idle, .passing, .coasting:
+                // A press of ours taken: the stroke about to begin is its, not the app's.
+                if pressTaken { return false }
+                return !(held && coordinator.mouseCanHold(at: event.location, press: false))
             }
         case 1:
             if case .holding = stroke { letGoStroke(velocity: 0) }
+            // A press of ours taken, holding or yet to: the stroke is spent, swallowed, not the app's with the modifier.
+            if pressTaken {
+                stroke = .spent
+                return false
+            }
             guard held, coordinator.mouseCanHold(at: event.location, press: false) else {
                 stroke = .passing
                 return true
             }
             guard let hold = coordinator.mouseTookHold(.wheel) else {
-                // Refused as a press of ours holds the strip: spent, not the app's with the modifier.
-                if pressHolds {
-                    stroke = .spent
-                    return false
-                }
                 stroke = .passing
                 return true
             }
-            // A press holding the strip loses it to the stroke.
-            if press?.hold != nil { press?.spent = true }
             spoilSwitcherTaps()
             stroke = .holding(hold, ScrollAxisLock(), LetGoVelocity())
             // A stroke holding the strip shows no hand.
@@ -410,6 +424,8 @@ final class MouseStripScroll {
 
     /// Whether a press of ours holds the strip, and is not spent.
     private var pressHolds: Bool { press.map { $0.hold != nil && !$0.spent } ?? false }
+    /// Whether a press of ours is taken, holding the strip or yet to, and not spent.
+    private var pressTaken: Bool { press.map { !$0.spent } ?? false }
 
     private func scrollStroke(x: Double, y: Double, at time: CFTimeInterval) {
         guard case .holding(let hold, var axis, var velocity) = stroke else { return }
@@ -463,14 +479,21 @@ extension MouseStripScroll {
     private func updateCursor() {
         let state: GrabCursorRule.Press = press.map { $0.spent ? .spent : $0.hold != nil ? .holding : .taken } ?? .none
         let point = CGEvent(source: nil)?.location ?? .zero
-        var wheelHolds = false
-        if case .holding = stroke { wheelHolds = true }
+        let now = CACurrentMediaTime()
+        var scrolling = momentumPassing || now - passedScrollAt < Self.scrollQuiet
+        if case .holding = stroke { scrolling = true }
+        if case .passing = stroke { scrolling = true }
+        // While a right or other button is down its drag and release go to the app that got the press: no panel.
+        let otherDown = CGEventSource.buttonState(.hidSystemState, button: .right)
+            || CGEventSource.buttonState(.hidSystemState, button: .center)
         // The window under the pointer is looked for only where an open hand could show.
-        let window = state == .none && armed && cursorOn && !spoiled && !wheelHolds ? coordinator.mousePressWindow(at: point) : nil
-        let shape = GrabCursorRule.shape(enabled: settings.enabled, cursor: settings.cursor, drag: settings.drag, press: state,
-                                         armed: armed, buttonDown: CGEventSource.buttonState(.hidSystemState, button: .left),
-                                         over: window != nil, spoiled: spoiled)
-        switch shape {
+        let looks = state == .none && armed && cursorOn && !spoiled && !scrolling && !otherDown
+        let window = looks ? coordinator.mousePressWindow(at: point) : nil
+        let shape = cursorOn ? GrabCursorRule.shape(enabled: settings.enabled, cursor: settings.cursor, drag: settings.drag,
+                                                    press: state, armed: armed,
+                                                    buttonDown: CGEventSource.buttonState(.hidSystemState, button: .left),
+                                                    over: window != nil, spoiled: spoiled) : nil
+        switch otherDown ? nil : shape {
         case .open?:
             grab.showOpen(over: window!)
         case .closed?:
@@ -478,7 +501,6 @@ extension MouseStripScroll {
         case nil:
             grab.clear()
         }
-        guardTap?.enable(grab.isShowing)
         updateKeeper()
     }
 
@@ -488,20 +510,42 @@ extension MouseStripScroll {
         guard grab.isShowing else { return }
         grab.clear()
         spoiled = true
-        guardTap?.enable(false)
+        updateKeeper()
+    }
+
+    /// A scroll the app had: the hand goes first, and no open hand shows while its stroke or momentum goes on, nor
+    /// `scrollQuiet` after, but the hold is not spoiled for it, as momentum from an earlier flick would spoil it.
+    private func scrollPassed(momentum: Int64) {
+        passedScrollAt = CACurrentMediaTime()
+        // Momentum begins (1) and goes on (2) till it ends (3).
+        if momentum == 1 || momentum == 2 { momentumPassing = true } else if momentum == 3 { momentumPassing = false }
+        if grab.isShowing {
+            grab.clear()
+            updateKeeper()
+        }
+    }
+
+    /// `GrabGuard` ordered the panel out for an event going past the taps, `type`, with `momentum` for a scroll.
+    private func guardOrderedOut(_ type: CGEventType, momentum: Int64) {
+        if type == .scrollWheel { return scrollPassed(momentum: momentum) }
+        grab.clear()
+        // A right or other press, a gesture or the tablet: the modifier at work for something else.
+        spoiled = true
         updateKeeper()
     }
 
     /// The hand goes for something it has no place over (`Coordinator.mouseCursorInterrupted`), and the pointer is
-    /// looked at again once that settles.
-    func interruptCursor() {
+    /// looked at again: once that settles, or with `settle` false, as a hold of the strip ends, at once.
+    func interruptCursor(settle: Bool) {
         grab.clear()
-        guardTap?.enable(false)
         hoverGeneration += 1
-        if armed, cursorOn {
+        guard armed, cursorOn else { return updateKeeper() }
+        if settle {
             armedAt = CACurrentMediaTime()
             throttle = HoverThrottle(armedAt: armedAt)
             if let due = throttle?.moved(at: armedAt) { lookAgain(at: due) }
+        } else {
+            updateCursor()
         }
         updateKeeper()
     }
@@ -509,11 +553,16 @@ extension MouseStripScroll {
     /// The hand goes now, the arrow set at once where it was dinky's, as dinky is turned off or quits.
     func stopCursor() {
         grab.clear(atOnce: true)
-        guardTap?.enable(false)
         hoverGeneration += 1
         throttle = nil
         keeper?.invalidate()
         keeper = nil
+    }
+
+    /// dinky turned on again: the modifier may be held already, so the hand follows it.
+    func rearm() {
+        guard modifierTap != nil else { return }
+        arm(exactlyHeld(settings.modifier, sides: sides, in: CGEventSource.flagsState(.combinedSessionState)))
     }
 
     /// Looks at the pointer at `due`, unless the modifier went down again or the hand was interrupted meanwhile.
@@ -540,21 +589,13 @@ extension MouseStripScroll {
             updateCursor()
         case .mouseMoved:
             guard event.getIntegerValueField(.eventSourceUserData) != GrabCursor.moveTag else { return }
-            // The modifier let go of while its release went unheard.
-            guard exactlyHeld(settings.modifier, sides: sides, in: event.flags) else { return arm(false) }
+            // The modifier let go of while its release went unheard; as it is now, not as a move queued a while ago had it.
+            guard exactlyHeld(settings.modifier, sides: sides, in: CGEventSource.flagsState(.combinedSessionState)) else {
+                return arm(false)
+            }
             if let due = throttle?.moved(at: CACurrentMediaTime()) { lookAgain(at: due) }
         default:
             break
-        }
-    }
-
-    /// A right or other press, or a scroll the wheel tap is off for: let through, the hand cleared first.
-    fileprivate func guarded(_ type: CGEventType) {
-        switch type {
-        case .rightMouseDown, .otherMouseDown: letThrough()
-        case .scrollWheel where !wheelOn: letThrough()
-        case .tapDisabledByTimeout where grab.isShowing: guardTap?.enable(true)
-        default: break
         }
     }
 
@@ -626,11 +667,5 @@ private func mouseScrollWheelCallback(proxy: CGEventTapProxy, type: CGEventType,
 private func mouseScrollHoverCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
                                       refcon: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
     if let refcon { Unmanaged<MouseStripScroll>.fromOpaque(refcon).takeUnretainedValue().hovered(type, event) }
-    return Unmanaged.passUnretained(event)
-}
-
-private func mouseScrollGuardCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
-                                      refcon: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
-    if let refcon { Unmanaged<MouseStripScroll>.fromOpaque(refcon).takeUnretainedValue().guarded(type) }
     return Unmanaged.passUnretained(event)
 }
