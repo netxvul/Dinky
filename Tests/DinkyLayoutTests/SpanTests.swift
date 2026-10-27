@@ -356,6 +356,34 @@ struct SpanTests {
         #expect(crossings > 0)
     }
 
+    @Test func `On a glide, a window bound for the shorter display has its height at once, for the taller as it crosses`() {
+        let seam = Seam(left: rect(-1920, 30, 1920, 1170), right: rect(0, 39, 1800, 1066))
+        var ws = spanning(8, gaps: Gaps(all: 8), seam: seam, centring: .never)
+        ws.focus(4)
+        let start = ws.stripFrames
+        _ = ws.focus(.right)
+        _ = ws.focus(.right)
+        _ = ws.focus(.right)
+        let end = ws.stripFrames
+        // Steps of a glide from start to end, as the animator has them, placed.
+        for step in 0...10 {
+            let t = CGFloat(step) / 10
+            var frames: [WindowID: CGRect] = [:]
+            for (id, a) in start {
+                let b = end[id]!
+                frames[id] = CGRect(x: a.minX + (b.minX - a.minX) * t, y: a.minY + (b.minY - a.minY) * t,
+                                    width: a.width + (b.width - a.width) * t, height: a.height + (b.height - a.height) * t)
+            }
+            let placed = ws.placeStrip(frames, resting: end)
+            for (id, frame) in placed where frame.maxX > -1920 && frame.minX < 1800 {
+                let bound = end[id]!.midX < 0 ? 1154 : 1050 as CGFloat
+                let here = frame.midX < 0 ? 1154 : 1050 as CGFloat
+                #expect(frame.height == min(here, bound) || frame.height == bound && abs(frame.midX) < Workspace.seamLead,
+                        "\(id) at step \(step): \(frame)")
+            }
+        }
+    }
+
     @Test func `Two strips coming together meet at the seam`() {
         var left = Workspace(bounds: rect(0, 0, 1000, 600), algorithm: .scrolling)
         left.insert(1)

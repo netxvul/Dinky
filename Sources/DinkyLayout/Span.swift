@@ -110,6 +110,26 @@ extension Workspace {
         return CGRect(x: rect.minX, y: inset.minY, width: rect.width, height: inset.height)
     }
 
+    /// Strip frames such as a glide or fingers have them on the way, each window alone in its column as tall as the display
+    /// it is on (`onDisplay`), rather than somewhere between where it set out and where it goes: with `spanHeight`
+    /// `perDisplay`, one on its way to the shorter display, as `resting`, where the glide ends, has it, already that one's
+    /// height, so it shows there at it, and one on its way to the taller takes that one's height as it crosses. As they
+    /// are on one display, with `atRest`, and for a column of several, whose windows share its height.
+    func onDisplays(_ frames: [WindowID: CGRect], resting: [WindowID: CGRect]?) -> [WindowID: CGRect] {
+        guard spansDisplays, spanHeight != .atRest else { return frames }
+        var placed = frames
+        for column in root.children {
+            guard case .window(let id) = column, let frame = frames[id] else { continue }
+            var shown = onDisplay(frame)
+            if spanHeight == .perDisplay, let rest = resting?[id] {
+                let there = displayInset(at: rest.midX)
+                if there.height < shown.height { shown = CGRect(x: frame.minX, y: there.minY, width: frame.width, height: there.height) }
+            }
+            placed[id] = shown
+        }
+        return placed
+    }
+
     /// How far before the seam a column's middle takes the shorter display's height on its way there.
     static let seamLead: CGFloat = 100
 

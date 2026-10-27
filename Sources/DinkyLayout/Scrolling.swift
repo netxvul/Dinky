@@ -606,6 +606,7 @@ extension Workspace {
     /// window's, so a window hiding behind it grows no bigger than it is rather than to the whole screen's size.
     /// `resting`, the strip frames where a glide ends, sizes a window hiding at a wall (see `hiddenAtWall`).
     func parked(_ frames: [WindowID: CGRect], resting: [WindowID: CGRect]? = nil) -> [WindowID: CGRect] {
+        let frames = onDisplays(frames, resting: resting)
         let keepsSize = !pushedColumns.isEmpty
         let columns = root.children.map { $0.windows.filter { frames[$0] != nil } }
         let covers = wallCovers(of: frames)
