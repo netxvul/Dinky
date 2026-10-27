@@ -42,8 +42,14 @@ final class WorkspaceNumbers {
     private var knownDisplays: Set<String> = []
     /// Set by a display coming or going, until an arrangement completes and windows are back on their workspaces.
     private var displaced = false
-    /// When `displaced` was last set: strips are put back only from an arrangement soon after (`restoreWithin`).
-    private var displacedAt: CFTimeInterval = 0
+    /// When a display last came or went: strips that kept their windows are put back only from an arrangement soon
+    /// after (`restoreWithin`), timed from the last change, so displays back after every one was gone a while still
+    /// get theirs.
+    private var changedAt: CFTimeInterval = 0
+    /// When an arrangement while displaced first stopped on a step it could not take: from `restoreWithin` after, what
+    /// was noted before the change is stale, the user free to have moved things meanwhile. Time with no display at
+    /// all, which stops no step, does not count.
+    private var stoppedAt: CFTimeInterval?
     /// Bumped by every display that comes or goes, so an arrangement that ran meanwhile leaves the change for the next.
     private var displayGeneration = 0
     /// How long after the display change an arrangement may still put strips back that kept their windows.
@@ -89,8 +95,8 @@ final class WorkspaceNumbers {
             fflush(stdout)
             if !connected.isEmpty || !disconnected.isEmpty {
                 let now = CACurrentMediaTime()
+                changedAt = now
                 if !displaced {
-                    displacedAt = now
                     // The pour began before this was heard: the coordinator's display observer runs first.
                     awayWhileDisplaced.formUnion(recentLeaves.filter { now - $0.at <= Self.pourWindow }.map(\.n))
                 }
@@ -172,6 +178,7 @@ final class WorkspaceNumbers {
             guard perform(action) else {
                 // A workspace whose windows did not all move stays where they are, so the next run moves it again.
                 if case .move = action { binding = before }
+                if displaced, stoppedAt == nil { stoppedAt = CACurrentMediaTime() }
                 print("workspaces: stopped; the next display change or config reload tries again")
                 break
             }
@@ -179,11 +186,12 @@ final class WorkspaceNumbers {
         // Strips put back are placed at once by the pass that ends this, their windows home by then.
         var placing: Set<UInt64> = []
         if displaced, completed {
-            // Long after the change, as after an arrangement that failed: what was noted then is stale.
-            placing = returnDisplaced(stale: CACurrentMediaTime() - displacedAt > Self.restoreWithin)
+            // Long after an arrangement that failed: what was noted before the change is stale.
+            placing = returnDisplaced(stale: stoppedAt.map { CACurrentMediaTime() - $0 > Self.restoreWithin } ?? false)
             // A display that came or went while this ran is the next arrangement's to take in.
             if displayGeneration == generation {
                 displaced = false
+                stoppedAt = nil
                 changedDisplays = []
                 awayWhileDisplaced = []
                 restoredWhileDisplaced = []
@@ -241,8 +249,9 @@ final class WorkspaceNumbers {
     }
 
     /// Moves windows that a display change left off their workspace back onto it, and puts back the strips it took
-    /// apart. The Spaces of the strips put back, to be placed at once. `stale`, long after the change, moves back only
-    /// windows still on a display's first Space, where macOS pours them, and puts back no strip.
+    /// apart. The Spaces of the strips put back, to be placed at once. `stale`, long after an arrangement failed, moves
+    /// back only windows still on a display's first Space, where macOS pours them, whose workspace's strip was noted on
+    /// a display the change touched, and puts back no strip: one put on a first Space by hand stays.
     private func returnDisplaced(stale: Bool = false) -> Set<UInt64> {
         let model = AppState.shared.displays
         var targets: [UInt32: UInt64] = [:]
@@ -250,7 +259,11 @@ final class WorkspaceNumbers {
             let space = dinky_window_space_id(id)
             // A window on a full-screen Space, or gone, stays put.
             guard let target = binding[n], space != target, let display = model.display(containingSpace: space),
-                  display.userSpaces.contains(space), !stale || display.userSpaces.first == space else { continue }
+                  display.userSpaces.contains(space) else { continue }
+            if stale {
+                guard display.userSpaces.first == space, let noted = strips[n]?.display, changedDisplays.contains(noted)
+                else { continue }
+            }
             targets[id] = target
         }
         let changed = changedDisplays, away = awayWhileDisplaced
@@ -258,7 +271,7 @@ final class WorkspaceNumbers {
         // A strip none of whose windows has to move back goes back as it was too, where the display change left it on a
         // new Space, or macOS put its windows back as new columns: only on a display the change touched, the one it was
         // noted on or the one its Space is on now, and soon after the change, not long after as a user's own doing.
-        if !stale, let coordinator = AppState.shared.coordinator, CACurrentMediaTime() - displacedAt <= Self.restoreWithin {
+        if !stale, let coordinator = AppState.shared.coordinator, CACurrentMediaTime() - changedAt <= Self.restoreWithin {
             // Not one an arrangement before this one put back already, the same display change still being taken in.
             for (n, noted) in strips where !restoredWhileDisplaced.contains(n) {
                 guard let space = binding[n], !targets.values.contains(space), let tree = coordinator.workspaces[space] else {

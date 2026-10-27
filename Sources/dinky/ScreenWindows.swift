@@ -1,5 +1,6 @@
 import AppKit
 import DinkyLayout
+import os
 
 /// The windows on screen, front to back, as the window server lists them, desktop elements left out.
 func onScreenWindowInfo() -> [[String: Any]] {
@@ -16,9 +17,9 @@ func frontmostWindow(at point: CGPoint, in info: [[String: Any]]) -> ScreenWindo
     let screenSaver = Int(CGWindowLevelForKey(.screenSaverWindow)), floating = Int(CGWindowLevelForKey(.floatingWindow))
     let displays = NSScreen.screens.compactMap { $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID }
         .map(CGDisplayBounds)
-    // Near an edge only, where a Dock can be: its bar is read through Accessibility, at most once a second.
+    // Near an edge only, where a Dock can be: its bar is the last read of it (`dockBarFrame`), which never waits.
     let onDockBar = displays.contains { $0.contains(point) && $0.insetBy(dx: 200, dy: 200).contains(point) == false }
-        && dockBarFrame(at: point, on: displays)?.contains(point) == true
+        && dockBarFrame()?.contains(point) == true
     for w in info {
         guard let layer = w[kCGWindowLayer as String] as? Int, layer < screenSaver,
               (w[kCGWindowAlpha as String] as? Double ?? 0) > 0, let owner = w[kCGWindowOwnerPID as String] as? pid_t,
@@ -36,47 +37,55 @@ func frontmostWindow(at point: CGPoint, in info: [[String: Any]]) -> ScreenWindo
     return nil
 }
 
-/// The Dock's bar, as Accessibility has it (its list of items), in global top-left coordinates: nil with no Dock, or
-/// none read. A read is kept by what it found, `point` on one of `displays`: a bar on that display along one of its
-/// edges, the Dock shown there, for 0.3 s; one elsewhere or touching no edge, as hidden, sliding or on another display,
-/// only till the next look, 0.1 s; a failed read for a second. Each element is asked with a 50 ms timeout, and the
-/// whole read gives up after 50 ms. With the Dock shown at the bottom, AX gives the bar's own frame, along the edge (163,
-/// 1101, 1474 x 58 on a 1800 x 1169 display); what it gives for an auto-hidden Dock while hidden is unmeasured (Netx's
-/// Dock does not hide). Main thread.
-func dockBarFrame(at point: CGPoint, on displays: [CGRect]) -> CGRect? {
+/// The Dock's bar, as Accessibility has it (its list of items), in global top-left coordinates, from the last read:
+/// nil with no Dock, none read or a read failed. Never waits on the Dock: once that read's keep has passed and none is
+/// under way, it starts one on its own queue and gives the last meanwhile. A read is kept from when it ends by what it
+/// found: a bar shown (`dockBarShown`) for 0.3 s; one hidden or sliding only till the next look, 0.1 s; a failure for
+/// a second. Any thread.
+func dockBarFrame() -> CGRect? {
     let now = CACurrentMediaTime()
-    if now < DockBar.keptTill { return DockBar.frame }
-    let frame = readDockBar(by: now + 0.05)
-    DockBar.frame = frame
-    if let frame {
-        let display = displays.first { $0.contains(point) }
-        let alongEdge = display.map { d in
-            d.contains(frame) && (abs(frame.maxY - d.maxY) < 2 || abs(frame.minX - d.minX) < 2 || abs(frame.maxX - d.maxX) < 2)
-        } ?? false
-        DockBar.keptTill = now + (alongEdge ? 0.3 : 0.1)
-    } else {
-        DockBar.keptTill = now + 1
+    let (frame, start) = DockBar.state.withLock { state in
+        let start = now >= state.keptTill && !state.reading
+        if start { state.reading = true }
+        return (state.frame, start)
     }
+    if start { DockBar.queue.async(execute: readDockBar) }
     return frame
 }
 
+/// Reads the Dock's bar into `DockBar.state`, on `DockBar.queue`. Each element is asked with a 50 ms timeout, no call
+/// is made past 50 ms from the start, and a read that took longer counts as failed.
+private func readDockBar() {
+    let start = CACurrentMediaTime()
+    let read = readDockList(by: start + 0.05)
+    let end = CACurrentMediaTime()
+    let frame = end > start + 0.05 ? nil : read
+    var count: UInt32 = 0
+    var ids = [CGDirectDisplayID](repeating: 0, count: 16)
+    let displays = CGGetActiveDisplayList(16, &ids, &count) == .success ? ids.prefix(Int(count)).map(CGDisplayBounds) : []
+    let keep: CFTimeInterval = frame.map { dockBarShown($0, on: displays) ? 0.3 : 0.1 } ?? 1
+    DockBar.state.withLock { $0 = DockBar.State(frame: frame, keptTill: end + keep, reading: false) }
+}
+
 /// The Dock's list of items, read before `deadline`, or nil.
-private func readDockBar(by deadline: CFTimeInterval) -> CGRect? {
+private func readDockList(by deadline: CFTimeInterval) -> CGRect? {
     guard let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first else { return nil }
     let app = AXUIElementCreateApplication(dock.processIdentifier)
     AXUIElementSetMessagingTimeout(app, 0.05)
-    var children: AnyObject?
-    guard AXUIElementCopyAttributeValue(app, kAXChildrenAttribute as CFString, &children) == .success else { return nil }
-    for child in children as? [AXUIElement] ?? [] {
+    func value(_ element: AXUIElement, _ attribute: String) -> AnyObject? {
         guard CACurrentMediaTime() < deadline else { return nil }
+        var value: AnyObject?
+        return AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success ? value : nil
+    }
+    for child in value(app, kAXChildrenAttribute) as? [AXUIElement] ?? [] {
         AXUIElementSetMessagingTimeout(child, 0.05)
-        var role: AnyObject?, position: AnyObject?, size: AnyObject?
-        guard AXUIElementCopyAttributeValue(child, kAXRoleAttribute as CFString, &role) == .success,
-              role as? String == kAXListRole,
-              AXUIElementCopyAttributeValue(child, kAXPositionAttribute as CFString, &position) == .success,
-              AXUIElementCopyAttributeValue(child, kAXSizeAttribute as CFString, &size) == .success,
-              let position, let size, CFGetTypeID(position) == AXValueGetTypeID(), CFGetTypeID(size) == AXValueGetTypeID()
-        else { continue }
+        guard value(child, kAXRoleAttribute) as? String == kAXListRole,
+              let position = value(child, kAXPositionAttribute), let size = value(child, kAXSizeAttribute),
+              CFGetTypeID(position) == AXValueGetTypeID(), CFGetTypeID(size) == AXValueGetTypeID()
+        else {
+            if CACurrentMediaTime() >= deadline { return nil }
+            continue
+        }
         var origin = CGPoint.zero, extent = CGSize.zero
         AXValueGetValue(position as! AXValue, .cgPoint, &origin)
         AXValueGetValue(size as! AXValue, .cgSize, &extent)
@@ -85,10 +94,15 @@ private func readDockBar(by deadline: CFTimeInterval) -> CGRect? {
     return nil
 }
 
-/// The last read of the Dock's bar (`dockBarFrame`), and till when it holds.
+/// The last read of the Dock's bar (`dockBarFrame`), till when it holds, and whether a read is under way.
 private enum DockBar {
-    static var keptTill = -CFTimeInterval.infinity
-    static var frame: CGRect?
+    struct State {
+        var frame: CGRect?
+        var keptTill = -CFTimeInterval.infinity
+        var reading = false
+    }
+    static let state = OSAllocatedUnfairLock(initialState: State())
+    static let queue = DispatchQueue(label: "dinky.dock-bar", qos: .utility)
 }
 
 /// Logs, once per app and level a run, a window in front of a placed strip window that keeps a press or the mouse's hand
