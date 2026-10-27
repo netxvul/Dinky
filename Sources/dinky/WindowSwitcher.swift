@@ -176,9 +176,11 @@ final class WindowSwitcher {
               app.enabled, !MissionControl.shared.active, !SpaceSwitcher.shared.switching,
               !WorkspaceSwitcher.shared.isShowing, let coordinator = app.coordinator,
               let display = app.displays.displays.first(where: { $0.uuid == uuid }),
-              display.currentSpaceID == space,
+              // For a strip across two displays, either display's Space of it.
+              coordinator.treeKey(display.currentSpaceID) == space,
               // Read afresh: the display model learns of a Space swipe only once it lands.
-              !dinky_display_is_animating(uuid as CFString), dinky_current_space_id(uuid as CFString) == space else {
+              !dinky_display_is_animating(uuid as CFString),
+              coordinator.treeKey(dinky_current_space_id(uuid as CFString)) == space else {
             if glanced { hide() }
             return
         }

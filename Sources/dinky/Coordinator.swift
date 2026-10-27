@@ -1858,8 +1858,9 @@ final class Coordinator {
     /// current one and not sliding away, as the window server has it now rather than the display model, which hears
     /// late.
     private func stripScrollShows(_ scroll: StripScroll) -> Bool {
+        // The display held on shows the strip's tree, for a strip across two displays either display's Space of it.
         enabled && !MissionControl.shared.active && !dinky_display_is_animating(scroll.display as CFString)
-            && dinky_current_space_id(scroll.display as CFString) == scroll.key
+            && treeKey(dinky_current_space_id(scroll.display as CFString)) == scroll.key
     }
 
     /// dinky turned off: the fingers hold nothing, and the strip they held forgets it was scrolled freely.
