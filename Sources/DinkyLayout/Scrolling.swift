@@ -549,15 +549,7 @@ extension Workspace {
     func parked(_ frames: [WindowID: CGRect], resting: [WindowID: CGRect]? = nil) -> [WindowID: CGRect] {
         let keepsSize = !pushedColumns.isEmpty
         let columns = root.children.map { $0.windows.filter { frames[$0] != nil } }
-        let covers = columns.compactMap { ids -> (id: WindowID, frame: CGRect, alone: Bool)? in
-            let rects = ids.map { (id: $0, frame: frames[$0]!) }
-            let shown = rects.allSatisfy { $0.frame.minX >= bounds.minX - 1 && $0.frame.maxX <= bounds.maxX + 1 }
-            guard !rects.isEmpty, shown,
-                  let biggest = rects.max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height })
-            else { return nil }
-            return (biggest.id, biggest.frame, rects.count == 1)
-        }
-        let left = covers.min { $0.frame.minX < $1.frame.minX }, right = covers.max { $0.frame.maxX < $1.frame.maxX }
+        let covers = wallCovers(of: frames)
         // How much of each window must stay on screen at each edge, column by column from the screen outwards,
         // following how much the column in front shows. Rounded towards more of the window on screen, since part of
         // a point counts as none. A column stacked above the one in front of it (as on the far side of a long glide,
@@ -599,6 +591,54 @@ extension Workspace {
                 front = max(front, bounds.maxX - min(frame.minX, limit))
             }
         }
+        let hanging = hangingUnderPins(frames)
+        return Dictionary(uniqueKeysWithValues: frames.map { id, frame in
+            if let wall = wallParking(frame, covers: covers), !hanging.contains(id),
+               let cover = wall == .left ? covers.left : covers.right {
+                if let curtain = curtain(frame, at: wall, under: cover.frame, alone: cover.alone), !keepsSize {
+                    return (id, curtain)
+                }
+                return (id, hiddenAtWall(id, frame, behind: cover.frame, sizedBy: resting?[cover.id], wall: wall,
+                                         keepsSize: keepsSize))
+            }
+            var x = frame.minX
+            x = min(x, walls.contains(.right) ? bounds.maxX - frame.width : rightLimit[id] ?? bounds.maxX - Self.peek)
+            x = max(x, walls.contains(.left) ? bounds.minX : leftLimit[id] ?? bounds.minX + Self.peek - frame.width)
+            return (id, CGRect(x: x, y: frame.minY, width: frame.width, height: frame.height))
+        })
+    }
+
+    /// The biggest window of a column shown whole, and whether it is its column's only one.
+    struct WallCover {
+        let id: WindowID, frame: CGRect, alone: Bool
+    }
+
+    /// For strip frames such as `placeStrip` takes, the biggest window of the column in view nearest each side: what
+    /// a window scrolled out past a wall there hides behind, or hangs under as a curtain (see `parked`).
+    func wallCovers(of frames: [WindowID: CGRect]) -> (left: WallCover?, right: WallCover?) {
+        let covers = root.children.map { $0.windows.filter { frames[$0] != nil } }.compactMap { ids -> WallCover? in
+            let rects = ids.map { (id: $0, frame: frames[$0]!) }
+            let shown = rects.allSatisfy { $0.frame.minX >= bounds.minX - 1 && $0.frame.maxX <= bounds.maxX + 1 }
+            guard !rects.isEmpty, shown,
+                  let biggest = rects.max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height })
+            else { return nil }
+            return WallCover(id: biggest.id, frame: biggest.frame, alone: rects.count == 1)
+        }
+        return (covers.min { $0.frame.minX < $1.frame.minX }, covers.max { $0.frame.maxX < $1.frame.maxX })
+    }
+
+    /// The wall a window at `frame` is parked at, as a curtain or hidden behind the cover there, if any: part or wholly
+    /// past a wall on one side, with a column in view to cover it. One hanging under a pin is held off the wall
+    /// instead, which the caller tells (`hangingUnderPins`).
+    private func wallParking(_ frame: CGRect, covers: (left: WallCover?, right: WallCover?)) -> Direction? {
+        let offLeft = frame.minX < bounds.minX - 1, offRight = frame.maxX > bounds.maxX + 1
+        guard offLeft != offRight else { return nil }
+        let wall: Direction = offLeft ? .left : .right
+        return walls.contains(wall) && (wall == .left ? covers.left : covers.right) != nil ? wall : nil
+    }
+
+    /// The band windows hanging under a pin, held off a wall rather than parked at it.
+    private func hangingUnderPins(_ frames: [WindowID: CGRect]) -> Set<WindowID> {
         // A band window as wide as the band or wider, beside a pin, is the one in view there: past a wall it is held
         // off it, hanging under the pin, not hidden behind a column in view.
         // A band window wider than the band beside a pin, the one in view there: as it rests (`hangsUnderPin`), and on
@@ -616,22 +656,23 @@ extension Workspace {
                 }
             }
         }
-        return Dictionary(uniqueKeysWithValues: frames.map { id, frame in
-            let offLeft = frame.minX < bounds.minX - 1, offRight = frame.maxX > bounds.maxX + 1
-            if offLeft != offRight, walls.contains(offLeft ? .left : .right), let cover = offLeft ? left : right,
-               !hanging.contains(id) {
-                let wall: Direction = offLeft ? .left : .right
-                if let curtain = curtain(frame, at: wall, under: cover.frame, alone: cover.alone), !keepsSize {
-                    return (id, curtain)
-                }
-                return (id, hiddenAtWall(id, frame, behind: cover.frame, sizedBy: resting?[cover.id], wall: wall,
-                                         keepsSize: keepsSize))
-            }
-            var x = frame.minX
-            x = min(x, walls.contains(.right) ? bounds.maxX - frame.width : rightLimit[id] ?? bounds.maxX - Self.peek)
-            x = max(x, walls.contains(.left) ? bounds.minX : leftLimit[id] ?? bounds.minX + Self.peek - frame.width)
-            return (id, CGRect(x: x, y: frame.minY, width: frame.width, height: frame.height))
-        })
+        return hanging
+    }
+
+    /// For strip frames such as `placeStrip` takes, the window at each wall that windows parked there are under: the
+    /// cover (`wallCovers(of:)`) where at least one band window is held there as a curtain or hides behind it, the
+    /// left wall's first. None on a pinned side, whose pin is put in front of the band by the pins' own ordering.
+    public func wallCovers(_ frames: [WindowID: CGRect]) -> [WindowID] {
+        let covers = wallCovers(of: frames), hanging = hangingUnderPins(frames)
+        var parkedAt: Set<Direction> = []
+        for (id, frame) in frames where !hanging.contains(id) && pinSide(of: id) == nil {
+            if let wall = wallParking(frame, covers: covers) { parkedAt.insert(wall) }
+        }
+        return [(Direction.left, covers.left), (.right, covers.right)].compactMap { wall, cover in
+            guard parkedAt.contains(wall), let cover, pinnedIndex(wall == .left ? .left : .right) == nil,
+                  pinSide(of: cover.id) == nil else { return nil }
+            return cover.id
+        }
     }
 
     /// Where a window part past `wall` stays as a curtain: at its size, held at the wall where the strip holds a

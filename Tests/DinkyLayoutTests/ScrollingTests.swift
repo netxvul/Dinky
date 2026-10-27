@@ -537,6 +537,54 @@ struct ScrollingWallAlignTests {
         #expect(!frames[4]!.intersects(between.insetBy(dx: 0, dy: 0.5)), "nothing in the gap between them")
     }
 
+    /// The built-in display, its wall at the right, `n` columns of half its width, `focused` focused.
+    private func builtIn(_ n: Int, focused: WindowID, walls: Set<Direction> = [.right]) -> Workspace {
+        var ws = Workspace(bounds: rect(0, 0, 1800, 1169), gaps: Gaps(all: 8), algorithm: .scrolling)
+        ws.columnWidth = 0.5
+        ws.walls = walls
+        ws.columnCentring = .alwaysFill
+        for id in 1...n { ws.insert(WindowID(id)) }
+        ws.focus(focused)
+        return ws
+    }
+
+    @Test func `The cover at a wall is the column in view there, where windows hide behind it`() {
+        let ws = builtIn(7, focused: 3)
+        #expect(ws.wallCovers(ws.stripFrames) == [4], "5, 6 and 7 hide behind 4")
+    }
+
+    @Test func `The cover at a wall is the column a curtain hangs under`() {
+        // The external display's left wall, the strip's end there: 4 part past the wall hangs as a curtain under 5.
+        let ws = flipGo(shares: [0.5, 0.5, 0.5, 0.5, 0.57])
+        #expect(ws.layout().frames[4]!.minX == 1800, "4 a curtain at the wall")
+        #expect(ws.wallCovers(ws.stripFrames) == [5])
+    }
+
+    @Test func `Nothing parked at a wall, no cover`() {
+        let ws = builtIn(2, focused: 1)
+        #expect(ws.wallCovers(ws.stripFrames).isEmpty)
+        var left = builtIn(7, focused: 6)
+        left.walls = [.right]
+        #expect(left.wallCovers(left.stripFrames).isEmpty, "parked off the left edge, which is no wall")
+    }
+
+    @Test func `Between two walls each has its cover, the left one's first`() {
+        let ws = builtIn(7, focused: 4, walls: [.left, .right])
+        let frames = ws.layout().frames
+        let covers = ws.wallCovers(ws.stripFrames)
+        #expect(covers.count == 2)
+        #expect(covers.first.map { frames[$0]!.minX < 900 } == true, "the left wall's first")
+        #expect(covers.last.map { frames[$0]!.maxX > 900 } == true)
+    }
+
+    @Test func `A pinned side has no cover`() {
+        var ws = builtIn(7, focused: 7)
+        _ = ws.pin(.right)
+        #expect(ws.pinnedIndex(.right) != nil)
+        ws.focus(3)
+        #expect(ws.wallCovers(ws.stripFrames).isEmpty, "the pin is put in front by its own ordering")
+    }
+
     @Test func `At a wall the column in view goes up over the ones hiding behind it`() {
         var ws = Workspace(bounds: rect(0, 0, 1800, 1169), gaps: Gaps(all: 8), algorithm: .scrolling)
         ws.columnWidth = 0.5

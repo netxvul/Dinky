@@ -201,6 +201,9 @@ final class Coordinator {
     /// By tree, a strip the fingers just let go of, its windows still moving at their speed, and whether through Dock
     /// (true) or Accessibility (false), so its next pass glides them on that way, from where they are.
     private var flung: [UInt64: Bool] = [:]
+    /// The windows put in front at a strip's walls (`orderWallCovers`) since fingers took hold of it or its glide set
+    /// out, by key: each is asked for once.
+    private var wallCoversOrdered: [UInt64: Set<WindowID>] = [:]
     /// Looks every `stripScrollCheck` while fingers hold a strip, as SlideScroll does, for its Space going from under
     /// them.
     private var stripScrollWatch: Timer?
@@ -1415,13 +1418,48 @@ final class Coordinator {
         let pids = Dictionary(uniqueKeysWithValues: strip.keys.compactMap { id in windows[id].map { (id, $0.pid) } })
         let targets = strip.filter { pids[$0.key] != nil }
         let starts = Dictionary(uniqueKeysWithValues: targets.map { id, target in (id, previous[id] ?? target) })
-        let place = { (frames: [WindowID: CGRect]) in
-            workspace.placeStrip(strip.merging(frames) { $1 }, resting: strip)
+        let place = { [weak self] (frames: [WindowID: CGRect]) -> [WindowID: CGRect] in
+            let input = strip.merging(frames) { $1 }
+            self?.orderWallCovers(scroll.key, workspace, strip: input)
+            return workspace.placeStrip(input, resting: strip)
         }
         if scroll.throughDock {
             animator.follow(scroll.key, from: starts, to: targets, pids: pids, sink: { ScriptingAddition.move(place($0)) })
         } else {
             animator.follow(scroll.key, from: starts, to: targets, pids: pids, place: place)
+        }
+    }
+
+    /// While fingers hold the strip on `key`, or a glide moves it, the column in view at a wall
+    /// (`Workspace.wallCovers`) slides in under the windows parked there, the curtain and those hiding behind it, as
+    /// no raise runs on the way, and Accessibility could not put it in front of the app in front's windows, the
+    /// curtain's often, and would make it key. So each cover there is put in front through Dock as it becomes one,
+    /// which moves no focus, once since the hold or glide began. Not without Dock's ordering, nor a cover dragged, one
+    /// over a pin, or while a window of the strip is fullscreen; the rest of what is left out is judged on the raise
+    /// queue (`FrameApplier.orderWallCovers`). `strip` is the strip frames as `placeStrip` takes them.
+    private func orderWallCovers(_ key: UInt64, _ workspace: Workspace, strip: [WindowID: CGRect]) {
+        let ordered = wallCoversOrdered[key] ?? []
+        let covers = workspace.wallCovers(strip).filter { !ordered.contains($0) }
+        guard !covers.isEmpty else { return }
+        wallCoversOrdered[key] = ordered.union(covers)
+        let pins = workspace.pinnedWindows.compactMap { model.windows[$0]?.frame }
+        var order: [WindowID] = []
+        for id in covers {
+            let frame = strip[id] ?? .null
+            let left = !(ScriptingAddition.available && ScriptingAddition.orders) ? "no ordering through Dock"
+                : id == dragging ? "dragged" : !workspace.fullscreenWindows.isEmpty ? "a window fullscreen"
+                : pins.contains(where: { $0.intersects(frame) }) ? "over a pin" : nil
+            if let left {
+                print("\(stamp()) strip \(key): wall cover \(telemetry.name(id)) left out, \(left)")
+            } else {
+                order.append(id)
+            }
+        }
+        guard !order.isEmpty else { return }
+        let pids = Dictionary(uniqueKeysWithValues: order.compactMap { id in model.windows[id].map { (id, $0.pid) } })
+        applier.orderWallCovers(order, pids: pids, strip: Set(workspace.windows)) { [weak self] id, outcome in
+            guard let self else { return }
+            print("\(stamp()) strip \(key): wall cover \(telemetry.name(id)) \(outcome)")
         }
     }
 
@@ -1490,6 +1528,7 @@ final class Coordinator {
     private func handBack(_ key: UInt64) {
         guard let scroll = stripScroll, scroll.key == key else { return }
         stripScroll = nil
+        wallCoversOrdered[key] = nil
         if scroll.throughDock { ScriptingAddition.forget(workspaces[key]?.windows) }
         stripScrollWatch?.invalidate()
         stripScrollWatch = nil
@@ -1894,7 +1933,10 @@ final class Coordinator {
                 }
             }
         }
-        let write = { writeThen {} }
+        let write = { [weak self] in
+            self?.wallCoversOrdered[key] = nil
+            writeThen {}
+        }
         lastStrips[key] = strip.isEmpty ? nil : (strip, layout.frames, fullscreen)
         // One the system is tiling counts as where the system is taking it, so the pass after it lands puts it back, or
         // fills it again, through the system too, when the tree has changed its mind meanwhile.
@@ -2089,6 +2131,7 @@ final class Coordinator {
                     input = ResizeOnce.guarded(input, lead: lead, left: beside.left, right: beside.right, gap: guardGap,
                                                shown: { $0 == lead ? frame : shown($0) })
                 }
+                self.orderWallCovers(key, workspace, strip: input)
                 var placed = workspace.placeStrip(input, resting: strip)
                 // Placed as the guard has it: hanging past the screen edge at its size, such a window is no window
                 // scrolled out to be parked. Not past a wall, though: one coming back into view from behind the column

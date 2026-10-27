@@ -267,6 +267,41 @@ final class FrameApplier {
         }
     }
 
+    /// Order `covers`, the columns in view at a strip's walls, in front through Dock, which moves no focus and makes no
+    /// window key (see `Coordinator.orderWallCovers`), leaving out a cover of the app in front, which in front of its
+    /// focused window would read as focused, and one a window outside `strip`, at its level or below, overlaps in
+    /// front, as one floating over the strip, which stays in front. `told` hears, on the main thread, each cover's
+    /// outcome: ordered, or left out and why.
+    func orderWallCovers(_ covers: [WindowID], pids: [WindowID: pid_t], strip: Set<WindowID>,
+                         told: @escaping (WindowID, String) -> Void) {
+        raiseQueue.async {
+            let focused = dinky_border_focused_window()
+            let owner = focused != 0 ? dinky_window_info(focused).pid : 0
+            let stack = onScreenStack()
+            var ordered: [WindowID] = [], outcomes: [(WindowID, String)] = []
+            for id in covers {
+                guard let at = stack.firstIndex(where: { $0.id == id }), let frame = stack[at].frame else {
+                    outcomes.append((id, "left out, not on screen"))
+                    continue
+                }
+                let level = stack[at].layer
+                let over = stack[..<at].first { other in
+                    !strip.contains(other.id) && other.layer <= level && other.frame?.intersects(frame) == true
+                }
+                if owner != 0, pids[id] == owner {
+                    outcomes.append((id, "left out, of the app in front"))
+                } else if let over {
+                    outcomes.append((id, "left out, under \(over.id), outside the strip"))
+                } else {
+                    ordered.append(id)
+                    outcomes.append((id, "ordered in front"))
+                }
+            }
+            if !ordered.isEmpty { dinky_sa_order_batch(ordered, Int32(ordered.count)) }
+            DispatchQueue.main.async { for (id, outcome) in outcomes { told(id, outcome) } }
+        }
+    }
+
     /// Raise pinned windows to the front, back to front, so the last is frontmost: they overlap nothing in view, only
     /// the band's windows sliding under them. Not when that could move focus (see `raisingKeepsFocus`). `ordering`, they
     /// are ordered through Dock's scripting addition instead, which also puts them in front of the active app's windows,
