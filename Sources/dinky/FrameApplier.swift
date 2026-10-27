@@ -134,6 +134,8 @@ final class FrameApplier {
 
     /// Forgets which apps were slow, as a glide starts.
     func clearSlow() { scheduler.clearSlow() }
+    /// The glides or held drags of `ids` set off (`FrameScheduler.startRun`).
+    func startRun(_ ids: [WindowID]) { scheduler.startRun(ids) }
 
     /// Whether the app stopped answering Accessibility and is being left alone until it does. See `FrameScheduler.isBusy`.
     func isBusy(_ pid: pid_t) -> Bool { scheduler.isBusy(pid) }

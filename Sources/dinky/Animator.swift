@@ -143,11 +143,22 @@ final class Animator: NSObject {
     /// Where a gliding window's steps write it now; nil for one not gliding.
     func frame(of id: WindowID) -> CGRect? { entries[id]?.frame }
 
-    /// A new glide: every app gets another chance to keep up, and one that kept up again in the last is slow no longer.
+    /// A new glide: every app gets another chance to keep up, and one that kept up again in the last, its recovery
+    /// heard by now, is slow no longer.
     private func clearSlow() {
-        applier.clearSlow()
+        recovered.formUnion(applier.takeRecovered())
+        recovered = recovered.filter { !applier.isSlow($0) }
         slowPids.subtract(recovered)
         recovered = []
+        applier.clearSlow()
+    }
+
+    /// A tree sets off with none of its windows gliding: apps that kept up again are slow no longer, unless a window of
+    /// theirs glides on elsewhere, whose column still holds to it.
+    private func settleRecovered() {
+        let gliding = Set(entries.values.map(\.pid))
+        slowPids.subtract(recovered.subtracting(gliding))
+        recovered.formIntersection(gliding)
     }
 
     /// Move the tree's windows from `starts` to `targets`, then run `finish`. Windows already there, or with
@@ -166,7 +177,10 @@ final class Animator: NSObject {
                  anchors: [WindowID: ResizeOnce.Anchor] = [:], restart: Set<WindowID> = [], curve: AnimationCurve? = nil,
                  sink: (([WindowID: CGRect]) -> Void)? = nil, then finish: @escaping () -> Void) {
         // A new glide: every app gets another chance to keep up.
-        if entries.isEmpty { clearSlow() }
+        if entries.isEmpty { clearSlow() } else if !entries.values.contains(where: { $0.key == key }) { settleRecovered() }
+        // Windows setting off now: their first size is no step an app is slow to follow.
+        let gliding = Set(entries.keys)
+        defer { applier.startRun(entries.keys.filter { !gliding.contains($0) }) }
         following.remove(key)
         // What each moving window glided on till now, so one whose curve changes can start over on the new one.
         let before = curves
@@ -220,7 +234,9 @@ final class Animator: NSObject {
     /// run once its windows arrived, is dropped: the pass after the fingers lift runs its own.
     func follow(_ key: UInt64, from starts: [WindowID: CGRect], to targets: [WindowID: CGRect], pids: [WindowID: pid_t],
                 place: (([WindowID: CGRect]) -> [WindowID: CGRect])? = nil, sink: (([WindowID: CGRect]) -> Void)? = nil) {
-        if entries.isEmpty { clearSlow() }
+        if entries.isEmpty { clearSlow() } else if !entries.values.contains(where: { $0.key == key }) { settleRecovered() }
+        let gliding = Set(entries.keys)
+        defer { applier.startRun(entries.keys.filter { !gliding.contains($0) }) }
         windowPids.merge(pids) { $1 }
         if following.insert(key).inserted { finishes[key] = nil }
         let before = curves

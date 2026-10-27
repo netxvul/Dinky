@@ -346,8 +346,12 @@ public struct Workspace: Equatable, Sendable {
             root = Container(.horizontal, .tiles, [ends[0]].compactMap { $0 } + band + [ends[1]].compactMap { $0 })
             for id in ids { columnWidths[id] = columnWidths[id] ?? columnWidth }
             settlePins()
-            // Back from another layout, the pins it kept may leave too little room on this display now.
-            if !fromStrip { fitPins() }
+            // Back from another layout, the pins it kept may leave too little room on this display now: the band's own
+            // room first, as a display change fits a strip, then the pins.
+            if !fromStrip {
+                fitBand()
+                fitPins()
+            }
         }
         if let focused { focus(focused) }
     }

@@ -626,12 +626,17 @@ struct PinTreeTests {
         #expect(ws.pins.isEmpty, "a new window with the old id is no pin")
     }
 
-    @Test func `Back to scrolling on a narrower display, pins without room are let go`() throws {
+    @Test func `Back to scrolling with too little room, the pins narrow first and are let go only where that is not enough`() throws {
         var ws = try pinned(pinned(strip(4, width: 0.35), 1, .left), 4, .right)
         ws.setAlgorithm(.dwindle(.tiles))
         ws.minimumSizes[1] = CGSize(width: 450, height: 100)
+        var narrowed = ws
+        narrowed.setAlgorithm(.scrolling)
+        #expect(narrowed.pinnedWindows.count == 2, "the other pin narrows and leaves the band its room")
+        #expect(narrowed.bandHasRoom)
+        ws.minimumSizes[4] = CGSize(width: 450, height: 100)
         ws.setAlgorithm(.scrolling)
-        #expect(ws.pinnedWindows.count < 2)
+        #expect(ws.pinnedWindows.count < 2, "neither can narrow enough")
     }
 
     @Test func `Settling drops a mark off its end and a column marked for both sides keeps the left`() {
@@ -1733,6 +1738,11 @@ struct StripRestoreTests {
         do { let r = snapshot.beginFreeScroll(); #expect(r) }
         snapshot.scrollFreely(by: 150)
         try #require(snapshot.isScrollingFreely)
+        var held = snapshot
+        held.focus(5, holdingScroll: true)
+        held.keepsScroll = true
+        try #require(held.holdsScroll && held.keepsScroll)
+        #expect({ let r = held.restored(keeping: Set(held.windows), adding: []); return !r.holdsScroll && !r.keepsScroll }())
         let restored = snapshot.restored(keeping: Set(snapshot.windows), adding: [])
         #expect(!restored.isScrollingFreely)
         #expect(!restored.holdsScroll && !restored.keepsScroll)
@@ -1833,5 +1843,19 @@ struct StripRestoreDecisionTests {
         var gone = snapshot
         gone.remove(3)
         #expect(gone.keepsShape(of: snapshot), "a window gone since leaves the rest as they were")
+    }
+
+    @Test func `A strip keeps its shape only with its pins, its order and its widths`() throws {
+        let snapshot = try pinned(strip(4, width: 0.3), 1, .left)
+        var swapped = snapshot
+        swapped.focus(3)
+        do { let r = swapped.move(.right); #expect(r) }
+        #expect(swapped.pins == snapshot.pins)
+        #expect(!swapped.keepsShape(of: snapshot), "the same pins, two band columns the other way round")
+        let unpinned = strip(3, width: 0.3)
+        #expect(strip(3, width: 0.3).keepsShape(of: unpinned), "the same order, no pins")
+        var wider = unpinned
+        wider.setWidth(ofColumn: 1, 0.5)
+        #expect(!wider.keepsShape(of: unpinned), "a column at another width")
     }
 }

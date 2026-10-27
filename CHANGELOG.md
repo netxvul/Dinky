@@ -91,13 +91,14 @@
 
 ### Fixes
 
-- A display going away, as around sleep or unplugged, no longer loses a strip on it: once the displays settle, it comes back in its order, at its column widths, its pins pinned, whether its windows have to be moved back or macOS put them back itself, onto a new Space or as new columns. Only a strip on a display that came or went is put back.
+- A display going away, as around sleep or unplugged, no longer loses a strip on it: once the displays settle, it comes back in its order, at its column widths, its pins pinned, whether its windows have to be moved back or macOS put them back itself, onto a new Space or as new columns. It is fitted to the display it comes back on, as any display change fits a strip. Only a strip on a display that came or went is put back.
 - A tiled window moved to another display by `move-window-to-display` or `move-window-to-workspace` is placed in its tile there at once, rather than gliding across from where it was on the other display.
 - A window dropped where nothing else had to move, as when swapping two windows of a pinned stack or putting the lower one on top, is put in its tile; before, a glide the drop's preview had started could carry on without it and leave it where the button came up. A drop on its own display is checked a moment after, as one to another display is, and put right if it did not land.
 - Letting go just after moving into another zone drops there once the pointer has asked for it a moment, not where the zone it came from was showing.
 - Over a pin in front of a band window hanging under it, a drag of that window drops on the pin, not back on its own place.
 - `join-with up` and `down` within a strip column do what they say or nothing: they no longer split a column of two into two columns, nor take a window out of a pin or unpin it.
 - Stacking a window into a pinned column, by dropping or `join-with`, is refused where the pin would then leave the band less than a quarter of the screen, as pinning is.
+- `move` and `join-with` up or down within a pinned column are refused where the pin would widen to leave the band less than a quarter of the screen.
 - Swapping a window with one in a stacked column leaves each column one width; before, the column could take another width once its top window left.
 - `dinky doctor` warns when macOS tiles windows dragged to a screen edge or the top, which fights dinky's drop.
 - While a drag or a glide moves the windows of a strip with a pin whose app has other windows, dinky no longer asks that app which window it has focused, which held the frames up for up to a tenth of a second; it asks once the strip rests. A command, which acts on the window it reads, still asks.

@@ -104,8 +104,20 @@ final class WindowModel {
                 refresh(id, kind: event.kind)
             }
         case .windowDestroy:
-            // JankyBorders treats 1326 as "left this Space"; the window may still exist elsewhere.
-            if dinky_window_info(id).exists { refresh(id, kind: event.kind) } else { remove(id, kind: event.kind, pid: event.pid) }
+            // JankyBorders treats 1326 as "left this Space"; the window may still exist elsewhere. Or it is still being
+            // torn down, its close unheard, as a window closed behind a sheet on a Space not shown: looked at again a
+            // moment later, and gone then, removed.
+            if dinky_window_info(id).exists {
+                refresh(id, kind: event.kind)
+                for delay in [0.2, 1.0] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                        guard let self, windows[id] != nil, !dinky_window_info(id).exists else { return }
+                        remove(id, kind: .windowDestroy)
+                    }
+                }
+            } else {
+                remove(id, kind: event.kind, pid: event.pid)
+            }
         case .windowClose:
             remove(id, kind: event.kind, pid: event.pid)
         case .spaceChange, .spaceCreated, .spaceDestroyed, .frontApp:

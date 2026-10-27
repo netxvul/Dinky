@@ -105,6 +105,8 @@ final class Coordinator {
     /// Windows a drop took to another Space's tree, by that Space, until they are on it: macOS can report one on the
     /// Space it left for a moment, which must not take it out of its new tree.
     var arriving: [WindowID: UInt64] = [:]
+    /// A window taken out of the tree of a Space as it moved to another (`WorkspaceNumbers`).
+    var onWindowLeft: ((WindowID, UInt64) -> Void)?
     lazy var placeholders = DragPlaceholders()
     /// Grabs windows pressed anywhere with `[drag] mouse-modifier` held.
     private lazy var modifierDrag = ModifierDrag(coordinator: self)
@@ -215,7 +217,9 @@ final class Coordinator {
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] event in
             guard let point = event.cgEvent?.location else { return }
             if event.type == .leftMouseDown {
-                self?.lastPress = (CACurrentMediaTime(), pressedWindow(at: point))
+                // A window list read a click: only where a strip that shows has pins.
+                guard let self, workspaces.contains(where: { self.isVisible($0.key) && !$0.value.pinnedWindows.isEmpty }) else { return }
+                lastPress = (CACurrentMediaTime(), frontmostWindow(at: point, in: onScreenWindowInfo())?.id)
                 return
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(50)) { self?.recheckClickedPin(at: point) }
@@ -464,6 +468,9 @@ final class Coordinator {
         }
         // An app come to the front or a new window: what it focuses is read afresh.
         if [.frontApp, .windowCreate].contains(event.kind) { forgetFrontRead() }
+        // Another app in front: what a command read of the one before is past. Not a new window, which may come while
+        // the strip still moves.
+        if event.kind == .frontApp { readWhileMoving = nil }
         if [.frontApp, .windowReorder, .windowCreate].contains(event.kind) { syncFocus() }
         if [.frontApp, .windowReorder].contains(event.kind) {
             // The front window settles a few ms after the event, as the border manager also knows: Cmd-` or a click
@@ -516,12 +523,14 @@ final class Coordinator {
     /// (so a window dragged to another Space stays there), and re-applies every tree on screen. The model
     /// publishes every window it re-reads, so `handle` tracks and forgets them. Empty trees of Spaces that
     /// no longer exist are dropped.
-    func reconcile() {
+    /// `placingAtOnce`, as strips a display change put back, are placed without glides.
+    func reconcile(placingAtOnce: Set<UInt64> = []) {
         configureWorkspaces()
         model.reconcile()
         fitToDisplays()
         workspaces = workspaces.filter { displays.display(containingSpace: $0.key) != nil || !$0.value.windows.isEmpty }
         syncFocus()
+        snap.formUnion(placingAtOnce.filter { workspaces[$0] != nil })
         dirty.formUnion(workspaces.keys)
         flush()
     }
@@ -692,6 +701,7 @@ final class Coordinator {
                 edit(old) { $0.depart(window.id) }
             } else {
                 edit(old) { $0.remove(window.id) }
+                onWindowLeft?(window.id, old)
             }
         }
         // A window coming from another Space's tree is moving, not switching tabs: tabs share a Space.
@@ -805,7 +815,11 @@ final class Coordinator {
         let id = dinky_border_focused_window()
         guard ScriptingAddition.orders, let window = model.windows[id], let key = placements[id]?.space,
               workspaces[key]?.pinSide(of: id) != nil, !(id == confirmedPin && id == lastFocused && focusing == nil)
-        else { return id }
+        else {
+            // No pin to read through: the window server's answer, what a command read while a strip moved past.
+            readWhileMoving = nil
+            return id
+        }
         let pid = window.pid
         // Another window of its app it may be in front of: tiled or floating, shown on a Space that shows.
         let shown = { [self] (other: WindowID) -> Bool in
@@ -826,22 +840,27 @@ final class Coordinator {
             let pinned = { (other: WindowID) in
                 self.placements[other]?.space.flatMap { self.workspaces[$0]?.pinSide(of: other) } != nil
             }
+            // What a command read of this app while a strip moved, a pin or not.
+            if let read = readWhileMoving, shown(read) { return read }
             // A window dinky is focusing only once activated: before, its app has another focused, which keys go to.
             // Then the window last focused, floating ones too, then the one its app had tiled last.
             let activated = focusing.flatMap { $0.activated ? $0.id : nil }
-            return [readWhileMoving, activated, lastFocused, lastUsed[pid]].compactMap { $0 }.first { shown($0) && !pinned($0) }
-                ?? id
+            return [activated, lastFocused, lastUsed[pid]].compactMap { $0 }.first { shown($0) && !pinned($0) } ?? id
         }
-        guard !applier.isBusy(pid), (frontBackoff[pid] ?? 0) <= now else { return fallback() }
         // While a drag or a glide moves the windows of its strip, asking the app, up to a tenth of a second on the main
         // thread, would hold their frames up: the window dinky has, and the app asked once the strip rests.
         // A command asks all the same (`whileMoving`): it acts on what it reads.
-        if !whileMoving, stripMoves(key) {
+        let moving = !whileMoving && stripMoves(key)
+        // A click on the pin itself, which shows in front: the pin, as the user chose. The window the press went down on,
+        // not the one under the pointer now, which a window dragged over the pin or a menu over it hides. Asks no app.
+        if moving, drag == nil, stripScroll == nil, let press = lastPress, CACurrentMediaTime() - press.at < 0.3,
+           press.window == id {
             readFocusOnceStill(key)
-            // A click on the pin itself, which shows in front: the pin, as the user chose. The window the press went
-            // down on, not the one under the pointer now, which a window dragged over the pin or a menu over it hides.
-            if drag == nil, stripScroll == nil, let press = lastPress, CACurrentMediaTime() - press.at < 0.3,
-               press.window == id { return id }
+            return id
+        }
+        guard !applier.isBusy(pid), (frontBackoff[pid] ?? 0) <= now else { return fallback() }
+        if moving {
+            readFocusOnceStill(key)
             lastReadDeferred = true
             return fallback()
         }
@@ -862,6 +881,8 @@ final class Coordinator {
             focused = fallback()
         }
         frontRead = (id, focused, after)
+        // The app asked: what a command read while the strip moved is past.
+        readWhileMoving = nil
         return focused
     }
 
@@ -888,7 +909,8 @@ final class Coordinator {
     /// Whether `frontWindow` last answered with the window dinky had rather than asking the app, a strip moving: not news
     /// of focus moving, which `syncFocus` leaves to the read once the strip rests.
     private(set) var lastReadDeferred = false
-    /// When the button last went down, and the window it went down on (`pressedWindow`).
+    /// When the button last went down, and the window it went down on (`frontmostWindow`), while a strip that shows has
+    /// pins.
     private var lastPress: (at: CFTimeInterval, window: WindowID?)?
     /// A window `commandFocusedWindow` read focused while a strip moved, other than the one dinky had: answered first
     /// by `frontWindow` till `syncFocus` takes it.
@@ -945,7 +967,6 @@ final class Coordinator {
     private func forgetFrontRead() {
         frontRead = nil
         confirmedPin = nil
-        readWhileMoving = nil
     }
 
     /// The front app's frontmost window as `frontWindow` has it, asking no app: a pin read in front of the window dinky
@@ -975,7 +996,11 @@ final class Coordinator {
         if let focusing, Date() < focusing.until { return focusing.id }
         let id = frontWindow(whileMoving: true)
         let focused = applier.echoesRaise(id) ? lastFocused : id
-        if focused != lastFocused, model.windows[focused] != nil { readWhileMoving = focused }
+        if focused == lastFocused {
+            readWhileMoving = nil
+        } else if model.windows[focused] != nil {
+            readWhileMoving = focused
+        }
         return focused
     }
 
@@ -987,6 +1012,7 @@ final class Coordinator {
         // A pin focused on purpose is the user's choice, not one raised in the background.
         raisedInBackground.remove(id)
         forgetFrontRead()
+        readWhileMoving = nil
         // A band window whose glide in crosses a pin is activated once it rests in the band, as a clicked peek is:
         // activated now, its app would bring it up over the pin as it slides across. Not one already where it goes,
         // which has no glide, though it meets a pin there, as a window fullscreen over the strip does.
@@ -1009,6 +1035,7 @@ final class Coordinator {
     private func activate(_ id: WindowID) {
         guard let window = model.windows[id] else { return }
         forgetFrontRead()
+        readWhileMoving = nil
         // Until the app is activated, which waits on Accessibility calls into it off the main thread (at most about
         // two seconds), and for half a second after.
         focusing = (id, Date() + 3, false)
@@ -1033,8 +1060,8 @@ final class Coordinator {
     private func syncFocus(fresh: Bool = false, whileMoving: Bool = false) {
         let id = frontWindow(fresh: fresh, whileMoving: whileMoving)
         // Only what dinky had, answered while a strip moves: focus moves once the read after it says so, or as a
-        // command read it meanwhile.
-        if lastReadDeferred, id != lastFocused, id != readWhileMoving { return }
+        // command read it meanwhile. Not even back to the window dinky had, which would undo a command's focus.
+        if lastReadDeferred, id != readWhileMoving { return }
         // A window being raised into its place in the stacking comes in front of its app's other windows on the way,
         // which reads as focus moving to it. That is dinky's doing, not the user's, so nothing follows it: not the tree,
         // whose strip would scroll to it and call for more raises, nor the switchers' recency, the hooks or the click
@@ -2407,21 +2434,4 @@ final class Coordinator {
         print("\(stamp()) \(id) \(window.appName ?? "?") at \(window.frame.size), under the minimum \(minimum) it was laid out around: lowered")
         dirty.formUnion(placements[id]?.space.map { [$0] } ?? [])
     }
-}
-
-/// The window a press at `point` went down on: the frontmost one there, at any level (a menu or a popover over a
-/// window is not it), but dinky's own, Dock's and the window server's, and any not drawn.
-private func pressedWindow(at point: CGPoint) -> WindowID? {
-    let info = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
-    let ours = getpid()
-    for window in info {
-        guard let id = window[kCGWindowNumber as String] as? WindowID,
-              let bounds = window[kCGWindowBounds as String] as? NSDictionary,
-              let frame = CGRect(dictionaryRepresentation: bounds), frame.contains(point),
-              (window[kCGWindowAlpha as String] as? Double ?? 0) > 0,
-              window[kCGWindowOwnerPID as String] as? pid_t != ours,
-              !["Dock", "Window Server", "WindowServer"].contains(window[kCGWindowOwnerName as String] as? String ?? "") else { continue }
-        return id
-    }
-    return nil
 }

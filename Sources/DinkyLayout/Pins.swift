@@ -529,11 +529,30 @@ extension Workspace {
         return !keepsShape(of: snapshot)
     }
 
-    /// Whether this strip has `snapshot`'s pins and its columns in its order, windows of either alone left out.
+    /// Whether this strip has `snapshot`'s pins and its columns in its order, at their widths, within a hundredth, and
+    /// in their modes: windows of either alone left out.
     public func keepsShape(of snapshot: Workspace) -> Bool {
         let shared = Set(windows).intersection(snapshot.windows)
-        let columns = { (ws: Workspace) in ws.stripColumns.map { $0.filter(shared.contains) }.filter { !$0.isEmpty } }
-        let pinsHere = pins.filter { shared.contains($0.value) }, pinsThere = snapshot.pins.filter { shared.contains($0.value) }
-        return columns(self) == columns(snapshot) && pinsHere == pinsThere
+        struct Column {
+            let ids: [WindowID]
+            let width: Double
+            let mode: LayoutMode?
+        }
+        func columns(_ ws: Workspace) -> [Column] {
+            guard ws.isScrolling else { return [] }
+            return ws.root.children.indices.compactMap { i -> Column? in
+                let node = ws.root.children[i]
+                let ids = node.windows.filter(shared.contains)
+                guard !ids.isEmpty else { return nil }
+                var mode: LayoutMode?
+                if case .container(let c) = node { mode = c.mode }
+                return Column(ids: ids, width: ws.width(ofColumn: i), mode: mode)
+            }
+        }
+        let here = columns(self), there = columns(snapshot)
+        let pinsHere = pins.filter { shared.contains($0.value) }
+        let pinsThere = snapshot.pins.filter { shared.contains($0.value) }
+        guard pinsHere == pinsThere, here.count == there.count else { return false }
+        return zip(here, there).allSatisfy { a, b in a.ids == b.ids && abs(a.width - b.width) <= 0.01 && a.mode == b.mode }
     }
 }

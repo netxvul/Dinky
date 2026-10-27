@@ -408,7 +408,7 @@ extension Coordinator {
     /// The strip of the workspace on Space `key` as `snapshot` had it before a display change poured its windows onto
     /// another display, put back as `returning`, those windows, are moved home: in its order, at its widths, its pins
     /// pinned, without windows gone since and with any its Space has now that it did not. They leave the trees they
-    /// were poured into at once, and arrive in it rather than come in as new windows (`arrive`).
+    /// were poured into at once, and arrive in it rather than come in as new windows (`arriving`).
     func restoreStrip(_ snapshot: Workspace, on key: UInt64, returning: [WindowID]) {
         guard let display = displays.display(containingSpace: key) else { return }
         makeWorkspace(key, on: display)
@@ -444,17 +444,10 @@ extension Coordinator {
         }
         print("\(stamp()) workspaces: strip on Space \(key) put back as it was, \(back.count) windows returning"
               + (tree.pins.isEmpty ? "" : ", pinned \(tree.pins.values.sorted())"))
-        arrive(Dictionary(uniqueKeysWithValues: back.map { ($0, key) }))
-        // Laid out once its windows are home (`WorkspaceNumbers.returnDisplaced`): placed at once there, not glided
-        // across from where macOS poured them.
+        // Not taken in again as they come: watched as they land, and laid out at once, once they are home
+        // (`WorkspaceNumbers.returnDisplaced`), not glided across from where macOS poured them.
+        for id in back { arriving[id] = key }
         dirty.insert(key)
-    }
-
-    /// Windows coming back to the trees of their Spaces in `moves`, by Space: those trees are placed at once rather than
-    /// glided, and the windows are not taken in again as they arrive (`watchArrival`).
-    func arrive(_ moves: [WindowID: UInt64]) {
-        for space in Set(moves.values) { placeAtOnce(space) }
-        watchArrival(moves)
     }
 
     /// Windows already in the trees of their Spaces in `moves` while macOS still moves them there: not taken in again as
@@ -475,7 +468,9 @@ extension Coordinator {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self else { return }
             var astray: [WindowID: UInt64] = [:]
-            for (id, space) in moves where placements[id]?.space == space && dragging != id {
+            // Not one moved on since to another Space, whose own check that is.
+            for (id, space) in moves where placements[id]?.space == space && dragging != id
+                && arriving[id].map({ $0 == space }) ?? true {
                 let info = dinky_window_info(id)
                 guard info.exists else {
                     arriving[id] = nil

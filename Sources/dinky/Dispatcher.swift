@@ -318,7 +318,7 @@ enum Dispatcher {
     /// `wholeSpace` commands act on the tree of the focused window's Space even when that window floats.
     private static func tree(_ name: String, wholeSpace: Bool = false, _ change: (inout Workspace) -> Bool) -> Reply {
         guard let coordinator = AppState.shared.coordinator else { return .error("tiling is not running") }
-        let id = coordinator.focusedWindow
+        let id = coordinator.commandFocusedWindow
         // A command can change the layout before finding nothing to do, as move ends fullscreen first: that is no noop.
         var moved = false
         // A pin a move or a join took apart was unpinned by hand: its rule leaves it so.
@@ -332,7 +332,7 @@ enum Dispatcher {
         }
         let result = wholeSpace && coordinator.isFloating(id) == true
             ? coordinator.spaceKey(of: id).flatMap { coordinator.command(onSpace: $0, watched) }
-            : coordinator.command(watched)
+            : coordinator.command(on: id, watched)
         coordinator.unpinnedByHand.formUnion(unpinned)
         switch result {
         case nil: return .error("\(name): the focused window is not tiled")
@@ -480,6 +480,8 @@ enum Dispatcher {
         let across = from.map { $0.uuid != to.uuid } ?? false
         let joins = across && coordinator?.isFloating(wid) == false && coordinator?.settings(for: space).isFree == false
         if joins { coordinator?.placeAtOnce(space) }
+        // A move under way from before, as one across a moment ago, is over: its check would bring the window back.
+        coordinator?.arriving[wid] = nil
         coordinator?.windowMoved(wid, refocus: !follow)
         if joins { coordinator?.joined(wid, space) }
         return nil

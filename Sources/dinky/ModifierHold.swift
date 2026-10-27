@@ -43,6 +43,9 @@ final class ModifierHold {
         case spoiled
     }
 
+    /// An event older than this as the swallowing tap gets it was held up past the tap's timeout: the app has had it.
+    private static let timedOut: CFTimeInterval = 1
+
     /// What the swallowing tap takes; everything else is only ever listened to.
     private static let swallowable: [CGEventType] = [.keyDown, .leftMouseDown, .leftMouseUp, .rightMouseDown,
                                                      .rightMouseUp, .scrollWheel]
@@ -382,7 +385,10 @@ final class ModifierHold {
             heardFirst.remove(at: index)
             return true
         }
-        let passes = handle(type, event, canSwallow: true)
+        // Held up past the tap's timeout, the window server gave it to the app already, unheard by the listener:
+        // handled as one gone to the app, and let through, so a click held so long gets its release.
+        let canSwallow = eventAge(event) <= Self.timedOut
+        let passes = handle(type, event, canSwallow: canSwallow) || !canSwallow
         if passedOn.count >= 32 { passedOn.removeFirst() }
         passedOn.append((type, event.timestamp))
         return passes
@@ -412,6 +418,9 @@ final class ModifierHold {
         case .scrollWheel where byFingers:
             // The swiping fingers scroll too, and their momentum goes on after they lift: none of it is for the app.
             return false
+        case .scrollWheel where event.getIntegerValueField(.scrollWheelEventMomentumPhase) != 0:
+            // Momentum of a stroke before, as a strip's flick: no use of the modifier.
+            break
         case .rightMouseDown where byFingers && Self.fingersOnMouse:
             // A right click on the mouse the fingers drive it on closes it, as Esc does.
             guard canSwallow else {
