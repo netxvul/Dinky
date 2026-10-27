@@ -190,12 +190,14 @@ extension Config {
     hyper = 'alt-ctrl-cmd-shift'     # what a switcher's modifier = 'hyper' holds together, two or more, either side
 
     # dinky commands run on events. exec-and-forget gets $DINKY_WORKSPACE, $DINKY_PREV_WORKSPACE and $DINKY_DISPLAY
-    # in the workspace hooks, and $DINKY_MODE, $DINKY_PREV_MODE in mode-changed.
+    # in the workspace hooks, $DINKY_MODE, $DINKY_PREV_MODE in mode-changed, and $DINKY_DISPLAYS,
+    # $DINKY_PREV_DISPLAYS (how many displays) in display-changed.
     # [hooks]
     # startup = ['exec-and-forget brew services restart sketchybar']
     # workspace-changed = ['exec-and-forget sketchybar --trigger workspace_change']
     # focus-changed = []
     # mode-changed = []
+    # display-changed = []
 
     # Every rule whose conditions all match a new window runs, in order.
     [[rules]]

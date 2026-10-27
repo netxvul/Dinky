@@ -225,7 +225,10 @@ Heights of tiles and columns stay. A window stays floating or tiled.
 ## Command line
 
 The app binary is the CLI. `dinky <command>` sends a command to the running app
-and exits 1 on errors or when it isn't running. CLI-only commands:
+and exits 1 on errors or when it isn't running. `move`, `join-with` and `resize`
+with nothing to do succeed: `move left` on a window already at the left edge
+prints `move left: nothing to do` and exits 0, as `workspace 1` does on
+workspace 1. CLI-only commands:
 
 | Command | |
 |---|---|
@@ -301,4 +304,15 @@ The workspace hooks set `DINKY_WORKSPACE` (empty on a full-screen Space),
 fires only for dinky's own switches, so draw the target there and the real
 state on `workspace-changed`, which always follows. `mode-changed` sets
 `DINKY_MODE` and `DINKY_PREV_MODE`; `dinky list-modes --current` prints the
-mode at any time. `exec-and-forget` has Homebrew on `PATH`.
+mode at any time. `exec-and-forget` has `dinky` and Homebrew on `PATH`.
+
+### Docking
+
+`display-changed` runs once the workspaces have moved after a display connects
+or disconnects. It sets `DINKY_DISPLAYS` and `DINKY_PREV_DISPLAYS`, the number
+of displays now and before; `dinky list-monitors` names them.
+
+```toml
+[hooks]
+display-changed = ['exec-and-forget [ "$DINKY_DISPLAYS" = 1 ] && ~/bin/laptop-mode.sh || ~/bin/desk-mode.sh']
+```

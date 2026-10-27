@@ -16,6 +16,10 @@ struct KeyComboTests {
         #expect(try KeyCombo("alt-page-up") == KeyCombo(modifiers: .alt, key: "page-up"))
         #expect(try KeyCombo("page-down") == KeyCombo(key: "page-down"))
         #expect(try KeyCombo("shift-alt-left-bracket").description == "alt-shift-left-bracket")
+        #expect(try KeyCombo("hyper-1") == KeyCombo(modifiers: [.alt, .ctrl, .cmd, .shift], key: "1"))
+        #expect(try KeyCombo("meh-h") == KeyCombo(modifiers: [.alt, .ctrl, .shift], key: "h"))
+        #expect(try KeyCombo("meh-cmd-h") == KeyCombo("hyper-h"), "an alias combines with other modifiers")
+        #expect(try KeyCombo("hyper-1").description == "alt-ctrl-cmd-shift-1")
         for name in KeyCombo.keyCodes.keys {
             #expect(try KeyCombo("alt-\(name)").key == name)
             #expect(try KeyCombo(name).key == name)
@@ -37,7 +41,7 @@ struct KeyComboTests {
         #expect(KeyCombo.keyCodes["backtick"] == UInt16(kVK_ANSI_Grave))
     }
 
-    @Test(arguments: ["", "alt-", "alt--", "hyper-a", "alt-shift-hh", "alt-Semicolon", "-a", "option-a", "pageUp", "alt-page"])
+    @Test(arguments: ["", "alt-", "alt--", "super-a", "hyper", "meh-", "alt-shift-hh", "alt-Semicolon", "-a", "option-a", "pageUp", "alt-page"])
     func `Bad combos`(combo: String) {
         let error = #expect(throws: ConfigError.self) {
             try KeyCombo(combo)

@@ -6,7 +6,7 @@
 
 - A capsule of Liquid Glass names the new layout, such as `h_accordion` or `scrolling`, after the `layout` command, and the new binding mode when it changes, for a moment on the focused display. The new `[hud]` table places it above the Dock (`position = 'bottom'`, the default) or below the menu bar (`'top'`), `offset` points away, keeps it up for `duration-ms` (1200 by default), and turns it off for either change with `on-layout-change` or `on-mode-change`, or entirely with `enabled = false`.
 - When a display moves to another workspace, the capsule shows there the workspace's number and layout, such as `2 · v_accordion`. `[hud] on-workspace-change = false` turns it off.
-- A key binding or gesture that does nothing, such as `move left` at the edge (a floating window's too), a resize at its limit, `focus` or `focus-monitor` with nothing that way, `workspace next` on the last workspace or `workspace 6` with five, moving a window to where it already is, `rotate` in a scrolling layout or `fullscreen` on a lone window that already fills its workspace, makes the focused window's edge glow once, the way the screen's edges do while Claude uses the computer: a ring of the top-level `highlight-color`, or Claude's orange `'#d97757'` without one, around the window and a glow of it inside, strongest at the edge and fading towards the middle, fade in, hold and fade out in about a second; holding the key keeps it shown until it is let go. It is drawn over the window and any border it has, even with borders off or for an app in `exclude-apps`, and goes as soon as the window hides or minimizes or the Space changes. `[borders] noop-flash = false` turns it off; `noop-flash-color`, `noop-flash-width`, `noop-flash-spread` and `noop-flash-opacity` tune it. `[hud] on-noop = true` also shows why in the capsule. A command that leaves fullscreen before finding nothing to do, as `move left` at the edge does, does not flash. With `[fullscreen] focus-change = 'exit'`, the default, `fullscreen` on such a lone window no longer turns fullscreen on. The CLI keeps its exit status; a few replies now say why nothing changed, such as `move left: nothing to do` for a floating window or `fullscreen: the window already fills the workspace`.
+- A key binding or gesture that does nothing, such as `move left` at the edge (a floating window's too), a resize at its limit, `focus` or `focus-monitor` with nothing that way, `workspace next` on the last workspace or `workspace 6` with five, moving a window to where it already is, `rotate` in a scrolling layout or `fullscreen` on a lone window that already fills its workspace, makes the focused window's edge glow once, the way the screen's edges do while Claude uses the computer: a ring of the top-level `highlight-color`, or Claude's orange `'#d97757'` without one, around the window and a glow of it inside, strongest at the edge and fading towards the middle, fade in, hold and fade out in about a second; holding the key keeps it shown until it is let go. It is drawn over the window and any border it has, even with borders off or for an app in `exclude-apps`, and goes as soon as the window hides or minimizes or the Space changes. `[borders] noop-flash = false` turns it off; `noop-flash-color`, `noop-flash-width`, `noop-flash-spread` and `noop-flash-opacity` tune it. `[hud] on-noop = true` also shows why in the capsule. A command that leaves fullscreen before finding nothing to do, as `move left` at the edge does, does not flash. With `[fullscreen] focus-change = 'exit'`, the default, `fullscreen` on such a lone window no longer turns fullscreen on. The CLI keeps its exit status, but for `move`, `join-with` and `resize` with nothing to do, which now succeed (see Fixes); a few replies now say why nothing changed, such as `move left: nothing to do` for a floating window or `fullscreen: the window already fills the workspace`.
 
 ### Switcher
 
@@ -70,6 +70,19 @@
 - Dropping a dragged tile works like yabai's insert feedback. In the middle of the tile under the pointer the two swap, as before; towards an edge that tile splits in two, side by side or one above the other, and the dragged window takes the half on that side. While you drag, an accent border with a translucent fill over that tile shows the part the window will take; a swap is filled more strongly and lights up the dragged window's own tile too, where the other window will go. In the scrolling layout, left and right make the window a column of its own; a fixed layout's grid only swaps.
 - `[drag] preview-border-color`, `preview-fill-color` and `preview-border-width` set how the drop's feedback looks, `preview-border-width` for every border including a swap's, as yabai's `insert_feedback_color`. Unset, the border follows the system accent colour and the fill is it at 30%. `home-outline = false` drops the grey outline of the tile the window came from.
 
+### Rules
+
+- New `app-id-regex` key matches the bundle ID by regex, like `app-name` does for the app's name: `app-id-regex = '^com\.jetbrains\.'` covers every JetBrains app with one rule. `app-id` still matches exactly.
+
+### Key bindings
+
+- `hyper` and `meh` name the usual modifier combinations: `hyper-1` is `alt-ctrl-cmd-shift-1`, and `meh-1` is `alt-ctrl-shift-1`. A binding's `hyper` is always all four, whatever `[modifiers] hyper` sets for the switchers.
+
+### Hooks
+
+- New `display-changed` hook runs when a display connects or disconnects, once the workspaces have moved, with `DINKY_DISPLAYS` and `DINKY_PREV_DISPLAYS` set to how many displays there are now and were before. React to docking and undocking without Hammerspoon.
+- `exec-and-forget` has `dinky` itself on `PATH`, so hook scripts can call `dinky` when the app was started from Finder.
+
 ### Scripting addition
 
 - A scrolling strip scrolls through dinky's Dock scripting addition wherever it is injected (SIP off; see [Scripting addition](docs/scripting-addition.md)), its windows sliding past the screen edges; without it the strip moves its windows frame by frame. Snapshot glides are gone, and with them `[scrolling] glide`: an old config that still sets it loads, and `dinky doctor` says the key can go.
@@ -124,6 +137,9 @@
 - Snapshots for the switchers are taken once things go quiet after a focus change, together, instead of two at a time as an app comes to the front.
 - In the scrolling layout, focusing a column that was hidden behind the column in view at a display's edge, with another display beyond it, keeps it on its own display. Before, it started its glide back where the strip had it, off the screen, which was on the other display, and macOS moved it to that display's Space, out of the strip.
 - Connecting or disconnecting a display keeps a scrolling strip's columns in their order. Before, the windows Accessibility could not read for a moment while macOS rearranged the displays floated, and came back into the strip in whatever order they could be read again, at the default width.
+- A `layout` command keeps a `fixed` workspace's template when it leaves its shape alone, such as one that changes nothing or turns the overflow accordion vertical, so later windows still fill the grid.
+- dinky keeps tiling a window after its app closes and reopens it, as Slack does when you close its window with Cmd-W and open it again from the Dock.
+- `move`, `join-with` and `resize` succeed when there is nothing to do, such as `move left` on a window already at the left edge: the CLI prints `move left: nothing to do` and exits 0, so launchers like LeaderKey show no error.
 
 ## 0.18
 

@@ -1169,6 +1169,8 @@ public struct Hooks: Equatable {
     public var focusChanged: [String] = []
     /// When the binding mode changes.
     public var modeChanged: [String] = []
+    /// When a display connects or disconnects.
+    public var displayChanged: [String] = []
 
     public init() {}
 
@@ -1178,6 +1180,7 @@ public struct Hooks: Equatable {
         workspaceChanged = try t.commands("workspace-changed", allowEmpty: true) ?? workspaceChanged
         focusChanged = try t.commands("focus-changed", allowEmpty: true) ?? focusChanged
         modeChanged = try t.commands("mode-changed", allowEmpty: true) ?? modeChanged
+        displayChanged = try t.commands("display-changed", allowEmpty: true) ?? displayChanged
         try t.done()
     }
 }

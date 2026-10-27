@@ -2,6 +2,7 @@ import Carbon.HIToolbox
 
 /// A key binding such as `alt-shift-h`: modifiers plus a key name, joined by `-`. The leading words that
 /// name modifiers are the modifiers; the rest is the key, so `alt-page-up` is `alt` and `page-up`.
+/// `hyper` and `meh` name the usual combinations, all four modifiers and all but `cmd`.
 /// Key names map to keycodes through `keyCodes`.
 public struct KeyCombo: Hashable, CustomStringConvertible {
     public struct Modifiers: OptionSet, Hashable {
@@ -30,6 +31,8 @@ public struct KeyCombo: Hashable, CustomStringConvertible {
         public var name: String {
             isEmpty ? "none" : Self.names.filter { contains($0.1) }.map(\.0).joined(separator: "-")
         }
+        /// Shorthands a binding can use, as QMK and Karabiner name them. A combo prints with the modifiers spelled out.
+        static let aliases: [(String, Modifiers)] = [("hyper", [.alt, .ctrl, .cmd, .shift]), ("meh", [.alt, .ctrl, .shift])]
     }
 
     public var modifiers: Modifiers
@@ -44,13 +47,14 @@ public struct KeyCombo: Hashable, CustomStringConvertible {
     public init(_ combo: String) throws(ConfigError) {
         var parts = combo.split(separator: "-", omittingEmptySubsequences: false).map(String.init)[...]
         var modifiers: Modifiers = []
-        while let first = parts.first, let modifier = Modifiers.names.first(where: { $0.0 == first })?.1, parts.count > 1 {
+        while let first = parts.first, parts.count > 1,
+              let modifier = (Modifiers.names + Modifiers.aliases).first(where: { $0.0 == first })?.1 {
             modifiers.insert(modifier)
             parts.removeFirst()
         }
         let key = parts.joined(separator: "-")
         guard KeyCombo.keyCodes[key] != nil else {
-            throw ConfigError("unknown key '\(key)' in '\(combo)', expected modifiers (alt, ctrl, cmd, shift) and a key name")
+            throw ConfigError("unknown key '\(key)' in '\(combo)', expected modifiers (alt, ctrl, cmd, shift, hyper, meh) and a key name")
         }
         self.init(modifiers: modifiers, key: key)
     }

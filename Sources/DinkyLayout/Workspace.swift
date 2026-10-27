@@ -638,8 +638,12 @@ public struct Workspace: Equatable, Sendable {
         return result
     }
 
-    /// Tidy the tree after an edit, and unwrap a root whose only child is a container.
+    /// Tidy the tree after an edit, and unwrap a root whose only child is a container. A tree still in its fixed
+    /// template is left as it is: tidying would drop its reserved empty cells and unwrap its one-cell columns, so an
+    /// edit that keeps the shape, such as reorienting an overflow accordion or a `layout` that changes nothing,
+    /// would lose the template.
     mutating func normalize() {
+        if case .fixed = algorithm, isFixedTree { return }
         root.normalize()
         settlePins()
         // The strip stays the root even with one column left.

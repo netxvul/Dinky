@@ -827,6 +827,7 @@ environment `exec-and-forget` gets.
 | `workspace-changed` | When a display's workspace changes, or a switch gives up. |
 | `focus-changed` | When focus changes, debounced 50 ms. |
 | `mode-changed` | When the binding mode changes, including back to `main` when the config reloads. Sets `DINKY_MODE` and `DINKY_PREV_MODE`. |
+| `display-changed` | When a display connects or disconnects, once the displays have settled and dinky has moved the workspaces to them, about a second later. Sets `DINKY_DISPLAYS` and `DINKY_PREV_DISPLAYS`, how many displays there are now and were before. |
 
 </div>
 
@@ -859,6 +860,7 @@ it goes instead.
 | Key | |
 |---|---|
 | `app-id` | Bundle ID. |
+| `app-id-regex` | Case-insensitive regex, matched against the bundle ID. |
 | `app-name` | Case-insensitive regex. |
 | `title` | Case-insensitive regex. |
 | `kind` | `'normal'`, `'dialog'`, `'sheet'` or `'panel'`. |
@@ -932,7 +934,9 @@ alt-shift-l = 'grid 1:2:1:0:1:1'
 ### Keys
 
 Modifiers (`alt`, `ctrl`, `cmd`, `shift`) and one key, joined by `-`:
-`alt-shift-h`, `ctrl-left`, `f5`. Names follow a US layout.
+`alt-shift-h`, `ctrl-left`, `f5`. Names follow a US layout. `hyper` is all four
+modifiers and `meh` all but `cmd`, so `hyper-1` is `alt-ctrl-cmd-shift-1`,
+whatever `[modifiers] hyper` sets for the switchers.
 
 - `a`–`z`, `0`–`9`, `f1`–`f20`
 - `minus` `equal` `left-bracket` `right-bracket` `backslash` `semicolon`
@@ -1135,12 +1139,14 @@ shift = 'both'
 hyper = 'alt-ctrl-cmd-shift'     # what a switcher's modifier = 'hyper' holds together, two or more, either side
 
 # dinky commands run on events. exec-and-forget gets $DINKY_WORKSPACE, $DINKY_PREV_WORKSPACE and $DINKY_DISPLAY
-# in the workspace hooks, and $DINKY_MODE, $DINKY_PREV_MODE in mode-changed.
+# in the workspace hooks, $DINKY_MODE, $DINKY_PREV_MODE in mode-changed, and $DINKY_DISPLAYS,
+# $DINKY_PREV_DISPLAYS (how many displays) in display-changed.
 # [hooks]
 # startup = ['exec-and-forget brew services restart sketchybar']
 # workspace-changed = ['exec-and-forget sketchybar --trigger workspace_change']
 # focus-changed = []
 # mode-changed = []
+# display-changed = []
 
 # Every rule whose conditions all match a new window runs, in order.
 [[rules]]

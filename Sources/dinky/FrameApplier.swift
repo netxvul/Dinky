@@ -55,25 +55,13 @@ final class FrameApplier {
                 AXUIElementSetAttributeValue(app, "AXEnhancedUserInterface" as CFString, kCFBooleanFalse)
             },
             read: { [unowned self] job in
-                switch element(pid: job.pid, id: job.id) {
-                case .found(let element): frame(element, key: Key(pid: job.pid, id: job.id))
-                case .busy: .busy
-                case .gone: .gone
-                }
+                withElement(pid: job.pid, id: job.id, busy: .busy, gone: .gone) { frame($0, key: $1) }
             },
             write: { [unowned self] job in
-                switch element(pid: job.pid, id: job.id) {
-                case .found(let element): write(job.frame, to: element, key: Key(pid: job.pid, id: job.id))
-                case .busy: false
-                case .gone: true
-                }
+                withElement(pid: job.pid, id: job.id, busy: false, gone: true) { write(job.frame, to: $0, key: $1) }
             },
             move: { [unowned self] job in
-                switch element(pid: job.pid, id: job.id) {
-                case .found(let element): move(job.frame.origin, to: element, key: Key(pid: job.pid, id: job.id))
-                case .busy: false
-                case .gone: true
-                }
+                withElement(pid: job.pid, id: job.id, busy: false, gone: true) { move(job.frame.origin, to: $0, key: $1) }
             },
             learns: { Self.isOnScreen($0) }
         )
@@ -482,6 +470,25 @@ final class FrameApplier {
         let lookup = Self.lookup(pid: pid, id: id)
         if case .found(let element) = lookup { lock.withLock { elements[key] = element } }
         return lookup
+    }
+
+    /// Runs `body` on the window's element, `busy` or `gone` when the lookup says so. An app can replace a window's
+    /// element while the window lives on, same id and all: Slack hides its window on close and hands out a new element
+    /// when it is reopened. A call that finds the cached element invalid drops it (`noteInvalid`), so the window is
+    /// looked up again and `body` runs once more, rather than the frame being lost until the next layout.
+    private func withElement<T>(pid: pid_t, id: WindowID, busy: T, gone: T, _ body: (AXUIElement, Key) -> T) -> T {
+        let key = Key(pid: pid, id: id)
+        let cached = lock.withLock { elements[key] != nil }
+        func attempt() -> T {
+            switch element(pid: pid, id: id) {
+            case .found(let element): body(element, key)
+            case .busy: busy
+            case .gone: gone
+            }
+        }
+        let result = attempt()
+        guard cached, lock.withLock({ elements[key] == nil }) else { return result }
+        return attempt()
     }
 
     /// As `axWindow`, telling an app that did not answer from one that named no such window. Electron apps like

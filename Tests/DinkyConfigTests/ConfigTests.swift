@@ -749,8 +749,9 @@ struct ConfigTests {
         assertError("[mode.main]\nalt-a = []\n", path: "mode.main.alt-a", line: 2, contains: "can't be empty")
         assertError("[mode.main]\nalt-a = 3\n", path: "mode.main.alt-a", line: 2, contains: "command string")
         assertError("[mode.main]\nalt-a = ['x', 3]\n", path: "mode.main.alt-a", line: 2, contains: "command string")
-        assertError("[mode.main]\nalt-hyper-a = 'x'\n", path: "mode.main.alt-hyper-a", line: 2, contains: "'alt-hyper-a'")
+        assertError("[mode.main]\nalt-super-a = 'x'\n", path: "mode.main.alt-super-a", line: 2, contains: "'alt-super-a'")
         assertError("[mode.main]\nalt-shift-a = 'x'\nshift-alt-a = 'y'\n", path: "mode.main.shift-alt-a", line: 3, contains: "bound twice")
+        assertError("[mode.main]\nhyper-a = 'x'\nctrl-alt-cmd-shift-a = 'y'\n", path: "mode.main.ctrl-alt-cmd-shift-a", line: 3, contains: "bound twice")
         assertError("[mode.main.binding]\nalt-a = 'x'\n", path: "mode.main.binding", line: 1, contains: "'binding' is not a layout")
         assertError("[mode.main.floating]\nalt-a = 'x'\n", path: "mode.main.floating", line: 1, contains: "'free'")
         assertError("[mode.main.free.tiles]\nalt-a = 'x'\n", path: "mode.main.free.tiles", line: 1, contains: "can't hold tables")
@@ -867,9 +868,35 @@ struct ConfigTests {
         assertError("[[rules]]\ndisk-image = 'yes'\nrun = 'x'\n", path: "rules[0].disk-image", line: 2, contains: "true or false")
     }
 
+    @Test func `Window rule matches the bundle ID by regex`() throws {
+        let config = try Config.parse("""
+        [[rules]]
+        app-id-regex = '^co\\.ensili\\.'
+        run = 'layout floating'
+
+        [[rules]]
+        app-id = 'co.ensili.Scrivener'
+        app-id-regex = 'scrivener$'
+        run = 'layout floating'
+        """)
+        var expected = WindowRule()
+        expected.appIdRegex = "^co\\.ensili\\."
+        expected.run = ["layout floating"]
+        #expect(config.rules.first == expected)
+
+        let prefix = config.rules[0], both = config.rules[1]
+        #expect(prefix.matches(appId: "co.ensili.Scrivener", appName: "Scrivener", title: "", kind: .normal))
+        #expect(prefix.matches(appId: "CO.Ensili.Other", appName: nil, title: "", kind: .normal), "case-insensitive")
+        #expect(!prefix.matches(appId: "uk.co.ensili.x", appName: nil, title: "", kind: .normal), "anchored by the pattern")
+        #expect(!prefix.matches(appId: nil, appName: "Scrivener", title: "", kind: .normal), "no bundle ID never matches")
+        #expect(both.matches(appId: "co.ensili.Scrivener", appName: nil, title: "", kind: .normal))
+        #expect(!both.matches(appId: "co.ensili.scrivener", appName: nil, title: "", kind: .normal), "app-id stays exact")
+    }
+
     @Test func `Bad window rules fail`() {
         assertError("[[rules]]\napp-id = 'x'\n", path: "rules[0].run", line: 1, contains: "every rule needs 'run'")
         assertError("[[rules]]\ntitle = '('\nrun = 'x'\n", path: "rules[0].title", line: 2, contains: "not a valid regex")
+        assertError("[[rules]]\napp-id-regex = '['\nrun = 'x'\n", path: "rules[0].app-id-regex", line: 2, contains: "not a valid regex")
         assertError("[[rules]]\nkind = 'popup'\nrun = 'x'\n", path: "rules[0].kind", line: 2, contains: "'normal', 'dialog', 'sheet', 'panel'")
         assertError("[[rules]]\nif.app-id = 'x'\nrun = 'y'\n", path: "rules[0].if", line: 2, contains: "unknown key")
     }
@@ -883,12 +910,14 @@ struct ConfigTests {
         workspace-changed = ['exec-and-forget sketchybar --trigger workspace_change']
         focus-changed = []
         mode-changed = ['exec-and-forget sketchybar --trigger mode_changed', 'retile']
+        display-changed = 'layout accordion'
         """).hooks
         #expect(hooks.startup == ["exec-and-forget brew services restart sketchybar"])
         #expect(hooks.workspaceChanging == ["exec-and-forget sketchybar --trigger workspace_changing"])
         #expect(hooks.workspaceChanged == ["exec-and-forget sketchybar --trigger workspace_change"])
         #expect(hooks.focusChanged == [])
         #expect(hooks.modeChanged == ["exec-and-forget sketchybar --trigger mode_changed", "retile"])
+        #expect(hooks.displayChanged == ["layout accordion"])
         assertError("[hooks]\nmode-changed = [1]\n", path: "hooks.mode-changed", line: 2, contains: "command string")
         assertError("[hooks]\nstartup = ['']\n", path: "hooks.startup", line: 2, contains: "can't be empty")
         assertError("[hooks]\non-startup = 'x'\n", path: "hooks.on-startup", line: 2, contains: "unknown key")

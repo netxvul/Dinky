@@ -3,19 +3,24 @@ import Foundation
 // The config's `[hooks]`: `workspace-changing` when dinky starts or retargets a switch, `workspace-changed`
 // when any display's current workspace changes (dinky's switches and native ones alike) or a dinky switch
 // gives up, `focus-changed` when the focused window changes, debounced, `mode-changed` when the binding mode
-// changes, with the new mode and the previous one, and `startup` once. Started once the coordinator has read the windows and
+// changes, with the new mode and the previous one, `display-changed` once the workspaces have moved after a
+// display connects or disconnects, and `startup` once. Started once the coordinator has read the windows and
 // displays, so startup fires nothing but `startup`. Main thread only.
 final class Hooks {
     /// The workspace number each display was last seen on, by UUID; "" off the numbered workspaces.
     private var workspaces: [String: String] = [:]
     private var pendingFocus: DispatchWorkItem?
+    /// The displays connected when last seen, by UUID.
+    private var connected: Set<String> = []
 
     func start() {
         let state = AppState.shared
         for display in state.displays.displays { workspaces[display.uuid] = number(display) }
+        connected = Set(state.displays.displays.map(\.uuid))
         state.displays.observe { [weak self] in self?.displaysChanged($0) }
         // Arranging can renumber what a display shows without a Space change.
         state.numbers.observe { [weak self] in self?.displaysChanged(AppState.shared.displays) }
+        state.numbers.onArranged = { [weak self] in self?.arranged() }
         SpaceSwitcher.shared.onTarget = { [weak self] uuid, target in self?.switchTargeted(uuid, target) }
         SpaceSwitcher.shared.onGiveUp = { [weak self] uuid in self?.switchGaveUp(uuid) }
         state.coordinator?.onFocusChange = { [weak self] in self?.focusChanged() }
@@ -42,6 +47,16 @@ final class Hooks {
             runWorkspaceHooks(commands, workspace: new, previous: old, display: i)
             Hud.shared.workspaceChanged(on: display, space: display.currentSpaceID)
         }
+    }
+
+    /// Reports displays that came or went once the workspaces have moved to the displays now present, which
+    /// waits for the displays to settle.
+    private func arranged() {
+        let now = Set(AppState.shared.displays.displays.map(\.uuid))
+        guard now != connected else { return }
+        let previous = connected.count
+        connected = now
+        run(AppState.shared.config.hooks.displayChanged, env: ["DINKY_DISPLAYS": "\(now.count)", "DINKY_PREV_DISPLAYS": "\(previous)"])
     }
 
     /// Announces where a dinky switch is going before it lands, so a bar can show it at once.
@@ -93,13 +108,15 @@ private func run(_ commands: [String], env: [String: String] = [:]) {
 }
 
 /// Starts a process without waiting for it. Its output goes to dinky's own stdout and stderr, the log.
-/// Homebrew's directories go first on PATH, since apps started from Finder lack them.
+/// dinky's own directory and Homebrew's go first on PATH, since apps started from Finder lack them, so scripts
+/// can call `dinky`.
 func exec(_ argv: [String], env: [String: String] = [:]) {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: argv[0])
     process.arguments = Array(argv.dropFirst())
     var environment = ProcessInfo.processInfo.environment.merging(env) { _, new in new }
-    environment["PATH"] = "/opt/homebrew/bin:/opt/homebrew/sbin:" + (environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")
+    let own = Bundle.main.executableURL?.deletingLastPathComponent().path ?? ""
+    environment["PATH"] = own + ":/opt/homebrew/bin:/opt/homebrew/sbin:" + (environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")
     process.environment = environment
     process.standardInput = FileHandle.nullDevice
     do {

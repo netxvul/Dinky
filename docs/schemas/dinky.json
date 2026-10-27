@@ -645,7 +645,8 @@
           "description": "Whenever a display's current workspace changes. exec-and-forget gets DINKY_WORKSPACE, DINKY_PREV_WORKSPACE and DINKY_DISPLAY."
         },
         "focus-changed": { "$ref": "#/definitions/hook", "description": "When the focused window changes, debounced by 50 ms." },
-        "mode-changed": { "$ref": "#/definitions/hook", "description": "When the binding mode changes, including back to main when the config reloads. exec-and-forget gets DINKY_MODE and DINKY_PREV_MODE." }
+        "mode-changed": { "$ref": "#/definitions/hook", "description": "When the binding mode changes, including back to main when the config reloads. exec-and-forget gets DINKY_MODE and DINKY_PREV_MODE." },
+        "display-changed": { "$ref": "#/definitions/hook", "description": "When a display connects or disconnects. exec-and-forget gets DINKY_DISPLAYS and DINKY_PREV_DISPLAYS, how many displays there are now and were before." }
       }
     },
     "rules": {
@@ -657,6 +658,7 @@
         "required": ["run"],
         "properties": {
           "app-id": { "type": "string", "minLength": 1, "description": "The app's bundle ID, e.g. com.apple.Safari." },
+          "app-id-regex": { "type": "string", "minLength": 1, "description": "Case-insensitive regex found anywhere in the app's bundle ID, e.g. ^com\\.apple\\. for every Apple app." },
           "app-name": { "type": "string", "minLength": 1, "description": "Case-insensitive regex found anywhere in the app's name." },
           "title": { "type": "string", "minLength": 1, "description": "Case-insensitive regex found anywhere in the window title." },
           "kind": { "type": "string", "enum": ["normal", "dialog", "sheet", "panel"], "description": "The kind of window." },
@@ -769,8 +771,8 @@
     },
     "keyCombo": {
       "type": "string",
-      "pattern": "^((alt|ctrl|cmd|shift)-)*([a-z0-9]|f[1-9]|f1[0-9]|f20|keypad-([0-9]|clear|decimal|divide|enter|equal|minus|multiply|plus)|section|minus|equal|left-bracket|right-bracket|backslash|semicolon|quote|comma|period|slash|backtick|page-up|page-down|home|end|forward-delete|space|enter|esc|backspace|tab|left|down|up|right)$",
-      "description": "Zero or more modifiers (alt, ctrl, cmd, shift) and one key name, joined by '-': alt-shift-h, ctrl-left, alt-page-up, f5."
+      "pattern": "^((alt|ctrl|cmd|shift|hyper|meh)-)*([a-z0-9]|f[1-9]|f1[0-9]|f20|keypad-([0-9]|clear|decimal|divide|enter|equal|minus|multiply|plus)|section|minus|equal|left-bracket|right-bracket|backslash|semicolon|quote|comma|period|slash|backtick|page-up|page-down|home|end|forward-delete|space|enter|esc|backspace|tab|left|down|up|right)$",
+      "description": "Zero or more modifiers (alt, ctrl, cmd, shift, or the shorthands hyper and meh) and one key name, joined by '-': alt-shift-h, ctrl-left, alt-page-up, hyper-1, f5."
     }
   }
 }
