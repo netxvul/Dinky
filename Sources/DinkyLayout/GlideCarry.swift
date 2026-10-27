@@ -8,12 +8,13 @@ public struct GlideCarry: Equatable, Sendable {
     public let layout: Layout
     public let frozen: Set<WindowID>
 
+    /// `frozen` counts only for windows of `layout`: a drag on another display leaves a glide here as it is.
     public init(layout: Layout, frozen: Set<WindowID>) {
         self.layout = layout
-        self.frozen = frozen
+        self.frozen = frozen.intersection(layout.order)
     }
 
     public func carriesOn(into layout: Layout, frozen: Set<WindowID>) -> Bool {
-        self.layout == layout && self.frozen == frozen
+        self.layout == layout && self.frozen == frozen.intersection(layout.order)
     }
 }

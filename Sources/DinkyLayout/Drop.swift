@@ -52,10 +52,10 @@ public enum DropHit: Equatable, Sendable {
 extension DropHit {
     /// Whether this hit, in the tree as it is, asks for its own drop although the pointer is over the dragged window's
     /// place in a drop shown beside a tile (`shown` split left or right, `shows` the hit in the tree as that drop leaves
-    /// it, `.own`). Making room for that drop slides the column aimed at out from under the pointer, so the pointer goes
-    /// on over the preview where the column showed: its top or bottom band there, the stacking zone of a tile as the
-    /// tree is, asks to stack onto it. Anywhere else over the preview the drop shown stays, as it does for every other
-    /// drop shown, so windows making room cannot send it back and forth.
+    /// it, `.own`). Making room for that drop slides a strip column aimed at out from under the pointer, or shrinks a
+    /// tile to half of itself, so the pointer goes on over the preview where the tile showed: its top or bottom band
+    /// there, the stacking zone of a tile as the tree is, asks to stack onto it. Anywhere else over the preview the drop
+    /// shown stays, as it does for every other drop shown, so windows making room cannot send it back and forth.
     public func stacks(overBeside shown: DropZone, shows: DropHit) -> Bool {
         guard shows == .own, case .split(let side) = shown, side.orientation == .horizontal,
               case .tile(_, .split(let way)) = self else { return false }
@@ -83,15 +83,17 @@ extension Workspace {
     /// counts where it is inside the outer gaps, so over the menu bar, the Dock or an outer gap it is over the tile along
     /// that edge. In a strip, past the columns in view, over a parked sliver or the gutter, it goes beside the nearest
     /// one in view. Over an inner gap it is over the nearest tile, or the window's own place when that is nearest.
-    /// Over a tile, the frontmost where tiles overlap, it is over the zone of it there; over its own place only where
-    /// that is the frontmost, not where a pin is in front of it hanging under.
+    /// Over a tile, the frontmost where tiles overlap, it is over the zone of it there; over its own place, that, but
+    /// where a pin is in front of it hanging under.
     public func dropHit(at point: CGPoint, in layout: Layout, excluding id: WindowID) -> DropHit {
         let area = gaps.inset(bounds)
         guard area.width > 1, area.height > 1 else { return .none }
         let p = CGPoint(x: min(max(point.x, area.minX), area.maxX - 1), y: min(max(point.y, area.minY), area.maxY - 1))
-        // The frontmost tile there: a pin is in front of a band window hanging under it, the dragged one too.
+        // Over its own place, that, unless a pin is in front of it there, as one is of a band window hanging under it:
+        // only a pin, which is in front whatever the tree's focus says yet, not an accordion's window, say, in front of
+        // one grabbed from behind before its app is active.
         let front = layout.order.first { layout.frames[$0]!.contains(p) }
-        if front == id { return .own }
+        if layout.frames[id]?.contains(p) == true, front.map({ $0 == id || pinSide(of: $0) == nil }) ?? true { return .own }
         if let edge = edgeDrop(at: p, in: layout, excluding: id) { return .tile(edge.target, edge.zone) }
         if let target = front {
             return .tile(target, dropZone(at: p, onto: target, in: layout) ?? .swap)
@@ -158,8 +160,9 @@ extension Workspace {
 
     /// Drop `id` onto `target`: swap the two, or split `target`'s tile and put `id` in the half on the zone's side,
     /// which takes half of what the tile is once `id` has left its own place. In the scrolling layout, left and
-    /// right make `id` a column of its own beside `target`'s, at the width it had. Ends fullscreen, as any layout
-    /// change does, and focuses `id`.
+    /// right make `id` a column of its own beside `target`'s, at the width it had; up and down stack it in `target`'s
+    /// column with its share of it, 1/n of n, the others keeping their proportions (`shareStack`), and where it is
+    /// already, just there, nothing changes. Ends fullscreen, as any layout change does, and focuses `id`.
     @discardableResult
     public mutating func drop(_ id: WindowID, onto target: WindowID, _ zone: DropZone) -> Bool {
         guard id != target, contains(id), contains(target) else { return false }
@@ -176,6 +179,11 @@ extension Workspace {
             dropColumn(id, beside: target, forward: side.isForward)
             normalize()
         } else {
+            // Already just there in the same stack: nothing to move, nor any height to share out again.
+            if isScrolling, stackedAlready(id, side, of: target) {
+                focus(id)
+                return true
+            }
             var stacked = self
             let share = isScrolling ? root.path(of: target).map { width(ofColumn: $0[0]) } : nil
             stacked.splitTile(of: target, with: id, side)
@@ -216,20 +224,28 @@ extension Workspace {
             return true
         }
         let share = source.columnShare(of: id)
-        source.remove(id)
-        guard let target else {
-            insert(id)
-            if let share, isScrolling, let column = root.path(of: id)?.first { setWidth(ofColumn: column, share) }
-            return true
-        }
-        if isScrolling {
-            // In at the band's end, out of the way and not scrolled to, so only the drop scrolls.
-            root.insert(.window(id), at: bandRange.upperBound)
-            columnWidths[id] = share ?? columnWidth
+        // Worked out on copies: a drop refused, as one into a pin left short of room, changes neither tree.
+        var here = self, there = source
+        // Its minimum comes with it, before the source forgets it, so the room this tree keeps is judged with it.
+        let minimum = there.minimumSizes[id]
+        there.remove(id)
+        here.minimumSizes[id] = minimum
+        if let target {
+            if isScrolling {
+                // In at the band's end, out of the way and not scrolled to, so only the drop scrolls.
+                here.root.insert(.window(id), at: here.bandRange.upperBound)
+                here.columnWidths[id] = share ?? columnWidth
+            } else {
+                here.insert(id)
+            }
+            guard here.drop(id, onto: target, zone) else { return false }
         } else {
-            insert(id)
+            here.insert(id)
+            if let share, isScrolling, let column = here.root.path(of: id)?.first { here.setWidth(ofColumn: column, share) }
         }
-        return drop(id, onto: target, zone)
+        self = here
+        source = there
+        return true
     }
 
     /// Take `id` out of its place and split `target`'s tile with it. The new container runs along the side's axis;
@@ -242,6 +258,15 @@ extension Workspace {
         root.modify(at: Array(at.dropLast())) {
             $0.replace(at: at.last!, with: .container(Container(ContainerOrientation(side.orientation), .tiles, pair)))
         }
+    }
+
+    /// Whether `id` already sits right beside `target` on `side`, up or down, in the same stacked container.
+    private func stackedAlready(_ id: WindowID, _ side: Direction, of target: WindowID) -> Bool {
+        guard side.orientation == .vertical, let a = root.path(of: id), let b = root.path(of: target), a.count > 1,
+              Array(a.dropLast()) == Array(b.dropLast()) else { return false }
+        let parent = root.container(at: Array(a.dropLast()))
+        guard parent.orientation == .vertical, parent.mode == .tiles else { return false }
+        return a.last! == b.last! + (side.isForward ? 1 : -1)
     }
 
     /// In a strip, `id` just stacked beside `target` in a column, the two sharing what `target` had: `id` takes its

@@ -61,6 +61,10 @@ typedef struct {
 
 DinkyWindowInfo dinky_window_info(uint32_t windowID);
 
+// Only the window's frame, as the window server has it: for a window known to be moving where it is, nothing else
+// about it changing. False when it is gone.
+bool dinky_window_bounds(uint32_t windowID, CGRect *frame);
+
 // Every window on every Space, minimized included, filtered like dinky_space_window_ids.
 NSArray<NSNumber *> *dinky_all_window_ids(void);
 

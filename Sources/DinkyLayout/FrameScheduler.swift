@@ -73,6 +73,11 @@ public final class FrameScheduler: @unchecked Sendable {
     private let lock = NSLock()
     /// Processes that took longer than `slowStep` over an animation step since `clearSlow`.
     private var slow: Set<Int32> = []
+    /// Processes found slow that have since moved their windows in time for `recoveredAfter` steps running, till
+    /// `takeRecovered` hands them on.
+    private var quickAgain: Set<Int32> = []
+    /// How many animation steps in a row a slow process must keep up with to count as slow no longer.
+    public static let recoveredAfter = 6
     private var apps: [Int32: App] = [:]
     private var minimums: [WindowID: CGSize] = [:]
     /// Refusals seen once, by window, with the window's process: a minimum only when a later pass sees the same one.
@@ -169,6 +174,14 @@ public final class FrameScheduler: @unchecked Sendable {
     /// Whether the process took longer than `slowStep` to move its windows for an animation step since `clearSlow`:
     /// following it frame by frame would only show it stalling and jumping.
     public func isSlow(_ pid: Int32) -> Bool { lock.withLock { slow.contains(pid) } }
+
+    /// The processes no longer slow since this was last asked (see `recoveredAfter`), forgetting them.
+    public func takeRecovered() -> Set<Int32> {
+        lock.withLock {
+            defer { quickAgain = [] }
+            return quickAgain
+        }
+    }
 
     /// Forgets which processes were slow, as a new glide starts.
     public func clearSlow() { lock.withLock { slow = [] } }
@@ -268,7 +281,17 @@ public final class FrameScheduler: @unchecked Sendable {
             }
             if job.leadEdge == nil { app.ledIn[job.id] = nil; app.slack[job.id] = nil; app.probes[job.id] = nil }
             if let edge = job.leadEdge, job.frame.maxX > edge { job.frame.size.width += app.slack[job.id] ?? 0 }
-            if answered { answered = app.written[job.id] == job.frame.size ? move(job) : write(job) }
+            if answered {
+                if app.written[job.id] == job.frame.size {
+                    answered = move(job)
+                } else {
+                    // A size change is the app laying the window out again, not keeping up with the steps: its time is
+                    // left out of theirs.
+                    let resizing = Date()
+                    answered = write(job)
+                    began += Date().timeIntervalSince(resizing)
+                }
+            }
             app.written[job.id] = job.frame.size
             app.stepSizes[job.id, default: []].insert(job.frame.size)
             if answered, let edge = job.leadEdge, job.frame.maxX > edge, app.probes[job.id, default: 0] > 0 {
@@ -279,7 +302,18 @@ public final class FrameScheduler: @unchecked Sendable {
             if job.leadEdge != nil { lock.withLock { leadStep }?(job.id) }
             if !answered { stalled = job; break }
         }
-        if !steps.isEmpty, Date().timeIntervalSince(began) > Self.slowStep { lock.withLock { _ = slow.insert(app.pid) } }
+        if !steps.isEmpty {
+            if Date().timeIntervalSince(began) > Self.slowStep {
+                app.fastDrains = 0
+                lock.withLock { _ = slow.insert(app.pid) }
+            } else {
+                app.fastDrains += 1
+                // Quick again for a run of steps: no longer slow, whatever it was once.
+                if app.fastDrains >= Self.recoveredAfter {
+                    lock.withLock { if slow.remove(app.pid) != nil { quickAgain.insert(app.pid) } }
+                }
+            }
+        }
         if let stalled {
             noteBusy(app, probe: stalled)
             return hold(jobs, of: app, reporting: batches)
@@ -484,6 +518,8 @@ public final class FrameScheduler: @unchecked Sendable {
         var steps: [FrameJob] = []
         /// While busy, how long until the next read to see if the process answers; 0 while it answers.
         var backoff: TimeInterval = 0
+        /// Drains of animation steps in a row done within `slowStep`. Queue only.
+        var fastDrains = 0
         /// The window read to see if a busy process answers again.
         var probe: FrameJob?
         /// The newest frame per window that a busy process has not been sent.

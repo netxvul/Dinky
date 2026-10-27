@@ -407,10 +407,12 @@ struct ScrollingClickHoldTests {
         do { let r = ws.pin(.left); #expect(r == .changed) }
         ws.focus(5)
         let before = ws.layout().frames
-        // The band column next to the pin shows only in part now.
+        // Window 4's column shows only in part, its left part under the pin.
+        let shown = try #require(before[4])
+        try #require(shown.minX < ws.bandRect.minX && shown.maxX > ws.bandRect.minX)
         var held = ws, plain = ws
-        held.focus(2, holdingScroll: true)
-        plain.focus(2)
+        held.focus(4, holdingScroll: true)
+        plain.focus(4)
         try #require(plain.layout().frames != before, "focusing it would scroll")
         #expect(held.holdsScroll)
         #expect(held.layout().frames == before)

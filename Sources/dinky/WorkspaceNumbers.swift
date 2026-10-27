@@ -1,5 +1,6 @@
 import AppKit
 import DinkyConfig
+import DinkyLayout
 import DinkyPrivate
 
 // Workspace numbers: which native Space each workspace is. Workspaces are numbered across displays and live
@@ -22,6 +23,10 @@ final class WorkspaceNumbers {
     private var homes: [UInt32: Int] = [:]
     /// The last note of homes, kept only if the displays are still the same at the next one.
     private var pendingHomes: [UInt32: Int]?
+    /// Each scrolling workspace's strip while the displays were settled, its order, widths and pins, to put back once a
+    /// display change has poured its windows elsewhere and they return (`returnDisplaced`). Noted as `homes` is.
+    private var strips: [Int: Workspace] = [:]
+    private var pendingStrips: [Int: Workspace]?
     /// The displays as the last display change left them.
     private var knownDisplays: Set<String> = []
     /// Set by a display coming or going, until an arrangement completes and windows are back on their workspaces.
@@ -139,16 +144,21 @@ final class WorkspaceNumbers {
     /// Notes which workspace each window is on, once a second. A note is kept only when the displays are the
     /// same a second later, so windows macOS is pouring off a display that is going away are never noted there.
     private func noteHomes() {
-        guard !displaced, !arranging, onlineDisplays == knownDisplays, let model = AppState.shared.coordinator?.model else {
+        guard !displaced, !arranging, onlineDisplays == knownDisplays, let coordinator = AppState.shared.coordinator else {
             pendingHomes = nil
+            pendingStrips = nil
             return
         }
         if let pendingHomes { homes = pendingHomes }
+        if let pendingStrips { strips = pendingStrips }
         var noted: [UInt32: Int] = [:]
-        for window in model.windows.values where window.isNormal && !window.isMinimized {
+        for window in coordinator.model.windows.values where window.isNormal && !window.isMinimized {
             if let n = number(of: dinky_window_space_id(window.id)) { noted[window.id] = n }
         }
         pendingHomes = noted
+        pendingStrips = binding.compactMapValues { space in
+            coordinator.workspaces[space].flatMap { $0.isScrolling && !$0.windows.isEmpty ? $0 : nil }
+        }
     }
 
     /// Moves windows that a display change left off their workspace back onto it.
@@ -164,6 +174,10 @@ final class WorkspaceNumbers {
         }
         guard !targets.isEmpty else { return }
         for (target, moving) in Dictionary(grouping: targets.keys, by: { targets[$0]! }) {
+            // A strip goes back as it was before its windows move, so they arrive in it.
+            if let n = number(of: target), let strip = strips[n] {
+                AppState.shared.coordinator?.restoreStrip(strip, on: target, returning: moving)
+            }
             var ids = moving
             _ = dinky_move_windows_to_space(&ids, Int32(ids.count), target)
         }

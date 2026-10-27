@@ -5,8 +5,8 @@ import CoreGraphics
 /// moving with the button down for more than drags: an app can tell of its window moving as a click activates it,
 /// without moving it, and a hand pressing drifts a point or so, which moves a window pressed by its title bar that
 /// much. So the press is a click till the window has gone more than `slack` from where it was as the button went
-/// down, wherever focusing it has laid its tile out to meanwhile: a click holds a strip that centres the focused column
-/// still till the button is up (`Workspace.holdsScroll`), but a focus macOS tells of late scrolls its tree at once,
+/// down, wherever focusing it has laid its tile out to meanwhile: a click holds any strip still till the button is up,
+/// unless a window is fullscreen (`Workspace.holdsScroll`); a focus macOS tells of late scrolls its tree at once,
 /// and its windows only once the button is up. A window that goes into its tile has not been dragged there: a pass has
 /// put it there. The press goes on from there.
 public struct WindowPress: Equatable {

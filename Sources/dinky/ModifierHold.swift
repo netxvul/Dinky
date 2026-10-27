@@ -43,6 +43,9 @@ final class ModifierHold {
         case spoiled
     }
 
+    /// An event older than this as the swallowing tap gets it was held up on the way, the listener having had it.
+    private static let staleEvent: CFTimeInterval = 0.5
+
     /// What the swallowing tap takes; everything else is only ever listened to.
     private static let swallowable: [CGEventType] = [.keyDown, .leftMouseDown, .leftMouseUp, .rightMouseDown,
                                                      .rightMouseUp, .scrollWheel]
@@ -366,6 +369,9 @@ final class ModifierHold {
         default:
             break
         }
+        // Held up past the tap's timeout, the listener has had it already: handled twice, a key would move the pick
+        // twice.
+        guard eventAge(event) <= Self.staleEvent else { return true }
         let passes = handle(type, event, canSwallow: true)
         if passes {
             if passedOn.count >= 16 { passedOn.removeFirst() }
@@ -415,7 +421,7 @@ final class ModifierHold {
             guard swallowRightUp else { return true }
             rightReleased()
             return false
-        case .rightMouseDown, .otherMouseDown where byFingers:
+        case .rightMouseDown where byFingers, .otherMouseDown where byFingers:
             // A tap or press of the fingers that drive it, which only lifting them, or the left button, ends.
             break
         case .leftMouseDown where byFingers || pointerPicks(at: event.location):

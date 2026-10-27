@@ -96,7 +96,8 @@ holds the focused window's column at that side of the screen, after SlideScroll,
 while the other columns scroll in the band between. Each side holds one column,
 a single window or a stack. A pinned column keeps its width, a share of the
 screen inside the outer gaps, and the band keeps at least a quarter of it; a
-pin or a resize that would leave less is refused, with the noop flash. A band
+pin or a resize that would leave less is refused, with the noop flash, and so is
+stacking a window into a pin, by a drop or `join-with`, that would. A band
 window wider than the band, as an app's minimum width can make it, hangs past
 the band's edge, under a pin there. With dinky's Dock scripting addition the
 pins go in front of the band's windows, the active app's too; without it the

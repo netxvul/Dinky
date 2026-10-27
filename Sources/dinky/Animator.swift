@@ -92,8 +92,10 @@ final class Animator: NSObject {
     var columns: (UInt64) -> [[WindowID]] = { AppState.shared.coordinator?.workspaces[$0]?.stripColumns ?? [] }
     /// By tree, the display its windows are on, so the link steps at that display's rate.
     var displayOf: (UInt64) -> CGDirectDisplayID? = { _ in nil }
-    /// The tree last set gliding, whose display the link steps on.
+    /// The tree last set gliding, whose display the link steps on unless another gliding is faster.
     private var lastKey: UInt64?
+    /// The display chosen for the link this turn of the main queue (`run`).
+    private var choice: CGDirectDisplayID??
     /// Apps found too slow to follow a glide frame by frame, in this glide or an earlier one: a column holds to their
     /// windows from a glide's first frame, rather than snapping back to them once they have fallen behind.
     private var slowPids: Set<pid_t> = []
@@ -303,8 +305,18 @@ final class Animator: NSObject {
     }
 
     private func run() {
-        // On the display of the tree last set gliding, made again once that is another, the main one while unknown.
-        let display = lastKey.flatMap(displayOf)
+        // On the fastest display of the trees gliding, the one it is on if that is as fast, else the tree last set
+        // gliding's; made again once that is another, the main one while unknown. Chosen once a turn of the main queue,
+        // as every move of the fingers calls this.
+        if choice == nil {
+            let keys = Set(entries.values.map(\.key))
+            let candidates = Set(keys.compactMap(displayOf)).map { id in
+                (id: id, rate: Double(screen(of: id)?.maximumFramesPerSecond ?? 60))
+            }
+            choice = .some(LinkChoice.display(current: linkDisplay, among: candidates) ?? lastKey.flatMap(displayOf))
+            DispatchQueue.main.async { [weak self] in self?.choice = nil }
+        }
+        let display = choice ?? nil
         let fresh = link == nil || (display != nil && display != linkDisplay)
         if fresh { makeLink(on: display) }
         // Called again with every move of the fingers: only a link setting off starts the clocks again, so one that
@@ -423,6 +435,8 @@ final class Animator: NSObject {
             if finished, !following.contains(key) { done.insert(id) }
         }
         for entry in moving.values where applier.isSlow(entry.pid) { slowPids.insert(entry.pid) }
+        // An app that has kept up again is followed frame by frame again.
+        slowPids.subtract(applier.takeRecovered())
         // A tree gliding something else takes its frames, and its windows are left alone.
         for (key, sink) in sinks {
             let ours = frames.filter { moving[$0.key]?.key == key }

@@ -50,6 +50,8 @@ final class WindowModel {
     /// When the table was seeded. Windows first seen after it were created while dinky ran.
     private(set) var seededAt = Date.distantFuture
     private var observers: [(WindowEvent) -> Void] = []
+    /// Whether dinky is gliding the window, so a move or resize of it is read for its frame alone (`refresh`).
+    var isGliding: (UInt32) -> Bool = { _ in false }
 
     private let ownPID = getpid()
 
@@ -142,6 +144,16 @@ final class WindowModel {
     /// Does nothing for a window the model does not know.
     func refresh(_ id: UInt32, kind: DinkyEventKind = .windowUpdate) {
         guard var window = windows[id] else { return }
+        // A window dinky is gliding tells of every step: only where it is now, nothing else about it can have changed by
+        // the move, nor its Space.
+        if kind == .windowMove || kind == .windowResize, isGliding(id) {
+            var frame = CGRect.zero
+            guard dinky_window_bounds(id, &frame) else { return remove(id, kind: kind) }
+            let before = window.frame
+            window.frame = frame
+            windows[id] = window
+            return publish(kind, .updated, window, pid: window.pid, frameBefore: before)
+        }
         let info = dinky_window_info(id)
         guard info.exists else { return remove(id, kind: kind) }
         let before = window.frame

@@ -37,7 +37,9 @@ import DinkyPrivate
 // ask for the drop shown, and till the pointer has moved a little from where it last asked for it, the drop stays, so
 // the windows making room cannot put another under a pointer at rest for it to ask for; anywhere else it is over what
 // shows, where over the frame the drop shown gives the window the drop stays, unless it is a swap and the tile swapped
-// with is under the pointer as the trees are, whose zones still count. In a strip, the column the window drops into or
+// with is under the pointer as the trees are, whose zones still count, or it is beside a tile and the trees as they are
+// have the pointer in the top or bottom band of a tile there, slid or shrunk from under it to make room, which stacks
+// onto it (`DropHit.stacks`), in tiles and strip columns alike. In a strip, the column the window drops into or
 // beside stays where it shows as far as the strip scrolls, so the drop does not move it from under the pointer, as
 // taking a column out left of it would. macOS moves a window dragged over another display to its Space on the way, more
 // than once if it goes back and forth: the tree keeps the window till the drop (`track`), which then moves it to the
@@ -131,7 +133,9 @@ extension Coordinator {
     /// drag once the window has gone from where it was pressed (`notePress`), or at once when macOS has taken it to
     /// another display's Space.
     func noteFrameChange(of id: WindowID, from before: CGRect?) {
-        if dragging == id { return showDrag() }
+        // A window held with `[drag] mouse-modifier` shows as the pointer moves it (`heldDragMoved`), not again as it
+        // tells of each frame dinky sent it.
+        if dragging == id { return drag?.held == nil ? showDrag() : () }
         // Only tiled windows have a Space.
         guard dragging == nil, let home = placements[id]?.space, !isAnimating(id), mouseButtonDown,
               !MissionControl.shared.active, let window = model.windows[id], let pointer = CGEvent(source: nil)?.location
@@ -172,6 +176,8 @@ extension Coordinator {
             guard let self, windowPress?.id == press.id, windowPress?.at == press.at else { return }
             guard !mouseButtonDown else { return watchPressEnd(press) }
             windowPress = nil
+            // Pins the press held off raising.
+            defer { raiseCoveredPins() }
             guard let key = placements[press.id]?.space, !isAnimating(press.id), let window = model.windows[press.id],
                   let tile = workspaces[key]?.layout().frames[press.id],
                   !window.frame.isClose(to: restingFrame(of: press.id, at: tile), within: 2) else { return }
@@ -268,6 +274,8 @@ extension Coordinator {
             // while the click still holds the passes, its release does that.
             revealClickedFocus()
             flush()
+            // Pins the drag held off raising, once it is over.
+            DispatchQueue.main.async { [weak self] in self?.raiseCoveredPins() }
         }
         // The drop shown, worked out again on the trees as they are now, unless the pointer has asked for another for
         // `DragSession.settle` and still does; when none showed yet, the one the pointer was asking for; with no feedback
@@ -282,12 +290,22 @@ extension Coordinator {
                 }
             // A drop the pointer has asked for a while and still asks for, though the one shown has not had its time yet
             // to give way to it: the one let go over.
-            let pending = session.asked.flatMap { asked -> DropPlan? in
-                guard let plan = asked.plan, CACurrentMediaTime() - asked.since >= DragSession.settle, let pointer,
-                      case .plan(let now) = self.asked(by: session, at: pointer), now == plan else { return nil }
-                return plan
+            // Going back, too: settled and still asked for, nil.
+            let pending = session.asked.flatMap { asked -> DropPlan?? in
+                guard CACurrentMediaTime() - asked.since >= DragSession.settle, let pointer else { return nil }
+                switch self.asked(by: session, at: pointer) {
+                case .plan(let now) where asked.plan == now: return .some(now)
+                case .back where asked.plan == nil: return .some(nil)
+                default: return nil
+                }
             }
-            let plan = (pending ?? session.shown ?? session.asked?.plan).flatMap({ replan($0, of: session) }) ?? unshown
+            switch pending {
+            case .some(.none): return nil
+            case .some(.some(let plan)):
+                if let plan = replan(plan, of: session) { return inSight(plan.key) ? plan : nil }
+            case .none: break
+            }
+            let plan = (session.shown ?? session.asked?.plan).flatMap({ replan($0, of: session) }) ?? unshown
             return plan.flatMap { inSight($0.key) ? $0 : nil }
         }
         if let space = carried(session) {
@@ -387,6 +405,44 @@ extension Coordinator {
         for delay in [0.3, 1.0] { checkLanding(of: plan.moving, after: delay) }
     }
 
+    /// The strip of the workspace on Space `key` as `snapshot` had it before a display change poured its windows onto
+    /// another display, put back as `returning`, those windows, are moved home: in its order, at its widths, its pins
+    /// pinned, without windows gone since and with any its Space has now that it did not. They leave the trees they
+    /// were poured into at once, and arrive in it rather than come in as new windows (`arrive`).
+    func restoreStrip(_ snapshot: Workspace, on key: UInt64, returning: [WindowID]) {
+        guard let display = displays.display(containingSpace: key) else { return }
+        makeWorkspace(key, on: display)
+        let current = workspaces[key]!, coming = Set(returning)
+        let present = Set(snapshot.windows.filter { id in
+            model.windows[id] != nil && (coming.contains(id) || current.contains(id))
+        })
+        var tree = snapshot.restored(keeping: present, adding: current.windows.filter { !snapshot.contains($0) })
+        (tree.bounds, tree.gaps, tree.walls) = (current.bounds, current.gaps, current.walls)
+        let back = returning.filter { tree.contains($0) && placements[$0]?.space != key }
+        for (old, ids) in Dictionary(grouping: back.filter { placements[$0]?.space != nil }, by: { placements[$0]!.space! }) {
+            edit(old) { workspace in for id in ids { workspace.remove(id) } }
+        }
+        edit(key) { $0 = tree }
+        for id in back { placements[id]?.space = key }
+        print("\(stamp()) workspaces: strip on Space \(key) put back as it was, \(back.count) windows returning"
+              + (tree.pins.isEmpty ? "" : ", pinned \(tree.pins.values.sorted())"))
+        for id in back { arrive(id, on: key) }
+        dirty.insert(key)
+        flush()
+    }
+
+    /// Window `wid`, moved by a command to `space` on another display: its tree there is placed at once rather than
+    /// glided, and the window is not taken in again as it arrives; a moment later it is looked at, as a drop's is, and
+    /// put right if it did not land.
+    func arrive(_ wid: WindowID, on space: UInt64) {
+        arriving[wid] = space
+        placeAtOnce(space)
+        for delay in [0.3, 1.0] { checkLanding(of: [wid: space], after: delay) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { [weak self] in
+            if self?.arriving[wid] == space { self?.arriving[wid] = nil }
+        }
+    }
+
     /// After `delay`, puts each window that is not on its tree's Space or in its tile yet there again, saying so: one
     /// just moved to another display's Space can refuse its first frames while the window server settles it there. The
     /// last look gives up on one still on another Space, which then joins the tree of the Space it is on.
@@ -407,7 +463,8 @@ extension Coordinator {
                 }
                 guard !isAnimating(id), let tile = workspaces[space]?.layout().frames[id] else { continue }
                 let resting = restingFrame(of: id, at: tile)
-                guard !info.frame.isClose(to: resting, within: 2) else { continue }
+                // Nor one where its app last put it for that tile, a few points off as some snap to their own grid.
+                guard !info.frame.isClose(to: resting, within: 2), !rests(id, at: info.frame, askedFor: tile) else { continue }
                 print("\(stamp()) drag: \(id) at \(info.frame) on Space \(on) \(delay)s after the drop, "
                       + "not where its tile leaves it, \(resting), on Space \(space): placed again")
                 dirty.insert(space)
@@ -589,6 +646,10 @@ extension Coordinator {
         let key = space.key
         let tree = prepared(workspaces[key] ?? newWorkspace(on: space.display, settings(for: key)))
         let real = tree.dropHit(at: point, in: tree.layout(), excluding: session.id)
+        // Till the pointer stirs from where it asked for the drop shown, that drop, whatever the tree as it is asks for:
+        // known before working any drop out, but where it goes back over its own place on another display.
+        if let shown = session.shown, shown.trees[key] != nil, !(real == .own && shown.key != key),
+           let at = session.askedAt, hypot(point.x - at.x, point.y - at.y) < DragSession.stir { return .keep }
         let asIs = ask(session, into: key, over: real, in: tree)
         guard let shown = session.shown, let shows = shown.trees[key] else { return asIs }
         if case .plan(let plan) = asIs, plan == shown { return .keep }

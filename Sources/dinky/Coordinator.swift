@@ -22,6 +22,9 @@ final class Coordinator {
         didSet {
             if !enabled {
                 applier.cancel(); animator.cancel(); pushes = [:]; stagingWindows = [:]; systemTiling = [:]
+                // Dock's glides too, their windows back at their real frames: one left would carry on for good.
+                for sa in saGlides.values { ScriptingAddition.reset(sa.ids) }
+                saGlides = [:]
                 PeekClicks.shared.clear()
                 dropStripScroll()
             }
@@ -212,6 +215,7 @@ final class Coordinator {
             guard let point = event.cgEvent?.location else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(50)) { self?.recheckClickedPin(at: point) }
         }
+        model.isGliding = { [weak self] id in self?.animator.isAnimating(id) ?? false }
         model.observe { [weak self] event in self?.handle(event) }
         // Frames held while an app was not answering are written as a pass of their own, which reports to no one:
         // lay its windows out again, so their landing, stacking and minimum sizes are taken in as after any pass.
@@ -347,10 +351,13 @@ final class Coordinator {
             // The windows raised after the pins to keep their apps' focus: the focused one, and the tree's own only
             // where it is of the front app, as one of another app focuses nothing raised.
             var candidates: [WindowID] = []
+            // Only on the Space of the front window: another display's tree raises nothing to keep focus.
             if !ordering {
                 let front = frontNow(), frontApp = model.windows[front]?.pid
-                candidates = ([workspace.focused].compactMap { $0 }.filter { model.windows[$0]?.pid == frontApp } + [front])
-                    .filter { workspace.pinSide(of: $0) == nil }
+                if (placements[front]?.space ?? model.windows[front]?.spaceID) == key {
+                    candidates = ([workspace.focused].compactMap { $0 }.filter { model.windows[$0]?.pid == frontApp } + [front])
+                        .filter { workspace.pinSide(of: $0) == nil }
+                }
             }
             // While fingers hold the strip, its windows move through Dock without the window model hearing, so any
             // band window in front of a pin counts, as when they took hold.
@@ -424,7 +431,11 @@ final class Coordinator {
 
     private func handle(_ event: WindowEvent) {
         // Detected here, not in the border manager, so hover focus stands down even with borders off.
-        if MissionControl.shared.update(from: model) {
+        // Only Mission Control's own windows, or a window coming, going, hiding, showing or changing level, can open or
+        // close it: not the moves of a glide.
+        let mayShowMissionControl = event.window?.bundleID == "com.apple.WindowManager"
+            || [.windowCreate, .windowDestroy, .windowClose, .windowHide, .windowUnhide, .windowLevel].contains(event.kind)
+        if mayShowMissionControl, MissionControl.shared.update(from: model) {
             borders?.missionControlChanged()
             noopGlow.missionControlChanged()
             if !MissionControl.shared.active { missionControlClosed() }
@@ -527,7 +538,11 @@ final class Coordinator {
             workspaces[key]!.gaps = self.gaps(on: display)
             workspaces[key]!.walls = walls(of: display)
             // Only as the display or the gaps change: pins dropped at any other pass would never come back.
-            if workspaces[key]!.bounds != bounds || workspaces[key]!.gaps != gaps { workspaces[key]!.fitPins() }
+            // The band's own room first, as a pass would, so the pins are fitted to a band at the size it lays out at.
+            if workspaces[key]!.bounds != bounds || workspaces[key]!.gaps != gaps {
+                workspaces[key]!.fitBand()
+                workspaces[key]!.fitPins()
+            }
         }
     }
 
@@ -778,7 +793,8 @@ final class Coordinator {
     /// the window that app has focused, as Accessibility says. Asked of the app only then, not for dinky's settled focus,
     /// nor of an app that is busy or did not answer lately (then the window dinky last had of it), and kept for a moment
     /// unless the button went down since; `fresh` asks again all the same.
-    func frontWindow(fresh: Bool = false) -> WindowID {
+    func frontWindow(fresh: Bool = false, whileMoving: Bool = false) -> WindowID {
+        lastReadDeferred = false
         let id = dinky_border_focused_window()
         guard ScriptingAddition.orders, let window = model.windows[id], let key = placements[id]?.space,
               workspaces[key]?.pinSide(of: id) != nil, !(id == confirmedPin && id == lastFocused && focusing == nil)
@@ -811,7 +827,12 @@ final class Coordinator {
         guard !applier.isBusy(pid), (frontBackoff[pid] ?? 0) <= now else { return fallback() }
         // While a drag or a glide moves the windows of its strip, asking the app, up to a tenth of a second on the main
         // thread, would hold their frames up: the window dinky has, and the app asked once the strip rests.
-        if stripMoves(key) {
+        // A command asks all the same (`whileMoving`): it acts on what it reads.
+        if !whileMoving, stripMoves(key) {
+            // A click on the pin itself, which shows in front: the pin, as the user chose.
+            if clickUnderWay(within: 0.3), let pointer = CGEvent(source: nil)?.location,
+               onScreenStack().first(where: { $0.id == id })?.frame?.contains(pointer) == true { return id }
+            lastReadDeferred = true
             readFocusOnceStill(key)
             return fallback()
         }
@@ -855,6 +876,9 @@ final class Coordinator {
     /// more after it where another event came meanwhile, so a burst costs two reads at most.
     /// A read of focus waits for a strip to stop moving (`readFocusOnceStill`).
     private var focusReadDeferred = false
+    /// Whether `frontWindow` last answered with the window dinky had rather than asking the app, a strip moving: not news
+    /// of focus moving, which `syncFocus` leaves to the read once the strip rests.
+    private(set) var lastReadDeferred = false
 
     private func readFocusSoon() {
         focusReadPending = true
@@ -871,6 +895,11 @@ final class Coordinator {
         }
     }
 
+    /// Whether window `id` at `frame` is where its app last put it when asked for `tile`, or on it (`Animator.rests`).
+    func rests(_ id: WindowID, at frame: CGRect, askedFor tile: CGRect) -> Bool {
+        animator.rests(id, at: frame, askedFor: tile)
+    }
+
     /// Whether a drag or a glide is moving windows of the strip on `key`, as `frontWindow` should not hold up.
     private func stripMoves(_ key: UInt64) -> Bool {
         drag != nil || dragging != nil || saGlides[key] != nil || pushes[key] != nil
@@ -883,6 +912,7 @@ final class Coordinator {
         focusReadDeferred = true
         let began = CACurrentMediaTime()
         func check() {
+            guard enabled else { return focusReadDeferred = false }
             guard !stripMoves(key) || CACurrentMediaTime() - began > 3 else {
                 DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(50)) { check() }
                 return
@@ -914,9 +944,13 @@ final class Coordinator {
     /// main thread, and a command run right after the focus acts on the window it chose.
     var focusedWindow: WindowID {
         if let focusing, Date() < focusing.until { return focusing.id }
-        let id = frontWindow()
+        // Asked of its app even while a strip moves: a command acts on what it reads.
+        let id = frontWindow(whileMoving: true)
         // One only in front while it is raised into order behind another is not focused, as `syncFocus` has it.
-        return applier.echoesRaise(id) ? lastFocused : id
+        let focused = applier.echoesRaise(id) ? lastFocused : id
+        // Kept, so the reads of events while the strip moves, which answer with what dinky had, do not take it back.
+        if focused != lastFocused, model.windows[focused] != nil { lastFocused = focused }
+        return focused
     }
 
     /// Focuses a window, raising it and activating its app. For a moment after, focus events that still
@@ -972,6 +1006,8 @@ final class Coordinator {
     /// Follows focus into the trees, so new windows land beside the focused one and accordions show it.
     private func syncFocus(fresh: Bool = false) {
         let id = frontWindow(fresh: fresh)
+        // Only what dinky had, answered while a strip moves: focus moves once the read after it says so.
+        if lastReadDeferred, id != lastFocused { return }
         // A window being raised into its place in the stacking comes in front of its app's other windows on the way,
         // which reads as focus moving to it. That is dinky's doing, not the user's, so nothing follows it: not the tree,
         // whose strip would scroll to it and call for more raises, nor the switchers' recency, the hooks or the click
@@ -1011,7 +1047,7 @@ final class Coordinator {
         if let focusing, focusing.id == id, !focusing.activated, Date() < focusing.until {} else { focusing = nil }
         guard let key = placements[id]?.space, let workspace = workspaces[key], workspace.focused != id else { return }
         telemetry.focus(key, workspace, to: id, from: workspace.focused, click: clickUnderWay(within: 0.3))
-        // While a click holds the pass, a strip that would scroll the window to the middle stays where it shows till
+        // While a click holds the pass, a strip stays where it shows, however focusing would scroll it, till
         // the hold lets go (`revealClickedFocus`), so a drag the press starts is measured against the windows where
         // they are.
         edit(key) { $0.focus(id, holdingScroll: clickHold) }
@@ -1086,15 +1122,15 @@ final class Coordinator {
     }
 
     /// A click that moves focus is left to land where it was pressed: after a focus change a click made, the trees
-    /// follow focus at once, but nothing is laid out while the button is down and for `clickQuiet` after it comes
-    /// up; then the held pass runs. A strip that would scroll the clicked column to the middle holds its scroll till
-    /// then as well (`Workspace.holdsScroll`): a drag the press starts is measured against the tree, and one scrolled
-    /// ahead of the screen would have the window far off its tile and the pointer over the next column, and drop it
-    /// there. A strip scrolled under the pressed button would turn the click into a drag in the app, and dinky's
-    /// writes, raises and captures would reach the app while it is still taking the click. A drag, which drops on its
-    /// own when the button comes up, lets the pass run as soon as it has ended, or once it shows a drop: a pass while it
-    /// is still open would leave out the window it has, the focused one, and raise others of its app over it. A button
-    /// held past ten seconds stops holding.
+    /// follow focus at once, but nothing is laid out while the button is down and for `clickQuiet` after it comes up;
+    /// then the held pass runs. A strip, however focusing would scroll it, to the middle or only into view, holds its
+    /// scroll till then as well, unless a window is fullscreen (`Workspace.holdsScroll`): a drag the press starts is
+    /// measured against the tree, and one scrolled ahead of the screen would have the window far off its tile and the
+    /// pointer over the next column, and drop it there. A strip scrolled under the pressed button would turn the click
+    /// into a drag in the app, and dinky's writes, raises and captures would reach the app while it is still taking the
+    /// click. A drag, which drops on its own when the button comes up, lets the pass run as soon as it has ended, or
+    /// once it shows a drop: a pass while it is still open would leave out the window it has, the focused one, and
+    /// raise others of its app over it. A button held past ten seconds stops holding.
     private func holdForClick() {
         guard !clickHold else { return }
         clickHold = true
@@ -1123,6 +1159,8 @@ final class Coordinator {
             // (Drag.swift): it is measured against the windows where they are.
             if dragging == nil { revealClickedFocus() }
             flush()
+            // A raise the click held off, as of a pin on another display a Dock click covered, now that it has let go.
+            raiseCoveredPins()
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { check() }
     }
@@ -1205,6 +1243,7 @@ final class Coordinator {
         applier.assume(sizes, pids: pids)
         // Dock's moves leave the stacking as it is, so the pins go on top now, before anything slides under them.
         raiseCoveredPins(in: key, takingHold: true)
+        if throughDock { ScriptingAddition.forget(Array(strip.keys)) }
         telemetry.fingers(key, "took hold" + (throughDock ? ", through Dock" : ""))
         stripScrollWatch?.invalidate()
         stripScrollWatch = Timer.scheduledTimer(withTimeInterval: Self.stripScrollCheck, repeats: true) { [weak self] _ in
@@ -1349,6 +1388,7 @@ final class Coordinator {
     private func handBack(_ key: UInt64) {
         guard let scroll = stripScroll, scroll.key == key else { return }
         stripScroll = nil
+        if scroll.throughDock { ScriptingAddition.forget(workspaces[key]?.windows) }
         stripScrollWatch?.invalidate()
         stripScrollWatch = nil
         if animates, !snap.contains(key) {
@@ -1398,7 +1438,8 @@ final class Coordinator {
     // MARK: Applying
 
     func flush() {
-        guard !clickHold else { return }
+        // A click holds the passes, but not the first making room for a drop its press began to show.
+        guard !clickHold || drag?.shown != nil else { return }
         // Something ended the fingers' free scroll, as a command or a window focused, or left the strip nothing to
         // scroll, as fullscreen: it takes the strip over.
         if let key = stripScroll?.key, workspaces[key].map({ !$0.isScrollingFreely || !$0.canScrollFreely }) ?? true {
@@ -1779,7 +1820,10 @@ final class Coordinator {
                 flush()
             }
         }
-        guard animates, snap.remove(key) == nil else {
+        // Placed at once, a strip is snapped to once: animations off, it is placed at once anyway, and must not stay held
+        // to snap, which stops the fingers taking hold of it.
+        let snapped = snap.remove(key) != nil
+        guard animates, !snapped else {
             settleGlide()
             return write()
         }
@@ -1963,8 +2007,10 @@ final class Coordinator {
             // glide below. So is one with a window staged at its size just now, or held. Its size here is the one the
             // pass gives it, not the strip's: a window hiding behind a column at a wall is smaller than its tile, and
             // stays so while it hides.
+            // Not a window a drag has, which is not written: its size, as one dragged in from another display at its own,
+            // does not keep the others from gliding through Dock.
             let saResizing = !special.isEmpty || leftAlone.contains(where: { strip[$0] != nil }) || strip.contains { id, frame in
-                guard let size = frameNow(id)?.size else { return false }
+                guard !frozen.contains(id), let size = frameNow(id)?.size else { return false }
                 let target = layout.frames[id] ?? frame
                 return abs(size.width - target.width) > 1 || abs(size.height - target.height) > 1
             }
@@ -2000,6 +2046,7 @@ final class Coordinator {
                     }
                 }
                 let slide = { (frames: [WindowID: CGRect]) in ScriptingAddition.move(unfrozen(place(frames))) }
+                ScriptingAddition.forget(stripIDs)
                 slide(initial)
                 return animator.animate(key, from: starts, to: targets, pids: pids, stretch: stretch, restart: restart,
                                         curve: curve, sink: slide) { [weak self] in
@@ -2312,9 +2359,9 @@ final class Coordinator {
     /// only a size it went to some other way, as making room for a drag, shows it.
     private func noteSize(of id: WindowID) {
         guard placements[id]?.floating == false, let window = model.windows[id], !window.isMinimized,
-              FrameApplier.isOnScreen(window.frame),
               let minimum = applier.minimumSize(of: id, app: window.bundleID),
               window.frame.width < minimum.width - 2 || window.frame.height < minimum.height - 2,
+              FrameApplier.isOnScreen(window.frame),
               applier.saw(window.frame.size, of: id, app: window.bundleID) else { return }
         print("\(stamp()) \(id) \(window.appName ?? "?") at \(window.frame.size), under the minimum \(minimum) it was laid out around: lowered")
         dirty.formUnion(placements[id]?.space.map { [$0] } ?? [])

@@ -498,3 +498,15 @@ public func pinRaiseOrder(ownPins: [WindowID], fronts: [WindowID], front: Window
     return ((ownPins + fronts).filter { $0 != front } + (keepsFront ? [front] : []) + otherPins + restore)
         .filter { seen.insert($0).inserted }
 }
+
+extension Workspace {
+    /// The strip as this snapshot had it before a display change took its windows away, its order, column widths and
+    /// pins: without the windows not in `present` (gone since, or taken elsewhere by hand), and with `newcomers`, windows
+    /// its Space has that the snapshot did not, after the others as new windows come in.
+    public func restored(keeping present: Set<WindowID>, adding newcomers: [WindowID]) -> Workspace {
+        var workspace = self
+        for id in workspace.windows where !present.contains(id) { workspace.remove(id) }
+        for id in newcomers where !workspace.contains(id) { workspace.insert(id) }
+        return workspace
+    }
+}

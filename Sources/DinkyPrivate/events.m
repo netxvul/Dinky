@@ -69,7 +69,9 @@ static void handler(uint32_t type, void *data, size_t length, void *context)
         // JankyBorders window_modify_handler and yabai 804/808: uint32 wid at 0.
         if (length < 4) return;
         memcpy(&event.windowID, data, sizeof(uint32_t));
-        event.pid = window_pid(event.windowID);
+        // Moves and resizes come by the hundred as windows glide, and their owner is never asked of them: the model
+        // knows the windows it keeps.
+        if (type != DinkyEventWindowMove && type != DinkyEventWindowResize) event.pid = window_pid(event.windowID);
         break;
     }
 
@@ -100,6 +102,11 @@ bool dinky_events_start(DinkyEventCallback callback, void *context)
 void dinky_events_watch_windows(const uint32_t *windowIDs, int count)
 {
     SLSRequestNotificationsForWindows(dinky_connection(), windowIDs, count);
+}
+
+bool dinky_window_bounds(uint32_t windowID, CGRect *frame)
+{
+    return SLSGetWindowBounds(dinky_connection(), windowID, frame) == kCGErrorSuccess;
 }
 
 DinkyWindowInfo dinky_window_info(uint32_t windowID)

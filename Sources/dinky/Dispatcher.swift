@@ -474,6 +474,9 @@ enum Dispatcher {
         let from = AppState.shared.displays.display(ofWindow: wid)
         if let error = move(wid, to: space, arriving: destination) { return error }
         if let from { keepOffset(of: wid, from: from, to: to, space: space) }
+        // To another display, it is placed there at once: a glide would set out from where it was on the other one.
+        let across = from.map { $0.uuid != to.uuid } ?? false
+        if across { AppState.shared.coordinator?.arrive(wid, on: space) }
         AppState.shared.coordinator?.windowMoved(wid, refocus: !follow)
         return nil
     }
