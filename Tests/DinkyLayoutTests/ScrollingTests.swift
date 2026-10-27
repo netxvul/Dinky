@@ -480,6 +480,24 @@ struct ScrollingWallAlignTests {
         }
     }
 
+    @Test func `Next to the strip's start, a neighbour going past the wall leaves no more room than is reached over`() {
+        // The first column such that, lined up past the wall, the straddler leaves a little less than the narrowest
+        // column on screen, but with the half gap the column in view keeps beside it a little more: that column
+        // reaches over it all the same, as both measure the room as a column's span is measured.
+        for share in [0.6, 0.7, 0.8] {
+            var ws = Workspace(bounds: rect(0, 39, 1800, 1066), gaps: Gaps(all: 8), algorithm: .scrolling)
+            ws.columnWidth = 0.5
+            ws.walls = [.right]
+            ws.columnCentring = .alwaysFill
+            for id in 0..<5 { ws.insert(WindowID(id + 1)) }
+            ws.setWidth(ofColumn: 0, 0.412)
+            ws.setWidth(ofColumn: 2, share)
+            ws.focus(2)
+            let frames = ws.layout().frames.values.filter { $0.minX >= 0 && $0.maxX <= 1800 }
+            #expect(1792 - frames.map(\.maxX).max()! <= 8, "\(share): no more than a gap bare at the wall")
+        }
+    }
+
     /// The external display beside the built-in one, its wall at the left, the strip's last column focused.
     private func flipGo(shares: [Double]) -> Workspace {
         var ws = Workspace(bounds: rect(1800, -294, 1280, 1570), gaps: Gaps(all: 8), algorithm: .scrolling)
