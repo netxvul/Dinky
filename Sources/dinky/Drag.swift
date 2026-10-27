@@ -426,6 +426,8 @@ extension Coordinator {
             tree.fitBand()
             tree.fitPins()
         }
+        // A display put beside it or moved away meanwhile: lined up with the walls it has now, where it shows.
+        if snapshot.walls != tree.walls { tree.alignToWalls() }
         let back = returning.filter { tree.contains($0) && placements[$0]?.space != key }
         for (old, ids) in Dictionary(grouping: back.filter { placements[$0]?.space != nil }, by: { placements[$0]!.space! }) {
             edit(old) { workspace in for id in ids { workspace.remove(id) } }
