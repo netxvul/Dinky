@@ -176,13 +176,14 @@ extension Workspace {
         // With a column pinned, the others keep the widths they have without: shares of the unpinned strip, as wide
         // as the band at most. Across a seam, shares of one display, as wide as one goes (`shareBase`).
         let room = shareBase(of: area), base = pinned ? shareWidth : room
-        var start: CGFloat = 0
-        return root.children.indices.map { i in
+        var narrowest: [Int: CGFloat] = [:]
+        var widths = root.children.indices.map { i -> CGFloat in
             // A pinned column has a place of its own (`pinRect`), not along the band.
-            guard band.contains(i) else { return (0, pinSpan(i)) }
+            guard band.contains(i) else { return pinSpan(i) }
             let insets = (i > band.lowerBound || beside.left ? gap / 2 : 0)
                 + (i < band.upperBound - 1 || beside.right ? gap / 2 : 0)
             let minimum = root.children[i].minimumExtent(.horizontal, gap: gap, padding: accordionPadding, minimumSizes)
+            narrowest[i] = minimum + insets
             let wide = (base * CGFloat(width(ofColumn: i))).rounded()
             let share = pushed.contains(i)
                 ? spansDisplays ? room : area.width + endGutters(of: i, area).left + endGutters(of: i, area).right
@@ -192,9 +193,14 @@ extension Workspace {
             // only the display it is on, half an inner gap from the seam.
             let alone = room - (spansDisplays ? gap / 2 : 0)
             let lone = pinned ? max(alone, minimum + insets) : alone
-            let width = band.count == 1 ? lone : max(share, minimum + insets)
-            defer { start += width }
-            return (start, width)
+            return band.count == 1 ? lone : max(share, minimum + insets)
+        }
+        if spansDisplays, !pinned, pushed.isEmpty { fitEnds(&widths, narrowest: narrowest, in: area) }
+        var start: CGFloat = 0
+        return root.children.indices.map { i in
+            guard band.contains(i) else { return (0, widths[i]) }
+            defer { start += widths[i] }
+            return (start, widths[i])
         }
     }
 

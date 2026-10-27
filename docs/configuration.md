@@ -165,7 +165,12 @@ display's Space as most of them crosses, and only the outer edges of the two
 displays park and peek. Each column is as tall as the display it is on, or
 with `span-height` as both have room. Where
 the wider display has room left at its outer edge, less than a column, the
-column in view nearest that edge reaches over it to the outer gap. With
+column in view nearest that edge reaches over it to the outer gap. With focus
+at an end of the strip, the display there fills as one display's strip does at
+its end: the columns from the end keep their widths at the outer margin, and the
+one before them narrows to the room left up to the line between the displays,
+or where it cannot, the end column widens over it; as focus leaves, the widths
+come back. With
 `span-peek = false`, columns scrolled past the outer edges tuck under the
 column in view there rather than peek, and the columns fill out to the outer
 gaps. Fullscreen fills the whole display its column is on, inside the outer

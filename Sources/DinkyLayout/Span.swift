@@ -146,6 +146,36 @@ extension Workspace {
         return placed
     }
 
+    /// Across a seam, with focus on a column of the display at an end of the strip as it rests there, that display filled
+    /// to the outer margin as one display's strip at its end is: the columns from the end keep their widths at the
+    /// margin, and the one that would reach over the seam narrows to the room left between them and it, so the seam still
+    /// falls between columns; where that one cannot go so narrow, the end column widens over the room instead. Only where
+    /// the room left is more than the column in view there reaches over anyway (`reachesOver`), and only while focus is
+    /// there: the widths the columns are given stand, and come back as focus leaves.
+    func fitEnds(_ widths: inout [CGFloat], narrowest: [Int: CGFloat], in area: CGRect) {
+        let band = bandRange
+        guard let x = seamLine, band.count >= 2, let focus = shownBandColumn else { return }
+        let half = gaps.horizontal / 2
+        func fit(from end: Int, step: Int, room: CGFloat) {
+            var left = room, i = end, on: [Int] = []
+            while band.contains(i), widths[i] <= left + 0.5 {
+                left -= widths[i]
+                on.append(i)
+                i += step
+            }
+            // All of the band fits on that display, or nothing does: no end to fill.
+            guard band.contains(i), !on.isEmpty, on.contains(focus) || focus == i else { return }
+            guard !reachesOver(left - half, in: area) else { return }
+            if let floor = narrowest[i], floor <= left {
+                widths[i] = left
+            } else {
+                widths[end] += left
+            }
+        }
+        fit(from: band.upperBound - 1, step: -1, room: area.maxX - x)
+        fit(from: band.lowerBound, step: 1, room: x - area.minX)
+    }
+
     /// How far before the seam a column's middle takes the shorter display's height on its way there.
     static let seamLead: CGFloat = 100
 

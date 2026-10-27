@@ -409,6 +409,47 @@ struct SpanTests {
         #expect(between > 0)
     }
 
+    /// Two displays of a laptop beside a monitor, a strip of six with its last column wider than half a display.
+    private func endFitting() -> Workspace {
+        let seam = Seam(left: rect(-1920, 30, 1920, 1170), right: rect(0, 39, 1800, 1066))
+        var ws = spanning(6, gaps: Gaps(all: 8), seam: seam, centring: .alwaysFill)
+        ws.spanPeeks = false
+        ws.focus(6)
+        _ = ws.resizeColumn(by: 1160 - (ws.layout().frames[6]?.width ?? 0))
+        ws.focus(6)
+        return ws
+    }
+
+    @Test func `At the strip's end the column before the end narrows to fill the display`() {
+        let ws = endFitting(), frames = ws.layout().frames
+        let end = frames[6]!, before = frames[5]!
+        #expect(end.maxX == 1792, "the end column at the margin: \(end)")
+        #expect(end.width > 1100, "at its own width")
+        #expect(before.minX == 4 && before.maxX == end.minX - 8, "the one before it fills from the seam: \(before)")
+        #expect(straddling(ws).isEmpty)
+        // Left of the seam, the strip as ever: filled to the outer margin.
+        let left = ws.windows.map { frames[$0]! }.filter { $0.minX >= -1920 && $0.maxX <= 0 }
+        #expect(left.map(\.minX).min() == -1912 && left.map(\.maxX).max() == -4)
+    }
+
+    @Test func `Where it cannot narrow so far the end column widens instead`() {
+        var ws = endFitting()
+        ws.minimumSizes[5] = CGSize(width: 800, height: 100)
+        let frames = ws.layout().frames
+        #expect(frames[6]!.minX == 4 && frames[6]!.maxX == 1792, "\(frames[6]!)")
+        #expect(straddling(ws).isEmpty)
+    }
+
+    @Test func `Focus leaving the end gives the columns their widths back`() {
+        var ws = endFitting()
+        let narrowed = ws.layout().frames[5]!.width
+        ws.focus(2)
+        let frames = ws.layout().frames
+        #expect(frames[5]!.width > narrowed + 100, "back to its own width: \(frames[5]!)")
+        #expect(frames[6]!.width > 1100)
+        #expect(straddling(ws).isEmpty)
+    }
+
     @Test func `Two strips coming together meet at the seam`() {
         var left = Workspace(bounds: rect(0, 0, 1000, 600), algorithm: .scrolling)
         left.insert(1)
