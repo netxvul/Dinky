@@ -132,10 +132,13 @@ extension Workspace {
             let kept = shown.filter(keeps)
             if !kept.isEmpty { shown = kept }
         }
+        if let near, stepping != 0 { narrowed { c in stepping > 0 ? c >= near - 0.5 : c <= near + 0.5 } }
+        // Not one leaving a display bare beside a wall past what the column in view there reaches over: a column too wide
+        // for the room left would hide behind its neighbour there. Before the display to centre on, which gives way.
+        narrowed { c in !leavesBare(at: c, spans: spans, in: area) }
         if let onLeft {
             narrowed { c in (area.minX + spans[focusedColumn].start - c + spans[focusedColumn].width / 2 < x) == onLeft }
         }
-        if let near, stepping != 0 { narrowed { c in stepping > 0 ? c >= near - 0.5 : c <= near + 0.5 } }
         let all = inside ? shown.filter { c in band.allSatisfy { showsWhole($0, at: c, spans: spans, in: area) } } : []
         // Columns of a width differ by a point or two of rounding and gap: that far counts as a tie.
         let tie = gaps.horizontal + 4
@@ -143,6 +146,21 @@ extension Workspace {
             (near == nil ? abs(c - offset) : (abs(c - offset) / tie).rounded(), abs(c - (near ?? offset)), c)
         }
         return (all.isEmpty ? shown : all).min { rank($0) < rank($1) } ?? offset
+    }
+
+    /// Whether the strip at offset `c` leaves room on a display, at an outer edge that is a wall, more than the column in
+    /// view nearest it reaches over (`reachesOver`): room the band columns shown whole on that display leave bare.
+    func leavesBare(at c: CGFloat, spans: [(start: CGFloat, width: CGFloat)], in area: CGRect) -> Bool {
+        guard let x = seamLine else { return false }
+        let inset = stripInset, band = bandRange
+        for (wall, from, to) in [(Direction.left, inset.minX, x), (.right, x, inset.maxX)] where walls.contains(wall) {
+            let covered = band.reduce(CGFloat(0)) { sum, i in
+                let minX = area.minX + spans[i].start - c, maxX = minX + spans[i].width
+                return minX >= from - 1.5 && maxX <= to + 1.5 ? sum + spans[i].width : sum
+            }
+            if !reachesOver(to - from - covered, in: area) { return true }
+        }
+        return false
     }
 
     /// The display `spanCentring` centres `column` on, left (true) or right, as the strip shows at `offset`; nil to

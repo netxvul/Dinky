@@ -169,6 +169,33 @@ struct SpanTests {
         }
     }
 
+    @Test(arguments: [SpanCentring.both, .focused, .display(left: true), .display(left: false)])
+    func `Focus beside a column as wide as a display leaves neither display bare`(_ on: SpanCentring) {
+        let seam = Seam(left: rect(-1920, 30, 1920, 1170), right: rect(0, 39, 1800, 1066))
+        var ws = spanning(8, gaps: Gaps(all: 8), seam: seam, centring: .alwaysFill)
+        ws.walls = [.left, .right]
+        ws.spanCentring = on
+        ws.setWidth(ofColumn: 3, 1)
+        ws.focus(4)
+        for direction in [Direction.left, .left, .right, .right, .right] {
+            _ = ws.focus(direction)
+            let frames = ws.layout().frames
+            for (from, to) in [(CGFloat(-1912), CGFloat(-4)), (4, 1792)] {
+                // The room the windows on the display cover, the gaps between them counted as covered; windows hiding
+                // behind others add nothing.
+                let shown = ws.windows.map { frames[$0]! }.filter { $0.minX >= from - 1 && $0.maxX <= to + 1 }
+                    .sorted { $0.minX < $1.minX }
+                var reach = from, covered: CGFloat = 0
+                for frame in shown where frame.maxX > reach {
+                    covered += frame.maxX - max(frame.minX - 8, reach)
+                    reach = frame.maxX
+                }
+                #expect(covered >= to - from - 1, "\(on) \(direction) to \(ws.focused!): \(from)...\(to) shows \(shown)")
+            }
+            #expect(straddling(ws).isEmpty)
+        }
+    }
+
     @Test func `Two strips coming together meet at the seam`() {
         var left = Workspace(bounds: rect(0, 0, 1000, 600), algorithm: .scrolling)
         left.insert(1)
