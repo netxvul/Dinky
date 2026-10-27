@@ -287,8 +287,11 @@ final class MouseStripScroll {
         let held = exactlyHeld(settings.modifier, sides: sides, in: event.flags)
         switch phase {
         case 0:
-            // A wheel without phases: notches.
-            guard held, coordinator.mouseCanStep(at: event.location) else { return true }
+            // A wheel without phases: notches. While a press of ours holds the strip, swallowed, not the app's with the
+            // modifier.
+            guard held else { return true }
+            if pressHolds { return false }
+            guard coordinator.mouseCanStep(at: event.location) else { return true }
             spoilSwitcherTaps()
             notch(x != 0 ? x : y, continuous: continuous)
             return false
@@ -300,8 +303,16 @@ final class MouseStripScroll {
             }
         case 1:
             if case .holding = stroke { letGoStroke(velocity: 0) }
-            guard held, coordinator.mouseCanHold(at: event.location, press: false),
-                  let hold = coordinator.mouseTookHold(.wheel) else {
+            guard held, coordinator.mouseCanHold(at: event.location, press: false) else {
+                stroke = .passing
+                return true
+            }
+            guard let hold = coordinator.mouseTookHold(.wheel) else {
+                // Refused as a press of ours holds the strip: spent, not the app's with the modifier.
+                if pressHolds {
+                    stroke = .spent
+                    return false
+                }
                 stroke = .passing
                 return true
             }
@@ -336,6 +347,9 @@ final class MouseStripScroll {
             }
         }
     }
+
+    /// Whether a press of ours holds the strip, and is not spent.
+    private var pressHolds: Bool { press.map { $0.hold != nil && !$0.spent } ?? false }
 
     private func scrollStroke(x: Double, y: Double, at time: CFTimeInterval) {
         guard case .holding(let hold, var axis, var velocity) = stroke else { return }
