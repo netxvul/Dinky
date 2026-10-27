@@ -89,6 +89,8 @@ final class MouseStripScroll {
     /// A key went down with the modifier, or the hand let an event through to the app: no open hand till the modifier is
     /// let go of.
     private var spoiled = false
+    /// Set while a let-go writes its release pass: the hand is looked at once, after it, not also before.
+    private var lettingGo = false
     /// Every frame while armed with the hand on, or while it shows (`tick`).
     private var keeper: Timer?
     private var lookedAt: CFTimeInterval = 0
@@ -307,7 +309,9 @@ final class MouseStripScroll {
         grabTap?.enable(false)
         guard let hold = press.hold, !press.spent else { return }
         print("\(stamp()) mouse-scroll: drag let go at \(Int(velocity.rounded())) pt/s")
+        lettingGo = true
         coordinator.mouseLetGo(velocity: velocity, hold: hold)
+        lettingGo = false
     }
 
     /// The coordinator found the button up with no release heard: the press taken, if any, lets go where it is. False
@@ -454,7 +458,9 @@ final class MouseStripScroll {
         stroke = .coasting
         defer { updateCursor() }
         print("\(stamp()) mouse-scroll: wheel let go at \(Int(velocity.rounded())) pt/s")
+        lettingGo = true
         coordinator.mouseLetGo(velocity: velocity, hold: hold)
+        lettingGo = false
     }
 
     /// The modifier, held to scroll, is no tap of a switcher that double-taps the same one: its own taps hear the
@@ -563,9 +569,10 @@ extension MouseStripScroll {
             throttle = HoverThrottle(armedAt: armedAt)
             if let due = throttle?.moved(at: armedAt) { lookAgain(at: due) }
         } else {
-            // Looked at now: a look the throttle had due is taken by this one, so moves go on asking for looks.
+            // Looked at now: a look the throttle had due is taken by this one, so moves go on asking for looks. Not
+            // while letting go, whose own look comes once the release pass is written (`letGo`).
             throttle?.checked(at: CACurrentMediaTime())
-            updateCursor()
+            if !lettingGo { updateCursor() }
         }
         updateKeeper()
     }

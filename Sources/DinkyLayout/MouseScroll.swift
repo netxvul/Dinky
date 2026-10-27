@@ -108,14 +108,15 @@ public enum GrabCursorRule {
         case spent
     }
 
-    /// How long after the last scroll seen the open hand may show again.
+    /// How long after the last scroll that went on to the app, let through by the wheel tap or heard by the guard
+    /// behind the taps, the open hand may show again. The modifier's wheel notches the strip takes hide nothing.
     public static let scrollQuiet: CFTimeInterval = 0.15
 
     /// None unless the gesture, its drag and its cursor are on. A press taken or holding the strip: closed, unless a
     /// scroll goes on to the app (`passing`), when the closed hand steps aside so the scroll reaches the window under the
     /// pointer; one spent, none. No press: open while the modifier is held (`armed`) with the button up over a window a
     /// press would take (`over`), unless something else spoiled the hold, as a key going down with the modifier, or a
-    /// scroll goes on (`scrolling`).
+    /// scroll going on to the app goes on (`scrolling`).
     public static func shape(enabled: Bool, cursor: Bool, drag: Bool, press: Press, armed: Bool, buttonDown: Bool,
                              over: Bool, spoiled: Bool, scrolling: Bool = false, passing: Bool = false) -> GrabShape? {
         guard enabled, cursor, drag else { return nil }
@@ -126,8 +127,10 @@ public enum GrabCursorRule {
         }
     }
 
-    /// Whether a scroll goes on at `now`: a stroke holding the strip or going to the app (`stroke`), or any scroll seen
-    /// within `scrollQuiet`, its momentum's too. Only by time, so a momentum whose end goes unheard keeps nothing off.
+    /// Whether a scroll goes on at `now`: a stroke holding the strip or going to the app (`stroke`), or a scroll that
+    /// went on to the app, let through by the wheel tap or heard by the guard behind the taps, within `scrollQuiet`,
+    /// its momentum's too. Only by time, so a momentum whose end goes unheard keeps nothing off. The modifier's wheel
+    /// notches the strip takes are no scroll here: they hide nothing, by design.
     public static func scrolling(at now: CFTimeInterval, lastScroll: CFTimeInterval, stroke: Bool) -> Bool {
         stroke || now - lastScroll < scrollQuiet
     }
