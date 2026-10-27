@@ -503,6 +503,24 @@ struct ScrollingWallAlignTests {
         #expect(ws.layout() == layout, "the same laid out again")
     }
 
+    @Test func `At a wall the column in view goes up over the ones hiding behind it`() {
+        var ws = Workspace(bounds: rect(0, 0, 1800, 1169), gaps: Gaps(all: 8), algorithm: .scrolling)
+        ws.columnWidth = 0.5
+        ws.walls = [.right]
+        ws.columnCentring = .alwaysFill
+        for id in 1...7 { ws.insert(WindowID(id)) }
+        ws.focus(3)
+        let layout = ws.layout(), frames = layout.frames
+        #expect(frames[4]!.minX > frames[3]!.maxX && frames[4]!.maxX <= 1800, "4 in view at the wall")
+        let hiding: [WindowID] = [5, 6, 7]
+        #expect(hiding.allSatisfy { frames[4]!.contains(frames[$0]!) }, "5, 6 and 7 hide behind it")
+        // As a let-go left them, the focus then still on 5, of the same app: 4 under two of those hiding behind it.
+        let current: [WindowID] = [3, 5, 6, 4, 7, 2, 1]
+        let raises = layout.raises(current: current)
+        #expect(raises.last == 4, "4 ends on top of its pile")
+        #expect(layout.raises(current: layout.order).isEmpty, "nothing once in order")
+    }
+
     @Test func `Scrolled past a wall a window stays held at it, then hides once, without a jump`() {
         // A point at a time across the strip while fingers hold it: each window crossing the wall keeps its size held
         // at the wall, then changes size once, as it goes wholly past and hides behind the column in view.

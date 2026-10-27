@@ -1067,9 +1067,18 @@ final class Coordinator {
             forgetFrontRead()
             if activated {
                 focusing = (id, Date() + 0.5, true)
+                guard let key = placements[id]?.space, let workspace = workspaces[key] else { return }
+                // The passes before this one could not raise its app's other windows into order while another of them
+                // had focus (see `FrameApplier.raisingKeepsFocus`), as after a let-go of a strip of one app's windows,
+                // where the column coming into view stays under those hiding behind it: they go into order now.
+                let layout = workspace.layout()
+                let pids = Dictionary(uniqueKeysWithValues: layout.order.compactMap { id in
+                    id == self.dragging ? nil : self.model.windows[id].map { (id, $0.pid) }
+                })
+                applier.raiseIntoOrder(layout, pids: pids, front: id)
                 // Activated, its app brought it to the front: over a pin, as one wider than the band hangs, the pin goes
                 // back over it now, not only once the window events come.
-                if let key = placements[id]?.space, workspaces[key]?.pinnedWindows.isEmpty == false { raiseCoveredPins(in: key) }
+                if !workspace.pinnedWindows.isEmpty { raiseCoveredPins(in: key) }
             } else {
                 // Something else came to the front first: it has focus, and the trees follow it.
                 focusing = nil
