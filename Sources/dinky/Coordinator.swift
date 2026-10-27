@@ -24,6 +24,7 @@ final class Coordinator {
                 applier.cancel(); animator.cancel(); pushes = [:]; stagingWindows = [:]; systemTiling = [:]
                 PeekClicks.shared.clear()
                 dropStripScroll()
+                mouseStripScroll.stopCursor()
             }
             if enabled, !oldValue { reconcile() }
         }
@@ -70,7 +71,9 @@ final class Coordinator {
     /// New windows on their way to the focused display, kept out of the trees until they arrive.
     var adopting: Set<WindowID> = []
     /// The tiled window being dragged with the mouse, until the button is released. See Drag.swift.
-    var drag: DragSession?
+    var drag: DragSession? {
+        didSet { if drag != nil, oldValue == nil { mouseCursorInterrupted() } }
+    }
     var dragging: WindowID? { drag?.id }
     /// The tiled window the mouse button is down on, from the first frame change the press brings till the window has
     /// gone from where it was pressed, which makes the press a drag, or the button comes up. See Drag.swift.
@@ -445,12 +448,14 @@ final class Coordinator {
         if MissionControl.shared.update(from: model) {
             borders?.missionControlChanged()
             noopGlow.missionControlChanged()
+            mouseCursorInterrupted()
             if !MissionControl.shared.active { missionControlClosed() }
         }
         borders?.handle(event)
         noopGlow.handle(event)
         if event.kind == .spaceChange {
             edgeGlow.dismiss()
+            mouseCursorInterrupted()
             // Peeks of a Space no longer shown would catch clicks on the one shown now.
             for key in workspaces.keys where !isVisible(key) { PeekClicks.shared.update([], space: key) }
         }
@@ -1207,16 +1212,39 @@ final class Coordinator {
 
     /// Whether the mouse can take hold of a strip at `point`: one that fingers could scroll on the display there, as it
     /// shows, with nothing holding it, no Space changing or Mission Control; for a press, a window of it under the
-    /// pointer, and no switcher shown from the keyboard under it.
+    /// pointer (`mousePressWindow`).
     func mouseCanHold(at point: CGPoint, press: Bool) -> Bool {
+        press ? mousePressWindow(at: point) != nil : mouseStripDisplay(at: point) != nil
+    }
+
+    /// The window of the strip a press at `point` would take hold of: under the pointer, with no drag under way nor a
+    /// switcher shown from the keyboard over it. The press and the hand over it ask this alike, so they never disagree.
+    func mousePressWindow(at point: CGPoint) -> ScreenWindow? {
+        guard dragging == nil, let display = mouseStripDisplay(at: point),
+              !WindowSwitcher.shared.covers(point), !WorkspaceSwitcher.shared.covers(point),
+              let window = pressedWindow(at: point), placements[window.id]?.space == display.currentSpaceID else { return nil }
+        return window
+    }
+
+    /// The display at `point`, where its strip is one the mouse can take hold of.
+    private func mouseStripDisplay(at point: CGPoint) -> Display? {
         guard enabled, stripScroll == nil || stripScroll?.holder != .fingers, !MissionControl.shared.active,
               !SpaceSwitcher.shared.switching, let display = displays.displays.first(where: { $0.frame.contains(point) }),
               !dinky_display_is_animating(display.uuid as CFString),
               dinky_current_space_id(display.uuid as CFString) == display.currentSpaceID,
-              let workspace = workspaces[display.currentSpaceID], workspace.canScrollFreely else { return false }
-        guard press else { return true }
-        guard !WindowSwitcher.shared.covers(point), !WorkspaceSwitcher.shared.covers(point) else { return false }
-        return pressedWindow(at: point).map { placements[$0.id]?.space == display.currentSpaceID } ?? false
+              let workspace = workspaces[display.currentSpaceID], workspace.canScrollFreely else { return nil }
+        return display
+    }
+
+    /// The frame of the display at `point`, for the closed hand.
+    func displayFrame(at point: CGPoint) -> CGRect? {
+        displays.displays.first { $0.frame.contains(point) }?.frame
+    }
+
+    /// Something the mouse's hand has no place over came, as a Space changing, Mission Control, a switcher or a drag
+    /// showing, or a hold of the strip ending: it goes, and shows again where it belongs once the pointer is looked at.
+    func mouseCursorInterrupted() {
+        mouseStripScroll.interruptCursor()
     }
 
     /// Whether a notch of a wheel without phases at `point` steps a strip: one the mouse could hold, nothing holding it.
@@ -1468,6 +1496,7 @@ final class Coordinator {
     private func handBack(_ key: UInt64) {
         guard let scroll = stripScroll, scroll.key == key else { return }
         stripScroll = nil
+        mouseCursorInterrupted()
         stripScrollWatch?.invalidate()
         stripScrollWatch = nil
         if animates, !snap.contains(key) {
@@ -1524,6 +1553,7 @@ final class Coordinator {
 
     /// dinky turned off: the fingers hold nothing, and the strip they held forgets it was scrolled freely.
     private func dropStripScroll() {
+        if stripScroll != nil { mouseCursorInterrupted() }
         if let key = stripScroll?.key { workspaces[key]?.cancelFreeScroll() }
         stripScroll = nil
         stripScrollWatch?.invalidate()

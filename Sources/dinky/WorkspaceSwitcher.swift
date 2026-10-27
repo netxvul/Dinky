@@ -289,6 +289,8 @@ final class WorkspaceSwitcher {
 
     /// Fades the capsule in, rising a few points, where `origin` says.
     private func present() {
+        // No hand of the mouse's over the capsule.
+        AppState.shared.coordinator?.mouseCursorInterrupted()
         let panel = glass.panel
         generation += 1
         let primary = NSScreen.screens.first?.frame.maxY ?? 0

@@ -759,6 +759,15 @@ scroll gesture with modifier keys to zoom", in System Settings, Accessibility,
 Zoom, Advanced, zooms with Control unless changed, and would zoom with this one
 too; `dinky doctor` says so. A mouse has nothing to tap, so it has no haptic.
 
+With `drag` and `cursor` on, the pointer shows an open hand over a window a
+press with the modifier would drag, once the modifier has been held a moment,
+and a closed hand while the press drags the strip; a key pressed with the
+modifier, as a chord like `alt-1`, hides it till the modifier is let go of. A
+click, right click or scroll that is not the strip's goes to the app as ever,
+and the hand goes with it. macOS lets dinky set the pointer over another app's
+window only through a private setting; where that is missing, the pointer stays
+the app's.
+
 <div class="wide-table" markdown="1">
 
 | Key | Default | |
@@ -767,6 +776,7 @@ too; `dinky doctor` says so. A mouse has nothing to tap, so it has no haptic.
 | `modifier` | `'ctrl-alt'` | The modifiers held, exactly these, as `alt`, `ctrl`, `cmd` and `shift` joined by `-`; [`[modifiers]`](#modifiers) says which side of each counts. |
 | `drag` | `true` | `false` leaves presses dragged with the modifier to the app. |
 | `wheel` | `true` | `false` leaves swipes and the wheel with the modifier to the app. A stroke with scroll phases scrolls the strip; any other wheel steps a column a notch. |
+| `cursor` | `true` | `false` keeps the pointer as the app has it. With `drag`, the pointer is an open hand over a window a press would drag, and closed while it drags; nothing without `drag`. |
 | `speed` | `1` | How far the strip goes for each point the pointer or the stroke moves, `0.25` to `5`. Not for notches. |
 | `show-switcher` | [`[gestures.scroll]`](#gesturesscroll)'s | `false` keeps the window switcher from showing the strip once it rests. |
 | `switcher-ms` | [`[gestures.scroll]`](#gesturesscroll)'s | How long it shows, `100` to `5000`. |
@@ -1104,6 +1114,7 @@ thumbnails = 'windows'          # windows (pictures, need Screen Recording) | ic
 # modifier = 'ctrl-alt'         # held exactly; not [drag] mouse-modifier or a held switcher's modifier (a double-tapped one's can be)
 # drag = true                   # press over a window and drag across
 # wheel = true                  # a stroke with scroll phases (Magic Mouse, trackpad) scrolls; other wheels step a column a notch
+# cursor = true                 # a hand over what a press would drag, closed while it does; nothing without drag
 # speed = 1                     # how far the strip goes for each point, 0.25 to 5; 1 follows the pointer
 # show-switcher = true          # unset is [gestures.scroll]'s
 # switcher-ms = 1000            # unset is [gestures.scroll]'s

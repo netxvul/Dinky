@@ -623,6 +623,8 @@ public struct MouseScroll: Equatable {
     /// Whether a press dragged across scrolls it, and whether the wheel or a swipe does.
     public var drag = true
     public var wheel = true
+    /// Whether the pointer shows a hand over what a press with the modifier would drag, closed while it does.
+    public var cursor = true
     /// How far the strip goes for each point the pointer or the wheel moves.
     public var speed = 1.0
     public var showSwitcher = true
@@ -644,6 +646,7 @@ public struct MouseScroll: Equatable {
         }
         drag = try t.bool("drag") ?? drag
         wheel = try t.bool("wheel") ?? wheel
+        cursor = try t.bool("cursor") ?? cursor
         speed = try t.double("speed") ?? speed
         guard (0.25...5).contains(speed) else { throw ConfigError(path: t.path("speed"), "must be 0.25 to 5") }
         ownShowSwitcher = try t.bool("show-switcher")

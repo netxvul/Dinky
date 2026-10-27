@@ -87,3 +87,72 @@ public struct LetGoVelocity: Equatable, Sendable {
         a.before == b.before && a.samples.elementsEqual(b.samples) { $0.at == $1.at && $0.delta == $1.delta }
     }
 }
+
+/// The hand the pointer shows for the drag (`[gestures.mouse-scroll] cursor`).
+public enum GrabShape: Equatable, Sendable {
+    /// Over a window a press with the modifier would take: it can grab the strip.
+    case open
+    /// While a press is taken or holds the strip.
+    case closed
+}
+
+/// Which hand shows, if any, and whether the arrow comes back as it goes.
+public enum GrabCursorRule {
+    /// The drag's press, as the hand sees it.
+    public enum Press: Equatable, Sendable {
+        case none
+        /// Taken, not holding the strip yet.
+        case taken
+        case holding
+        /// Lost the strip, or never could hold it: it moves nothing.
+        case spent
+    }
+
+    /// None unless the gesture, its drag and its cursor are on. A press taken or holding the strip: closed; one spent,
+    /// none. No press: open while the modifier is held (`armed`) with the button up over a window a press would take
+    /// (`over`), unless something else spoiled the hold, as a key going down with the modifier.
+    public static func shape(enabled: Bool, cursor: Bool, drag: Bool, press: Press, armed: Bool, buttonDown: Bool,
+                             over: Bool, spoiled: Bool) -> GrabShape? {
+        guard enabled, cursor, drag else { return nil }
+        switch press {
+        case .taken, .holding: return .closed
+        case .spent: return nil
+        case .none: return armed && !buttonDown && over && !spoiled ? .open : nil
+        }
+    }
+
+    /// Whether the arrow is set once the hand has gone: only while the cursor is still the one dinky set, its seed then
+    /// `ours`, or the seed cannot be read (-1). An app that set its own since, as an I-beam, keeps it.
+    public static func givesBack(seed: Int32, ours: Int32) -> Bool {
+        seed == -1 || seed == ours
+    }
+}
+
+/// When the pointer is looked at again, as it moves with the modifier held, for the hand: not till `settle` after the
+/// modifier went down, so a chord such as alt-1 shows nothing, then at most once every `gap`, a move during a wait
+/// taken at the end of it, at the pointer as it is then.
+public struct HoverThrottle: Equatable, Sendable {
+    public static let gap: CFTimeInterval = 0.05
+    public static let settle: CFTimeInterval = 0.15
+
+    private let armedAt: CFTimeInterval
+    private var checkedAt = -CFTimeInterval.infinity
+    private var pending = false
+
+    public init(armedAt: CFTimeInterval) {
+        self.armedAt = armedAt
+    }
+
+    /// A move at `now`: when to look, now or later; nil while a look is already due.
+    public mutating func moved(at now: CFTimeInterval) -> CFTimeInterval? {
+        guard !pending else { return nil }
+        pending = true
+        return max(now, armedAt + Self.settle, checkedAt + Self.gap)
+    }
+
+    /// Looked at `now`.
+    public mutating func checked(at now: CFTimeInterval) {
+        pending = false
+        checkedAt = now
+    }
+}

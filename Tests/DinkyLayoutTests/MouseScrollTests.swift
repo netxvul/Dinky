@@ -93,3 +93,55 @@ struct LetGoVelocityTests {
         #expect(abs(first.velocity(at: 1) - -24 * 120) < 1)
     }
 }
+
+struct GrabCursorRuleTests {
+    private func shape(enabled: Bool = true, cursor: Bool = true, drag: Bool = true, press: GrabCursorRule.Press = .none,
+                       armed: Bool = true, buttonDown: Bool = false, over: Bool = true, spoiled: Bool = false) -> GrabShape? {
+        GrabCursorRule.shape(enabled: enabled, cursor: cursor, drag: drag, press: press, armed: armed,
+                             buttonDown: buttonDown, over: over, spoiled: spoiled)
+    }
+
+    @Test func `No hand unless the gesture, its drag and its cursor are on`() {
+        #expect(shape() == .open)
+        #expect(shape(enabled: false) == nil)
+        #expect(shape(cursor: false) == nil)
+        #expect(shape(drag: false) == nil)
+        #expect(shape(cursor: false, press: .holding) == nil)
+    }
+
+    @Test func `A press taken or holding closes the hand, one spent shows none`() {
+        #expect(shape(press: .taken) == .closed)
+        #expect(shape(press: .holding, armed: false, buttonDown: true, over: false) == .closed, "whatever the modifier and pointer")
+        #expect(shape(press: .spent) == nil)
+    }
+
+    @Test func `With no press the hand is open only held over a window with the button up`() {
+        #expect(shape(armed: false) == nil)
+        #expect(shape(buttonDown: true) == nil)
+        #expect(shape(over: false) == nil)
+        #expect(shape(spoiled: true) == nil)
+    }
+
+    @Test func `The arrow comes back only over the cursor dinky set`() {
+        #expect(GrabCursorRule.givesBack(seed: 7, ours: 7))
+        #expect(!GrabCursorRule.givesBack(seed: 8, ours: 7), "an app set its own since")
+        #expect(GrabCursorRule.givesBack(seed: -1, ours: 7), "no seed to read")
+    }
+}
+
+struct HoverThrottleTests {
+    @Test func `Nothing is looked at till the hold settles`() {
+        var throttle = HoverThrottle(armedAt: 10)
+        #expect(throttle.moved(at: 10.01) == 10 + HoverThrottle.settle)
+    }
+
+    @Test func `One look at a time, at most every gap`() {
+        var throttle = HoverThrottle(armedAt: 0)
+        #expect(throttle.moved(at: 1) == 1)
+        #expect(throttle.moved(at: 1.01) == nil, "a look is due: the move is taken then")
+        throttle.checked(at: 1)
+        #expect(throttle.moved(at: 1.02) == 1 + HoverThrottle.gap)
+        throttle.checked(at: 1.05)
+        #expect(throttle.moved(at: 2) == 2, "long after the last look: now")
+    }
+}

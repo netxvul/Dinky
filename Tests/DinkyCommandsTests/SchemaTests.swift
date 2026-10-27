@@ -255,6 +255,7 @@ struct SchemaTests {
         modifier = 'ctrl-shift'
         drag = true
         wheel = false
+        cursor = false
         speed = 1.5
         show-switcher = true
         switcher-ms = 500

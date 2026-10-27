@@ -514,7 +514,7 @@ struct ConfigTests {
         let defaults = Config().gestures.mouseScroll
         #expect(!defaults.enabled)
         #expect(defaults.modifier == [.ctrl, .alt])
-        #expect(defaults.drag && defaults.wheel)
+        #expect(defaults.drag && defaults.wheel && defaults.cursor)
         #expect(defaults.speed == 1)
         #expect(defaults.showSwitcher && defaults.switcherMs == 1000 && defaults.edgeFlash)
         let inherits = try Config.parse("""
@@ -526,9 +526,10 @@ struct ConfigTests {
             enabled = true
             modifier = 'cmd-alt'
             drag = false
+            cursor = false
             speed = 2
             """).gestures.mouseScroll
-        #expect(inherits.enabled && !inherits.drag && inherits.wheel)
+        #expect(inherits.enabled && !inherits.drag && inherits.wheel && !inherits.cursor, "cursor without drag, no error")
         #expect(inherits.modifier == [.cmd, .alt])
         #expect(inherits.speed == 2)
         #expect(!inherits.showSwitcher && inherits.switcherMs == 600 && !inherits.edgeFlash, "unset, the fingers' own")
