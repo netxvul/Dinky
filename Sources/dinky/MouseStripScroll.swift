@@ -78,6 +78,11 @@ final class MouseStripScroll {
         self.sides = sides
         guard settings.enabled, settings.drag || settings.wheel else { return stop() }
         start()
+        // The wheel turned off mid-stroke: the stroke lets go, as stopping would.
+        if !settings.wheel {
+            if case .holding(let hold, _, _) = stroke { coordinator.mouseLetGo(velocity: 0, hold: hold) }
+            stroke = .idle
+        }
         armed = false
         arm(exactlyHeld(settings.modifier, sides: sides, in: CGEventSource.flagsState(.combinedSessionState)))
     }
@@ -178,8 +183,10 @@ final class MouseStripScroll {
         case .leftMouseDown:
             // Another press: the one taken lost its release. The press tap, after this one, takes this one or not.
             letGo(velocity: 0)
-        case .mouseMoved where press != nil && !CGEventSource.buttonState(.hidSystemState, button: .left):
-            // The button came up and its release never got here: the pointer is free again.
+        case .mouseMoved where press != nil && !CGEventSource.buttonState(.hidSystemState, button: .left)
+            && eventAge(event) < CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: .leftMouseUp):
+            // The button came up and its release never got here: the pointer is free again. Not for a move from before
+            // the release, still on its way.
             letGo(velocity: 0)
         case .leftMouseDragged where press != nil, .mouseMoved where press != nil:
             moved(to: event.location, at: eventTime(event))
@@ -245,7 +252,13 @@ final class MouseStripScroll {
             // meanwhile. Off because it was turned off, as `updateWheelTap` does, nothing.
             if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput, wheelOn {
                 wheelTap?.enable(true)
-                if case .holding = stroke { letGoStroke(velocity: 0) }
+                // Whatever the stroke was doing, its end may have gone by: none is left waiting on it.
+                switch stroke {
+                case .holding: letGoStroke(velocity: 0)
+                case .spent: stroke = .coasting
+                case .passing: stroke = .idle
+                case .idle, .coasting: break
+                }
                 updateWheelTap()
             }
             return true

@@ -1181,7 +1181,9 @@ final class Coordinator {
     func mouseTookHold(_ holder: StripHolder) -> Int? {
         if let scroll = stripScroll {
             guard scroll.holder != .fingers else { return nil }
-            if holder == .wheel, scroll.holder == .drag, CGEventSource.buttonState(.combinedSessionState, button: .left) {
+            if holder == .wheel, scroll.holder == .drag,
+               CGEventSource.buttonState(.hidSystemState, button: .left)
+                || CGEventSource.buttonState(.combinedSessionState, button: .left) {
                 return nil
             }
             endStripScroll(velocity: 0, glance: false)
@@ -1499,6 +1501,8 @@ final class Coordinator {
             } else {
                 stripScroll?.upSince = now
             }
+            // As for fingers, a window its app brought up meanwhile goes back under the pins, while the press still holds.
+            if stripScroll?.hold == scroll.hold { raiseCoveredPins(in: scroll.key) }
         } else if CACurrentMediaTime() - scroll.heard > (scroll.holder == .wheel ? Self.strokeQuiet : Self.stripScrollQuiet) {
             // A finger resting on a Magic Mouse mid-stroke sends nothing, so a stroke goes on till its end comes, or
             // long after it is lost.
