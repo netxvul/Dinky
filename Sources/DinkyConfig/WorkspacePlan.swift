@@ -40,6 +40,10 @@ public struct PlanStep: Equatable {
 public struct WorkspacePlan {
     public let count: Int
     public let assignments: [Int: [MonitorPattern]]
+    /// The workspaces laid out as scrolling strips, which `[scrolling] span-displays` pairs across two displays.
+    public var scrolling: Set<Int> = []
+    /// Whether `[scrolling] span-displays` is on: see `companions`.
+    public var spansDisplays = false
 
     public init(count: Int, assignments: [Int: [MonitorPattern]]) {
         self.count = count
@@ -48,6 +52,26 @@ public struct WorkspacePlan {
 
     public init(_ config: Config) {
         self.init(count: config.workspaces, assignments: config.workspaceDisplays)
+        spansDisplays = config.scrolling.spanDisplays
+        scrolling = Set((1...max(config.workspaces, 1)).filter { config.settings(forWorkspace: $0).layout == .scrolling })
+    }
+
+    /// With `spansDisplays`, for `pair`, two displays side by side by UUID: how many user Spaces each needs so that every
+    /// scrolling workspace on the other has a Space at the same place to run one strip across both with. Only a display
+    /// with no workspace of its own has Spaces free to pair; its Spaces are companions, created as needed and never
+    /// removed below that count. Empty otherwise.
+    public func companions(_ displays: [PlanDisplay], binding: [Int: UInt64], pair: (left: String, right: String)?)
+        -> [String: Int] {
+        guard spansDisplays, let pair, let a = displays.first(where: { $0.uuid == pair.left }),
+              let b = displays.first(where: { $0.uuid == pair.right }) else { return [:] }
+        var needs: [String: Int] = [:]
+        for (here, there) in [(a, b), (b, a)] where !binding.values.contains(where: there.spaces.contains) {
+            let last = here.spaces.indices.last { i in
+                binding.first { $0.value == here.spaces[i] }.map { scrolling.contains($0.key) } ?? false
+            }
+            if let last { needs[there.uuid] = last + 1 }
+        }
+        return needs
     }
 
     /// Workspace numbers, 1 through `count`; none when `count` is 0.
@@ -70,7 +94,9 @@ public struct WorkspacePlan {
     /// changes Space; windows only ever go to an empty Space, so two sets never mix. Then empty Spaces no
     /// workspace is on are removed; one is kept on a display with no workspace, which macOS requires anyway.
     /// A leftover Space with windows is left alone.
-    public func step(_ displays: [PlanDisplay], binding: [Int: UInt64], occupied: Set<UInt64>) -> PlanStep {
+    /// With `pair`, the companions it needs are made after the workspaces are placed, and kept (`companions`).
+    public func step(_ displays: [PlanDisplay], binding: [Int: UInt64], occupied: Set<UInt64>,
+                     pair: (left: String, right: String)? = nil) -> PlanStep {
         let all = Set(displays.flatMap(\.spaces))
         // Forget Spaces that are gone and workspaces past the count; one workspace per Space.
         var binding = binding.filter { n, space in numbers.contains(n) && all.contains(space) }
@@ -99,11 +125,19 @@ public struct WorkspacePlan {
             }
         }
 
+        let needs = companions(displays, binding: binding, pair: pair)
+        for display in displays where display.spaces.count < needs[display.uuid] ?? 0 {
+            return PlanStep(binding: binding, action: .create(display: display.uuid))
+        }
+
         let bound = Set(binding.values)
         for display in displays {
             let hasWorkspace = display.spaces.contains(where: bound.contains)
             let keep = hasWorkspace ? nil : (display.spaces.contains(display.current) ? display.current : display.spaces.first)
-            if let space = display.spaces.first(where: { !bound.contains($0) && $0 != keep && !occupied.contains($0) }) {
+            let companions = display.spaces.prefix(needs[display.uuid] ?? 0)
+            if let space = display.spaces.first(where: {
+                !bound.contains($0) && $0 != keep && !occupied.contains($0) && !companions.contains($0)
+            }) {
                 return PlanStep(binding: binding, action: .remove(space: space))
             }
         }

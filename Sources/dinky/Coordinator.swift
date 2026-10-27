@@ -352,7 +352,11 @@ final class Coordinator {
     }
 
     func update(config: Config) {
+        // Turned off, the strip across two displays splits, and what showed on a companion Space goes home.
+        let unspans = self.config.scrolling.spanDisplays && !config.scrolling.spanDisplays
+        if unspans, let span { unspan(span) }
         self.config = config
+        if unspans { returnCompanions() }
         ScriptingAddition.enabled = config.scriptingAddition
         animator.configure(durationMs: config.animations.durationMs,
                            easing: Easing(rawValue: config.animations.curve.rawValue),
@@ -711,7 +715,9 @@ final class Coordinator {
 
     /// The settings of the Space's workspace, by its current number.
     func settings(for space: UInt64) -> WorkspaceSettings {
-        config.settings(forWorkspace: AppState.shared.numbers.number(of: space))
+        let numbers = AppState.shared.numbers
+        // A companion Space a strip across two displays pairs with a workspace (SpanDisplays.swift) is laid out as it.
+        return config.settings(forWorkspace: numbers.number(of: space) ?? partner(of: space).flatMap { numbers.number(of: $0.space) })
     }
 
     func algorithm(_ settings: WorkspaceSettings) -> TilingAlgorithm {

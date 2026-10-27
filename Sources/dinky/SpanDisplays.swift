@@ -24,6 +24,31 @@ extension Coordinator {
         span.flatMap { $0.right == space ? $0.left : nil } ?? space
     }
 
+    /// The Space window `id` of tree `key` belongs on: in the strip running across two displays, that of the display
+    /// its tile is on; else `key`'s own.
+    func spaceOf(_ id: WindowID, inTree key: UInt64) -> UInt64 {
+        guard let span, span.left == key, let tree = workspaces[key], let frame = tree.layout().frames[id],
+              let left = tree.isLeftOfSeam(frame) else { return key }
+        return left ? span.left : span.right
+    }
+
+    /// With `[scrolling] span-displays` turned off, the windows of each companion Space, an unnumbered Space a strip
+    /// across two displays paired with a workspace at the same place on the other display, go to that workspace's
+    /// Space: they were its, shown on the other display.
+    func returnCompanions() {
+        guard let (left, right) = sideBySide() else { return }
+        let numbers = AppState.shared.numbers
+        for (here, there) in [(left, right), (right, left)] {
+            for (i, space) in here.userSpaces.enumerated() where numbers.number(of: space) == nil && i < there.userSpaces.count {
+                let home = there.userSpaces[i]
+                guard numbers.number(of: home) != nil else { continue }
+                var ids = dinky_space_window_ids(space, true).map(\.uint32Value)
+                guard !ids.isEmpty, dinky_move_windows_to_space(&ids, Int32(ids.count), home) else { continue }
+                print("\(stamp()) span: off, \(ids.count) windows of companion Space \(space) back to Space \(home)")
+            }
+        }
+    }
+
     /// The two displays, left then right, when there are exactly two and they touch side by side, as `walls(of:)`
     /// tells a display beside another.
     func sideBySide() -> (left: Display, right: Display)? {
@@ -129,7 +154,7 @@ extension Coordinator {
     /// back on its display. A side whose layout was changed by a command keeps it; the other goes on scrolling, as a
     /// command changes only the workspace it runs on. With the right display or its Space gone, every window stays in
     /// the left tree, in strip order, on the display left.
-    private func unspan(_ pair: SpanPair) {
+    func unspan(_ pair: SpanPair) {
         span = nil
         guard var tree = workspaces[pair.left] else { return }
         tree.setSeam(nil)

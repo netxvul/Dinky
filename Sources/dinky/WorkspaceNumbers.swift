@@ -180,7 +180,8 @@ final class WorkspaceNumbers {
             guard !displays.isEmpty else { break }
             let occupied = occupiedSpaces(among: displays.flatMap(\.spaces))
             let before = binding
-            let step = plan.step(displays, binding: binding, occupied: occupied)
+            let pair = AppState.shared.coordinator?.sideBySide().map { (left: $0.left.uuid, right: $0.right.uuid) }
+            let step = plan.step(displays, binding: binding, occupied: occupied, pair: pair)
             binding = step.binding
             guard let action = step.action else {
                 completed = true

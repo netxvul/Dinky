@@ -9,11 +9,14 @@ struct WorkspacePlanTests {
         var binding: [Int: UInt64] = [:]
         var nextSpace: UInt64 = 1000
         var actions: [PlanAction] = []
+        /// Two displays side by side, for `[scrolling] span-displays`.
+        var pair: (left: String, right: String)?
 
         /// Steps until the plan is done, applying each action as WindowServer would.
         mutating func settle(_ plan: WorkspacePlan, limit: Int = 50) {
             for _ in 0..<limit {
-                let step = plan.step(displays, binding: binding, occupied: Set(windows.filter { $0.value > 0 }.keys))
+                let step = plan.step(displays, binding: binding, occupied: Set(windows.filter { $0.value > 0 }.keys),
+                                     pair: pair)
                 binding = step.binding
                 guard let action = step.action else { return }
                 actions.append(action)
@@ -43,6 +46,47 @@ struct WorkspacePlanTests {
     }
 
     private let fivePlusSide = WorkspacePlan(count: 5, assignments: [5: [.secondary]])
+
+    /// Three workspaces on the laptop, 2 and 3 scrolling, with span-displays on.
+    private static func spanning(_ on: Bool = true) -> WorkspacePlan {
+        var plan = WorkspacePlan(count: 3, assignments: [:])
+        plan.spansDisplays = on
+        plan.scrolling = [2, 3]
+        return plan
+    }
+
+    @Test func `Span-displays gives a display without workspaces a companion for each scrolling one beside it`() {
+        var world = World(displays: [Self.display("L", "Built-in", main: true, count: 2, [1, 2, 3]),
+                                     Self.display("R", "Monitor", main: false, count: 2, [9])])
+        world.pair = ("L", "R")
+        world.settle(Self.spanning())
+        #expect(world.actions == [.create(display: "R"), .create(display: "R")])
+        #expect(world.spaces("R").count == 3, "up to workspace 3's place")
+        // Empty, they stay all the same.
+        world.settle(Self.spanning())
+        #expect(world.spaces("R").count == 3)
+    }
+
+    @Test func `Companions go once span-displays is off, and are never made for a display with workspaces`() {
+        var world = World(displays: [Self.display("L", "Built-in", main: true, count: 2, [1, 2, 3]),
+                                     Self.display("R", "Monitor", main: false, count: 2, [9, 10, 11])])
+        world.pair = ("L", "R")
+        world.settle(Self.spanning(false))
+        #expect(world.spaces("R") == [9], "empty companions removed")
+        var plan = WorkspacePlan(count: 3, assignments: [3: [.secondary]])
+        plan.spansDisplays = true
+        plan.scrolling = [2, 3]
+        world.settle(plan)
+        #expect(world.numbers(on: "R") == [3])
+        #expect(world.spaces("R").count == 1, "a display with a workspace of its own pairs by its own Spaces")
+    }
+
+    @Test func `Without two displays side by side span-displays makes nothing`() {
+        var world = World(displays: [Self.display("L", "Built-in", main: true, count: 2, [1, 2, 3]),
+                                     Self.display("R", "Monitor", main: false, count: 2, [9])])
+        world.settle(Self.spanning())
+        #expect(world.spaces("R") == [9])
+    }
 
     @Test func `Startup binds workspaces to Spaces in order`() {
         var world = World(displays: [Self.display("L", "Built-in", main: true, count: 1, [1, 2, 3])])

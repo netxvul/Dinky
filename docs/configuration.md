@@ -147,9 +147,13 @@ Nth Space of one display is the partner of the Nth of the other: switching
 either display to a Space, from dinky or with a swipe, switches the other to
 its partner where both are scrolling, so with workspaces 1 to 3 on the left
 display and 4 to 6 on the right, 1 and 4 go together, 2 and 5, 3 and 6. A
-display switched to a Space that is not scrolling, or a full-screen app's,
-leaves the other alone, and the two strips go their own ways again till both
-show scrolling workspaces.
+display with no workspaces of its own, as a second display usually is, gets
+an unnumbered companion Space for each scrolling workspace on the other, at
+its place, laid out as that workspace; dinky makes them as needed and keeps
+them while the option is on. Turned off, their windows go back to their
+workspaces. A display switched to a Space that is not scrolling, or a
+full-screen app's, leaves the other alone, and the two strips go their own
+ways again till both show scrolling workspaces.
 
 Columns keep their widths as shares of one display, the narrower one if they
 differ, so none is wider than a display; a lone column fills the display it is
@@ -159,7 +163,8 @@ side; the focused column always shows whole. That line parks nothing: a column
 scrolled over it goes on to the other display, its windows moved to that
 display's Space as most of them crosses, and only the outer edges of the two
 displays park and peek. Each column is as tall as the display it is on.
-`focus`, `move` and `join-with` left and right go on across it,
+`focus`, `move` and `join-with` left and right go on across it, and a window
+dragged over it drops into the same strip by the same zones,
 `center-focused-column` centres on both displays together, so the focused
 column rests beside the line between them, and
 fullscreen with `[fullscreen] scrolling = 'push'` fills that display only.
