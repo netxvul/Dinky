@@ -394,6 +394,41 @@ struct ScrollingWallAlignTests {
         #expect(!straddles(ws))
     }
 
+    @Test func `A display coming beside a strip lines it up where it shows`() {
+        var ws = strip(4, gaps: Gaps(all: 10))
+        ws.columnCentring = .alwaysFill
+        ws.focus(2)
+        #expect(!straddles(ws))
+        ws.walls = [.right]
+        #expect(straddles(ws), "centred as it was, a column now part past the wall")
+        ws.alignToWalls()
+        #expect(!straddles(ws))
+        let frame = ws.layout().frames[2]!
+        #expect(frame.minX >= edges.left && frame.maxX <= edges.right, "the focused column still whole")
+    }
+
+    @Test func `Lining up with walls leaves a strip scrolled freely alone`() {
+        var ws = strip(4, gaps: Gaps(all: 10))
+        ws.columnCentring = .alwaysFill
+        ws.focus(2)
+        ws.walls = [.right]
+        ws.beginFreeScroll()
+        let held = lefts(ws)
+        ws.alignToWalls()
+        #expect(lefts(ws) == held)
+    }
+
+    @Test func `Lining up again changes nothing`() {
+        var ws = strip(4, gaps: Gaps(all: 10))
+        ws.columnCentring = .alwaysFill
+        ws.focus(2)
+        ws.walls = [.right]
+        ws.alignToWalls()
+        let once = ws.layout()
+        ws.alignToWalls()
+        #expect(ws.layout() == once)
+    }
+
     @Test func `Between two walls nothing straddles either at rest`() {
         var ws = strip(5, gaps: Gaps(all: 10), walls: [.left, .right])
         ws.columnCentring = .alwaysFill

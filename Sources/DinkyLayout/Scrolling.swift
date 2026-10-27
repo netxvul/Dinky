@@ -341,6 +341,16 @@ extension Workspace {
         return [offset, afterRight, afterBoth].min { bare(at: $0) < bare(at: $1) }!
     }
 
+    /// Lines the strip up with its walls where it shows now (`wallAligned`), as after a display came beside it: no
+    /// centring again. Not while a click holds the scroll, fingers scroll it freely, the scroll is kept, something is
+    /// or is about to be fullscreen, or no band window has focus.
+    public mutating func alignToWalls() {
+        guard isScrolling, !holdsScroll, freeScrollFrom == nil, !keepsScroll, fullscreenWindows.isEmpty,
+              pendingFullscreen == nil, focused.flatMap({ bandIndex(of: $0) }) != nil else { return }
+        let area = stripArea, spans = columnSpans(in: area)
+        scrollOffset = wallAligned(shownOffset, spans: spans, in: area)
+    }
+
     /// Scrolls to the focused column as focusing it would have, now that the click that focused it with
     /// `holdingScroll` is done. Nothing while the strip holds no scroll: the focused column has been scrolled to.
     public mutating func revealFocus() {
