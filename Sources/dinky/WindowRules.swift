@@ -62,9 +62,26 @@ extension Coordinator {
                 }
             }
         }
+        // An input method's windows float unless a rule says otherwise: tiled, its settings window would scroll the
+        // strip to it and back each time it opens.
         let floating = kind != .normal || !resizable.boolValue
-            || (floats ?? (config.floatWindowsWithoutFullscreen && lacksFullscreen(element, bundleID: window.bundleID)))
+            || (floats ?? (InputMethodApps.contains(window.pid)
+                || config.floatWindowsWithoutFullscreen && lacksFullscreen(element, bundleID: window.bundleID)))
         return (floating, runsRules)
+    }
+}
+
+/// Which apps are input methods (`isInputMethodBundle`), by process, as each was first asked. Main thread.
+enum InputMethodApps {
+    private static var known: [pid_t: Bool] = [:]
+
+    static func contains(_ pid: pid_t) -> Bool {
+        if let answer = known[pid] { return answer }
+        let path = NSRunningApplication(processIdentifier: pid)?.bundleURL?.path
+        let answer = path.map { isInputMethodBundle($0, home: NSHomeDirectory()) } ?? false
+        // An app gone by then answers nothing, and is asked again.
+        if path != nil { known[pid] = answer }
+        return answer
     }
 }
 
