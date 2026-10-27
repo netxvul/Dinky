@@ -143,8 +143,12 @@ final class Coordinator {
     /// activated on `id` again, focus read meanwhile left alone.
     func keepFocus(on id: WindowID) {
         focusing = (id, Date() + 1, true)
+        // Not while fingers or the mouse hold the strip: their let-go focuses as it will, and an activation landing
+        // after it would take that back.
+        guard !holdsStrip else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            guard let self, focusing?.id == id else { return }
+            guard let self, focusing?.id == id, !holdsStrip,
+                  let key = placements[id]?.space, workspaces[key]?.focused == id else { return }
             activate(id)
         }
     }
@@ -1190,6 +1194,7 @@ final class Coordinator {
         // In a strip across two displays, activating an app on one window can make its window on the other display key
         // just after: back to the one dinky focused, once.
         if let (want, at) = spanFocused, want != id, id != 0, CACurrentMediaTime() - at < 1,
+           let key = placements[want]?.space, workspaces[key]?.focused == want,
            let pid = model.windows[want]?.pid, model.windows[id]?.pid == pid {
             print("\(stamp()) span: \(pid) put \(id) in front of \(want), which dinky focused: focused again")
             focus(want)
