@@ -150,6 +150,15 @@ extension Coordinator {
         return false
     }
 
+    /// How tall the columns of a strip across two displays are, from `[scrolling] span-height`.
+    private var spanHeight: SpanHeight {
+        switch config.scrolling.spanHeight {
+        case .perDisplay: .perDisplay
+        case .overlap: .overlap
+        case .atRest: .atRest
+        }
+    }
+
     private func display(_ uuid: String) -> Display? { displays.displays.first { $0.uuid == uuid } }
 
     /// The strip running across the displays fitted to where they are, their gaps the left one's.
@@ -158,11 +167,12 @@ extension Coordinator {
               var tree = workspaces[span.left] else { return }
         let seam = Seam(left: left.visibleArea, right: right.visibleArea)
         guard tree.seam != seam || tree.gaps != gaps(on: left) || !tree.walls.isEmpty
-                || tree.spanPeeks != config.scrolling.spanPeek else { return }
+                || tree.spanPeeks != config.scrolling.spanPeek || tree.spanHeight != spanHeight else { return }
         tree.gaps = gaps(on: left)
         // Two displays and no more: nothing beyond the outer edges.
         tree.walls = []
         tree.spanPeeks = config.scrolling.spanPeek
+        tree.spanHeight = spanHeight
         tree.setSeam(seam)
         tree.alignToWalls()
         setWorkspace(span.left, tree)
@@ -176,6 +186,7 @@ extension Coordinator {
         var tree = workspaces[pair.left]!
         tree.walls = []
         tree.spanPeeks = config.scrolling.spanPeek
+        tree.spanHeight = spanHeight
         tree.setSeam(Seam(left: left.visibleArea, right: right.visibleArea))
         if let other = takeWorkspace(pair.right) { tree.takeColumns(of: other) }
         setWorkspace(pair.left, tree)

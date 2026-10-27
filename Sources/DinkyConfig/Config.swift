@@ -300,6 +300,8 @@ public struct Scrolling: Equatable {
     /// off, they hide behind the column in view nearest the edge, as at a display beside another, and the columns fill
     /// to the outer gaps.
     public var spanPeek = true
+    /// With `spanDisplays`, how tall the strip's columns are on displays of different heights.
+    public var spanHeight = SpanHeightKind.perDisplay
     /// Whether the file still sets `glide`, which no longer does anything: the strip scrolls through the Dock
     /// scripting addition when top-level `scripting-addition` allows it and the addition answers, and moves its windows
     /// frame by frame otherwise. `dinky doctor` says the key can go.
@@ -314,6 +316,7 @@ public struct Scrolling: Equatable {
         spanDisplays = try t.bool("span-displays") ?? spanDisplays
         spanCenterOn = try t.choice("span-center-on") ?? spanCenterOn
         spanPeek = try t.bool("span-peek") ?? spanPeek
+        spanHeight = try t.choice("span-height") ?? spanHeight
         retiredGlide = t.retired("glide")
         try t.done()
     }
@@ -886,6 +889,17 @@ public enum FullscreenFocusChange: String, CaseIterable {
 }
 
 /// Where focusing a scrolling column scrolls it. The names match `DinkyLayout.ColumnCentring`.
+/// How tall the columns of a strip across two displays of different heights are (`[scrolling] span-height`). The names
+/// match `DinkyLayout.SpanHeight`.
+public enum SpanHeightKind: String, CaseIterable {
+    /// As the display a column's middle is on: it changes size once as that crosses between them.
+    case perDisplay = "per-display"
+    /// As high as both displays have room, top edges lined up: nothing changes size crossing between them.
+    case overlap
+    /// As the display a column rests on: held or gliding, it keeps the size it had, changing once as the strip rests.
+    case atRest = "at-rest"
+}
+
 /// Which display focusing a column centres it on while a strip runs across two (`[scrolling] span-center-on`).
 public enum SpanCenterOn: String, CaseIterable {
     /// Both together: the column rests beside the line between them, on the side nearer where the strip shows.

@@ -475,9 +475,12 @@ extension Workspace {
             // Beside a pin, still half a gap from its own half (only across a seam does a column reach towards a pin).
             let a = i != reaching.left ? edges[i].left : beside.left ? (reach.minX + gap / 2).rounded() : reach.minX
             let b = i != reaching.right ? edges[i].right : beside.right ? (reach.maxX - gap / 2).rounded() : reach.maxX
-            // A pinned column stays at its side whatever the scroll. Across a seam, as tall as the display it is on.
+            // A pinned column stays at its side whatever the scroll. Across a seam, as tall as the display it is on; with
+            // `spanHeight` `atRest`, while fingers hold the strip, the one it was on as they took hold.
+            let held = spanHeight == .atRest && band.contains(i)
+                ? freeScrollFrom.map { area.minX + spans[i].start - $0 + spans[i].width / 2 } : nil
             let rect = onDisplay(band.contains(i) ? CGRect(x: a, y: area.minY, width: b - a, height: area.height)
-                : pinRect(i))
+                : pinRect(i), anchor: held)
             let filled = spansDisplays ? displayInset(at: rect.midX) : inset
             switch root.children[i] {
             case .window(let id):
@@ -485,7 +488,7 @@ extension Workspace {
                 result.order.append(id)
             case .container(let c) where pushed.contains(i):
                 let end = (x + unpushed[i].width - trail).rounded()
-                let inner = onDisplay(CGRect(x: a, y: area.minY, width: end - a, height: area.height))
+                let inner = onDisplay(CGRect(x: a, y: area.minY, width: end - a, height: area.height), anchor: held)
                 c.layout(in: inner, gaps: gaps, padding: accordionPadding, minimums: minimumSizes, path: [i], into: &result)
                 for id in Node.container(c).windows where fullscreenWindows.contains(id) {
                     result.frames[id] = fills(i, id) ? filled : rect

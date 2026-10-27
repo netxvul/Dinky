@@ -293,36 +293,41 @@ struct SpanTests {
         }
     }
 
-    @Test func `A column over the seam is as tall as both displays have room, its own display's once off it`() {
+    @Test(arguments: [SpanHeight.perDisplay, .overlap, .atRest])
+    func `Column heights across displays of different heights`(_ mode: SpanHeight) {
         let seam = Seam(left: rect(-1920, 30, 1920, 1170), right: rect(0, 39, 1800, 1066))
         var ws = spanning(8, gaps: Gaps(all: 8), seam: seam, centring: .never)
+        ws.spanHeight = mode
         ws.focus(4)
         let rest = ws.shownOffset
-        let heights = { (frames: [WindowID: CGRect]) in ws.windows.map { frames[$0]! }.filter { $0.minX < 1800 && $0.maxX > -1920 } }
-        // At rest: each display's own.
-        for frame in heights(ws.layout().frames) {
-            #expect(frame.height == (frame.midX < 0 ? 1154 : 1050) && frame.minY == (frame.midX < 0 ? 38 : 47))
+        let shown = { (frames: [WindowID: CGRect]) in ws.windows.map { frames[$0]! }.filter { $0.minX < 1800 && $0.maxX > -1920 } }
+        // Where a display's own height goes: (y, height) by the display a frame's middle is on.
+        let own = { (frame: CGRect) -> (CGFloat, CGFloat) in frame.midX < 0 ? (38, 1154) : (47, 1050) }
+        let overlap: (CGFloat, CGFloat) = (47, 1050)
+        for frame in shown(ws.layout().frames) {
+            let (y, h) = mode == .overlap ? overlap : own(frame)
+            #expect(frame.minY == y && frame.height == h, "\(mode) at rest \(frame)")
         }
-        // Held part way over the seam: those across it as tall as both have room, the others their display's.
+        // Held part way, a column over the seam.
+        let before = Dictionary(uniqueKeysWithValues: ws.windows.map { ($0, ws.layout().frames[$0]!) })
         let held = ws.beginFreeScroll()
         #expect(held)
         ws.scrollFreely(by: -300)
         #expect(ws.shownOffset == rest - 300)
         let frames = ws.stripFrames
-        var across = 0
-        for frame in heights(frames) {
-            if frame.minX < -0.5, frame.maxX > 0.5 {
-                across += 1
-                #expect(frame.minY == 47 && frame.height == 1050, "\(frame)")
-            } else {
-                #expect(frame.height == (frame.midX < 0 ? 1154 : 1050), "\(frame)")
+        for id in ws.windows where frames[id]!.minX < 1800 && frames[id]!.maxX > -1920 {
+            let frame = frames[id]!
+            switch mode {
+            case .perDisplay: #expect(frame.height == own(frame).1, "\(frame)")
+            case .overlap: #expect(frame.minY == 47 && frame.height == 1050, "\(frame)")
+            // As where it was as the fingers took hold.
+            case .atRest: #expect(frame.height == before[id]!.height, "\(frame) from \(before[id]!)")
             }
         }
-        #expect(across == 1)
-        // Let go, back at rest off the seam: its own display's again.
         ws.endFreeScroll()
-        for frame in heights(ws.layout().frames) {
-            #expect(frame.height == (frame.midX < 0 ? 1154 : 1050))
+        for frame in shown(ws.layout().frames) {
+            let (y, h) = mode == .overlap ? overlap : own(frame)
+            #expect(frame.minY == y && frame.height == h, "\(mode) at rest again \(frame)")
         }
     }
 

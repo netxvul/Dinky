@@ -115,6 +115,8 @@ public struct Workspace: Equatable, Sendable {
     /// Scrolling across a seam: whether columns scrolled off the outer edges peek out there, in gutters kept for them, as
     /// on one display; off, they tuck under the column in view with only `tuck` points on, and nothing keeps a gutter.
     public var spanPeeks = true
+    /// Scrolling across a seam: how tall its columns are, by the display they are on or both's room. See Span.swift.
+    public var spanHeight = SpanHeight.perDisplay
     /// The band column focus moved from, for the `reveal` it is moving with: the way it steps along the strip.
     var revealingFrom: Int?
     /// The algorithm a `layout` command switched to, kept over the config's. Nil follows the config.

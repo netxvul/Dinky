@@ -162,7 +162,8 @@ line between the displays falls between two columns, half an inner gap either
 side; the focused column always shows whole. That line parks nothing: a column
 scrolled over it goes on to the other display, its windows moved to that
 display's Space as most of them crosses, and only the outer edges of the two
-displays park and peek. Each column is as tall as the display it is on. Where
+displays park and peek. Each column is as tall as the display it is on, or
+with `span-height` as both have room. Where
 the wider display has room left at its outer edge, less than a column, the
 column in view nearest that edge reaches over it to the outer gap. With
 `span-peek = false`, columns scrolled past the outer edges tuck under the
@@ -190,6 +191,7 @@ span-displays = true
 | `column-width` | `0.49` | A new column's width, as a share of the display inside the outer gaps, from `0.1` to `1`. Omarchy's `0.49` fits two columns side by side. Once the columns no longer all fit and some park at the edges, it is a share of that width less the gutters they peek out in, 25 points and half an inner gap on each side with no other display beyond it. |
 | `center-focused-column` | `'never'` | Where focusing a column scrolls it. `'never'` scrolls just far enough to show it whole; `'always'` puts it in the middle of the display, the first and last columns too, leaving the display bare beyond them; `'always-fill'` puts it in the middle too, but never scrolls past the strip's ends: the first and last columns, and with narrow columns the ones next to them, go only as far as the display's edge, the columns beside them filling the rest; `'on-overflow'` puts it in the middle only when it did not all show, and leaves one already in view where it is. Columns that all fit stay centred as a whole. |
 | `span-center-on` | `'both'` | With `span-displays`, which display `center-focused-column` centres a column on: `'both'` centres on the two together, so the column rests beside the line between them; `'mouse'` on the display under the pointer; `'focused'` on the display the column is on as focus comes to it. Whichever it is, focus stepping along the strip never scrolls it back. |
+| `span-height` | `'per-display'` | With `span-displays`, how tall the strip's columns are on displays of different heights. `'per-display'`: as the display a column's middle is on, changing size once as that crosses between them. `'overlap'`: as high as both displays have room, top edges lined up, so nothing changes size crossing, at the cost of the taller display's room below. `'at-rest'`: as the display a column rests on, keeping its size while fingers or the mouse hold the strip and changing once they let go. |
 | `span-peek` | `true` | With `span-displays`, whether columns scrolled off the outer edges of the two displays peek out there, as on one display. `false` keeps no gutter for them: they tuck under the column in view with 2 points on, as beside a pin, keeping their sizes, and the columns fill out to the outer gaps, but a parked column has no sliver to click. |
 | `span-displays` | `false` | A prototype. With exactly two displays side by side, each showing a scrolling workspace, one strip runs across both, as if they were one wide display: see [Across two displays](#across-two-displays). |
 

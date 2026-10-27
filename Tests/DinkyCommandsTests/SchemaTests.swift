@@ -169,6 +169,7 @@ struct SchemaTests {
         span-displays = true
         span-center-on = 'mouse'
         span-peek = false
+        span-height = 'overlap'
 
         [switcher]
         enabled = true

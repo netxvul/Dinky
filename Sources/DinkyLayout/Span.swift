@@ -25,6 +25,17 @@ public enum SpanCentring: Equatable, Sendable {
     case display(left: Bool)
 }
 
+/// How tall the columns of a strip across two displays are (`Workspace.spanHeight`).
+public enum SpanHeight: Equatable, Sendable {
+    /// As the display a column's middle is on: it changes size as that crosses the seam.
+    case perDisplay
+    /// As high as both displays have room, everywhere, so nothing changes size crossing the seam.
+    case overlap
+    /// As the display a column's middle is on where it rests; while fingers or the mouse hold the strip, as where it
+    /// was as they took hold, so nothing changes size till they let go.
+    case atRest
+}
+
 /// The two displays a strip runs across, as their visible areas, top-left origin.
 public struct Seam: Equatable, Sendable {
     public var left: CGRect
@@ -72,23 +83,22 @@ extension Workspace {
     /// The width inside the outer gaps a pin's share is of: the narrower display's across a seam.
     var screenWidth: CGFloat { shareBase(of: gaps.inset(bounds)) }
 
-    /// The area inside the outer gaps of the display `x` is on: `bounds`' on one display.
+    /// The area inside the outer gaps of the display `x` is on: `bounds`' on one display. With `spanHeight` `overlap`,
+    /// only as high as both displays have room, inside both's outer gaps, where they have any.
     func displayInset(at x: CGFloat) -> CGRect {
         guard let seam, isScrolling else { return gaps.inset(bounds) }
-        return gaps.inset(x < seam.x ? seam.left : seam.right)
+        let inset = gaps.inset(x < seam.x ? seam.left : seam.right)
+        guard spanHeight == .overlap else { return inset }
+        let left = gaps.inset(seam.left), right = gaps.inset(seam.right)
+        let top = max(left.minY, right.minY), bottom = min(left.maxY, right.maxY)
+        return bottom > top ? CGRect(x: inset.minX, y: top, width: inset.width, height: bottom - top) : inset
     }
 
-    /// `rect` as tall as the display it is on, inside the outer gaps there; as it is on one display. Across the seam, as
-    /// a column passing over it is, as tall as both displays have room, inside both's outer gaps: it shows on neither
-    /// past what that display has, and changes size only as it comes to the seam and as it leaves it, not on the way.
-    func onDisplay(_ rect: CGRect) -> CGRect {
-        guard let x = seamLine else { return rect }
-        if rect.minX < x - 0.5, rect.maxX > x + 0.5, let seam {
-            let left = gaps.inset(seam.left), right = gaps.inset(seam.right)
-            let top = max(left.minY, right.minY), bottom = min(left.maxY, right.maxY)
-            if bottom > top { return CGRect(x: rect.minX, y: top, width: rect.width, height: bottom - top) }
-        }
-        let inset = displayInset(at: rect.midX)
+    /// `rect` as tall as the display it is on, inside the outer gaps there (`displayInset`): the one `anchor` is on, or
+    /// its middle; as it is on one display.
+    func onDisplay(_ rect: CGRect, anchor: CGFloat? = nil) -> CGRect {
+        guard seamLine != nil else { return rect }
+        let inset = displayInset(at: anchor ?? rect.midX)
         return CGRect(x: rect.minX, y: inset.minY, width: rect.width, height: inset.height)
     }
 
