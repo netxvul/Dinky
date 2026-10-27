@@ -475,7 +475,9 @@ final class WindowSwitcher {
         if shownFree {
             guard id != shownPick, coordinator.model.windows[id]?.spaceID == space, coordinator.commandFocusedWindow != id else { return }
         } else {
-            guard coordinator.workspaces[space]?.contains(id) == true, coordinator.workspaces[space]?.focused != id else { return }
+            // A strip across two displays is the tree of either display's Space of it.
+            let tree = coordinator.workspaces[coordinator.treeKey(space)]
+            guard tree?.contains(id) == true, tree?.focused != id else { return }
         }
         coordinator.focus(id)
     }
