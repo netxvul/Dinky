@@ -445,6 +445,56 @@ struct ScrollingWallAlignTests {
         }
     }
 
+    @Test func `The built-in display lines up at its wall too`() {
+        // The built-in display with the external one right of it: 1784 points between the outer gaps.
+        var ws = Workspace(bounds: rect(0, 39, 1800, 1066), gaps: Gaps(all: 8), algorithm: .scrolling)
+        ws.columnWidth = 0.5
+        ws.walls = [.right]
+        ws.columnCentring = .alwaysFill
+        for id in 0..<5 { ws.insert(WindowID(id + 1)) }
+        for id: WindowID in [1, 2, 3, 4, 5, 4, 3, 2, 1] {
+            ws.focus(id)
+            let frames = ws.layout().frames
+            #expect(frames.values.allSatisfy { $0.maxX <= 1800 }, "focus \(id): nothing past the wall")
+            let nearest = frames.values.map(\.maxX).max()!
+            #expect(1792 - nearest <= 8, "focus \(id): no more than a gap bare at the wall")
+        }
+    }
+
+    @Test func `At a wall a nudge let go keeps the focused column, as without one`() {
+        for walls: Set<Direction> in [[.right], []] {
+            for (delta, settles): (CGFloat, WindowID) in [(37, 2), (-37, 2), (300, 3)] {
+                var ws = strip(4, gaps: Gaps(all: 10), walls: walls)
+                ws.columnCentring = .alwaysFill
+                ws.focus(2)
+                let rested = ws.layout()
+                ws.beginFreeScroll()
+                ws.scrollFreely(by: delta)
+                #expect(ws.endFreeScroll() == settles, "walls \(walls), \(delta) pt")
+                if settles == 2 { #expect(ws.layout() == rested, "walls \(walls), \(delta) pt: back where it rested") }
+            }
+        }
+    }
+
+    @Test func `Between two walls focusing the same column again changes nothing`() {
+        var ws = strip(6, gaps: Gaps(all: 10), walls: [.left, .right])
+        for (i, share) in [0.5, 0.4, 0.25, 0.6, 0.33, 0.4].enumerated() { ws.setWidth(ofColumn: i, share) }
+        ws.focus(1)
+        ws.focus(3)
+        let once = ws.layout()
+        ws.focus(3)
+        #expect(ws.layout() == once)
+    }
+
+    @Test func `Pinning the focused column leaves the band lined up with a wall`() {
+        var ws = strip(4, width: 0.4, gaps: Gaps(all: 10), walls: [.right])
+        ws.columnCentring = .alwaysFill
+        ws.focus(2)
+        ws.pin(.left)
+        #expect(ws.focused == 2 && ws.bandFocus == 3, "the pin focused, focus in the band gone back beside it")
+        #expect(bare(ws) <= 10, "the band lined up with the wall from the window focus went back to")
+    }
+
     @Test func `Between two walls nothing straddles either at rest`() {
         var ws = strip(5, gaps: Gaps(all: 10), walls: [.left, .right])
         ws.columnCentring = .alwaysFill
