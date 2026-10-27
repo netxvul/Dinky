@@ -18,10 +18,10 @@ private func spanning(_ n: Int, width: Double = 0.5, gaps: Gaps = .zero, seam: S
     return ws
 }
 
-/// The windows whose frames reach over the seam at x = 1000 by more than half a point.
+/// The windows whose frames reach over the seam by more than half a point.
 private func straddling(_ ws: Workspace) -> [WindowID] {
-    let frames = ws.layout().frames
-    return ws.windows.filter { frames[$0]!.minX < 999.5 && frames[$0]!.maxX > 1000.5 }
+    let frames = ws.layout().frames, x = ws.seam!.x
+    return ws.windows.filter { frames[$0]!.minX < x - 0.5 && frames[$0]!.maxX > x + 0.5 }
 }
 
 struct SpanTests {
@@ -79,13 +79,39 @@ struct SpanTests {
         }
     }
 
-    @Test func `Centring centres on the display, then keeps the seam between columns`() {
+    @Test func `Centring keeps the seam between columns`() {
         var ws = spanning(5, width: 0.5, centring: .always)
         for id in ws.windows {
             ws.focus(id)
             #expect(straddling(ws).isEmpty)
             let frame = ws.layout().frames[id]!
             #expect(frame.minX >= 0 && frame.maxX <= 2000)
+        }
+    }
+
+    @Test(arguments: [ColumnCentring.never, .always, .onOverflow, .alwaysFill])
+    func `Stepping focus scrolls the strip only the way it steps`(_ centring: ColumnCentring) {
+        // Displays of different sizes, as a laptop's beside a monitor, so the middle of both is not the seam.
+        let seam = Seam(left: rect(-1920, 30, 1920, 1170), right: rect(0, 39, 1800, 1066))
+        var ws = spanning(8, gaps: Gaps(all: 8), seam: seam, centring: centring)
+        ws.focus(1)
+        var offset = ws.shownOffset
+        for direction in Array(repeating: Direction.right, count: 7) + Array(repeating: .left, count: 7) {
+            let moved = ws.focus(direction)
+            #expect(moved)
+            let now = ws.shownOffset
+            #expect(direction == .right ? now >= offset : now <= offset, "\(centring) \(direction) to \(ws.focused!)")
+            #expect(straddling(ws).isEmpty)
+            offset = now
+        }
+    }
+
+    @Test func `Centring rests the focused column beside the seam`() {
+        var ws = spanning(6, gaps: Gaps(all: 10), centring: .always)
+        for id in [3, 4, 5] as [WindowID] {
+            ws.focus(id)
+            let frame = ws.layout().frames[id]!
+            #expect(frame.maxX == 995 || frame.minX == 1005, "\(id) at \(frame)")
         }
     }
 

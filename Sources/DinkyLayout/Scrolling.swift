@@ -283,16 +283,20 @@ extension Workspace {
         guard isScrolling, let index = bandIndex(of: id) else { return }
         let area = stripArea, spans = columnSpans(in: area), column = spans[index]
         let shown = showing(column, from: offset(for: spans, in: area), in: area)
-        // Across a seam, the middle of the display the column shows on.
-        let middle = centredOnDisplay(column, from: shown, in: area)
+        let middle = centred(column, in: area)
         switch columnCentring {
         case .never: scrollOffset = shown
         case .always, .alwaysFill: scrollOffset = middle
         case .onOverflow:
-            let before = offset(for: spans, in: area, showingFocus: false)
-            scrollOffset = showing(column, from: before, in: area) == before ? shown : middle
+            // Across a seam, where it rests now: lined up with the seam, it can be past the ends the layout keeps to,
+            // and a column beside the seam a point past the gutter, as spans are rounded, counts as whole.
+            let before = spansDisplays ? scrollOffset : offset(for: spans, in: area, showingFocus: false)
+            let slack: CGFloat = spansDisplays ? 1.5 : 0
+            scrollOffset = abs(showing(column, from: before, in: area) - before) <= slack ? shown : middle
         }
-        scrollOffset = seamAligned(wallAligned(scrollOffset, spans: spans, in: area), spans: spans, in: area)
+        // Across a seam, a centred column rests beside it on the side nearer where the strip shows now.
+        scrollOffset = seamAligned(wallAligned(scrollOffset, spans: spans, in: area), spans: spans, in: area,
+                                   near: scrollOffset)
     }
 
     /// The resting offset nearest in spirit to `offset` with no band column straddling a wall: at a wall nothing leaves

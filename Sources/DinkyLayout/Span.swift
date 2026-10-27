@@ -5,8 +5,11 @@ import CoreGraphics
 // one's, so none is ever wider than a display, and a lone column fills only the display it is on.
 //
 // Each display shows its own Space, so nothing shows across the seam: where the strip comes to rest the seam falls
-// between two columns, half an inner gap of each beside it, or beside an end column, the outer gap. `seamAligned` picks
-// the resting offset nearest the one the strip would have otherwise that does so, the focused column whole. Unlike a
+// between two columns, half an inner gap of each beside it, or half a gap from an end column. `seamAligned` picks the
+// resting offset nearest the one the strip would have otherwise that does so, the focused column whole. Centring
+// (`columnCentring`) centres on both displays together, so the focused column comes to rest beside the seam, on the
+// side nearer where the strip shows: centred on the display it is on, it would snap to that display's outer edge as
+// often as to the seam, and the strip would scroll the other way from focus. Unlike a
 // wall (Scrolling.swift), the seam parks nothing: a column scrolling over it goes on to the other display, and only the
 // outer edges of the two park and peek. A column is as tall as the display its middle is on.
 
@@ -30,6 +33,12 @@ public struct Seam: Equatable, Sendable {
 extension Workspace {
     /// Where the seam is, while the strip runs across two displays and lays out as a strip; nil otherwise.
     var seamLine: CGFloat? { isScrolling ? seam?.x : nil }
+
+    /// The scroll offset as set and the ends it is kept to, for `dinky debug-state`.
+    public var scrollDebug: (offset: CGFloat, limits: ClosedRange<CGFloat>?) {
+        let area = stripArea
+        return (scrollOffset, heldLimits(for: columnSpans(in: area), in: area))
+    }
 
     /// Whether the strip runs across two displays.
     public var spansDisplays: Bool { seamLine != nil }
@@ -96,24 +105,22 @@ extension Workspace {
 
     /// The resting offset nearest `offset` with the seam between columns (`seamOffsets`) and the band column that must
     /// show (`shownBandColumn`) whole. With `inside`, as for a strip that fits, one showing every band column whole
-    /// where any does. `offset` itself where none will do, on one display, or with no band column to show.
+    /// where any does. Of two about as near, a column's width either way as when `offset` centres a column on the seam,
+    /// the one nearer `near`, where the strip shows now, so it moves no more than it must. `offset` itself where none
+    /// will do, on one display, or with no band column to show.
     func seamAligned(_ offset: CGFloat, spans: [(start: CGFloat, width: CGFloat)], in area: CGRect,
-                     inside: Bool = false) -> CGFloat {
+                     inside: Bool = false, near: CGFloat? = nil) -> CGFloat {
         guard seamLine != nil, let focusedColumn = shownBandColumn else { return offset }
         let band = bandRange
         let shown = seamOffsets(spans: spans, in: area).map(\.offset)
             .filter { showsWhole(focusedColumn, at: $0, spans: spans, in: area) }
         let all = inside ? shown.filter { c in band.allSatisfy { showsWhole($0, at: c, spans: spans, in: area) } } : []
-        return (all.isEmpty ? shown : all).min { (abs($0 - offset), $0) < (abs($1 - offset), $1) } ?? offset
-    }
-
-    /// The offset that puts `column` in the middle of the display it shows on at `offset`: across a seam, whose middle
-    /// is the seam, the middle of that display's part of `area`; on one display, of all of it.
-    func centredOnDisplay(_ column: (start: CGFloat, width: CGFloat), from offset: CGFloat, in area: CGRect) -> CGFloat {
-        guard let x = seamLine else { return centred(column, in: area) }
-        let middle = area.minX + column.start + column.width / 2 - offset
-        let (from, to) = middle < x ? (area.minX, x) : (x, area.maxX)
-        return (column.start + column.width / 2 - ((from + to) / 2 - area.minX)).rounded()
+        // Columns of a width differ by a point or two of rounding and gap: that far counts as a tie.
+        let tie = gaps.horizontal + 4
+        func rank(_ c: CGFloat) -> (CGFloat, CGFloat, CGFloat) {
+            (near == nil ? abs(c - offset) : (abs(c - offset) / tie).rounded(), abs(c - (near ?? offset)), c)
+        }
+        return (all.isEmpty ? shown : all).min { rank($0) < rank($1) } ?? offset
     }
 
     /// The display a window at `frame` belongs on across the seam: left of it (true) where most of it is left of it.
@@ -145,5 +152,7 @@ extension Workspace {
         if let between = seamOffsets(spans: spans, in: area).first(where: { $0.boundary == boundary }) {
             scrollOffset = between.offset
         }
+        // Kept as it shows, so focusing a column from here scrolls from where it is.
+        scrollOffset = shownOffset
     }
 }

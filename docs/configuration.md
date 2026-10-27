@@ -160,7 +160,8 @@ scrolled over it goes on to the other display, its windows moved to that
 display's Space as most of them crosses, and only the outer edges of the two
 displays park and peek. Each column is as tall as the display it is on.
 `focus`, `move` and `join-with` left and right go on across it,
-`center-focused-column` centres on the display the column is on, and
+`center-focused-column` centres on both displays together, so the focused
+column rests beside the line between them, and
 fullscreen with `[fullscreen] scrolling = 'push'` fills that display only.
 
 ```toml
