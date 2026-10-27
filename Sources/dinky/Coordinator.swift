@@ -63,6 +63,8 @@ final class Coordinator {
     /// to another of its windows, on the other display, which `syncFocus` then takes back once.
     var spanFocused: (id: WindowID, at: CFTimeInterval)?
     var spanRetryPending = false
+    /// Whether `alignCompanion` has had its one look since launch or the option was turned on.
+    var spanAligned = false
     var placements: [WindowID: Placement] = [:]
     var dirty: Set<UInt64> = []
     /// Classification attempts for windows whose AX element has not appeared yet.
@@ -357,6 +359,7 @@ final class Coordinator {
         if unspans, let span { unspan(span) }
         self.config = config
         if unspans { returnCompanions() }
+        if !config.scrolling.spanDisplays { spanAligned = false }
         ScriptingAddition.enabled = config.scriptingAddition
         animator.configure(durationMs: config.animations.durationMs,
                            easing: Easing(rawValue: config.animations.curve.rawValue),

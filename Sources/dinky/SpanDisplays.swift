@@ -111,10 +111,36 @@ extension Coordinator {
             }
             return
         }
+        if alignCompanion() { return }
         let wanted = wantedSpan()
         if let span, span != wanted { unspan(span) }
         if let wanted, span != wanted { spanUp(wanted) }
         fitSpan()
+    }
+
+    /// A display showing a companion Space other than the partner of the scrolling workspace the other display shows,
+    /// as after launch, or after the option is turned on, switched to that partner, so the two run one strip: true when
+    /// that switch is under way. Once only, so a companion the user swipes to stays. A display showing a workspace of
+    /// its own is left alone.
+    private func alignCompanion() -> Bool {
+        guard !spanAligned, config.scrolling.spanDisplays, let (left, right) = sideBySide() else { return false }
+        let numbers = AppState.shared.numbers
+        // Had its look once the workspaces are numbered and a display shows one; till then, as at launch, it waits.
+        guard [left, right].contains(where: { numbers.number(of: $0.currentSpaceID) != nil }) else { return false }
+        for (here, there) in [(left, right), (right, left)] {
+            guard numbers.number(of: here.currentSpaceID) != nil, numbers.number(of: there.currentSpaceID) == nil,
+                  there.userSpaces.contains(there.currentSpaceID),
+                  let (partner, other) = spanFollower(of: here.currentSpaceID), other.uuid == there.uuid else { continue }
+            spanAligned = true
+            guard there.currentSpaceID != partner, targetSpaceID(on: there) != partner else { return false }
+            print("\(stamp()) span: display \(there.id) shows companion Space \(there.currentSpaceID), not \(partner): switched")
+            return switchSpace(toSpaceID: partner, on: there)
+        }
+        // A scrolling workspace with no companion yet, which the arrangement makes: the look waits for it.
+        if !([left, right].contains { spanFollower(of: $0.currentSpaceID) == nil && scrolls($0.currentSpaceID) }) {
+            spanAligned = true
+        }
+        return false
     }
 
     private func display(_ uuid: String) -> Display? { displays.displays.first { $0.uuid == uuid } }
