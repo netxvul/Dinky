@@ -71,6 +71,7 @@ final class Coordinator {
     /// Each display's Space as `followSpan` last saw it, by UUID.
     var spanShown: [String: UInt64] = [:]
     var spanSettlePending = false
+    var spanSettleLater = false
     /// The window `activate` last focused in a strip across two displays, and when: activating its app can hand focus
     /// on to another of its windows, on the other display, which `syncFocus` takes back for a second.
     var spanFocused: (id: WindowID, at: CFTimeInterval)?

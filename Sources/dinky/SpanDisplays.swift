@@ -247,8 +247,20 @@ extension Coordinator {
     /// Moves each window of the strip running across the displays that most of shows on the other display than its
     /// Space's to that display's Space, rather than waiting on macOS to move it by its centre. Windows parked off an
     /// outer edge stay with the display there.
+    /// Not while fingers or the mouse hold the strip, or it glides: macOS takes a window crossing over to the other display's
+    /// Space as it moves, and looking at every window's Space and frame on each of their moves takes the main thread from
+    /// the frames. Looked at again once it rests.
     func settleSpanSpaces() {
         guard let span, let tree = workspaces[span.left], tree.spansDisplays else { return }
+        guard !holdsStrip, !tree.windows.contains(where: isAnimating) else {
+            guard !spanSettleLater else { return }
+            spanSettleLater = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.spanSettleLater = false
+                self?.settleSpanSpaces()
+            }
+            return
+        }
         var moves: [UInt64: [UInt32]] = [:]
         for id in tree.windows { noteSpanSpace(id) }
         for id in tree.windows where id != dragging {
@@ -296,7 +308,8 @@ extension Coordinator {
 
     /// `settleSpanSpaces` once the events in hand are taken in, and once more as a pass's glide is done.
     func settleSpanSpacesSoon(after delay: Double = 0) {
-        guard span != nil else { return }
+        // Nothing to look at on each move of a held or gliding strip: `settleSpanSpaces` waits for it to rest anyway.
+        guard span != nil, delay > 0 || !holdsStrip else { return }
         if delay > 0 {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.settleSpanSpaces() }
             return
