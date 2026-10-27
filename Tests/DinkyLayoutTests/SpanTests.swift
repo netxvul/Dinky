@@ -384,6 +384,31 @@ struct SpanTests {
         }
     }
 
+    @Test func `Eased, a column's height comes down smoothly to the shorter display's before it crosses`() {
+        let seam = Seam(left: rect(-1920, 30, 1920, 1170), right: rect(0, 39, 1800, 1066))
+        var ws = spanning(8, gaps: Gaps(all: 8), seam: seam, centring: .never)
+        ws.spanHeightAnimates = true
+        ws.focus(4)
+        for frame in ws.layout().frames.values where frame.maxX > -1920 && frame.minX < 1800 {
+            #expect(frame.height == (frame.midX < 0 ? 1154 : 1050), "at rest \(frame)")
+        }
+        let held = ws.beginFreeScroll()
+        #expect(held)
+        // Columns on the taller display come to the seam, a point at a time: never taller as they come, the shorter
+        // display's height before they cross, heights between the two on the way.
+        var last: [WindowID: CGFloat] = [:], between = 0
+        for _ in 0..<900 {
+            ws.scrollFreely(by: -1)
+            for (id, frame) in ws.stripFrames where frame.maxX > -1920 && frame.minX < 1800 {
+                if frame.midX >= -Workspace.seamLead { #expect(frame.height == 1050, "\(frame)") }
+                if frame.midX < 0, let was = last[id] { #expect(frame.height <= was + 0.5, "\(frame) after \(was)") }
+                if frame.height > 1050, frame.height < 1154 { between += 1 }
+                last[id] = frame.height
+            }
+        }
+        #expect(between > 0)
+    }
+
     @Test func `Two strips coming together meet at the seam`() {
         var left = Workspace(bounds: rect(0, 0, 1000, 600), algorithm: .scrolling)
         left.insert(1)

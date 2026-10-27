@@ -117,6 +117,9 @@ public struct Workspace: Equatable, Sendable {
     public var spanPeeks = true
     /// Scrolling across a seam: how tall its columns are, by the display they are on or both's room. See Span.swift.
     public var spanHeight = SpanHeight.perDisplay
+    /// Scrolling across a seam, per display: whether a column's height eases to the shorter display's as it comes to the
+    /// seam, and a glide's steps keep the heights between, rather than stepping at once. See Span.swift.
+    public var spanHeightAnimates = false
     /// The band column focus moved from, for the `reveal` it is moving with: the way it steps along the strip.
     var revealingFrom: Int?
     /// The algorithm a `layout` command switched to, kept over the config's. Nil follows the config.

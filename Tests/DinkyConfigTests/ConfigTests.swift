@@ -186,6 +186,8 @@ struct ConfigTests {
         #expect(try Config.parse("").scrolling.spanCenterOn == .both)
         #expect(try Config.parse("").scrolling.spanPeek)
         #expect(try Config.parse("").scrolling.spanHeight == .perDisplay)
+        #expect(try !Config.parse("").scrolling.spanHeightAnimate)
+        #expect(try Config.parse("[scrolling]\nspan-height-animate = true\n").scrolling.spanHeightAnimate)
         #expect(try Config.parse("[scrolling]\nspan-height = 'at-rest'\n").scrolling.spanHeight == .atRest)
         assertError("[scrolling]\nspan-height = 'tall'\n", path: "scrolling.span-height", line: 2, contains: "overlap")
         #expect(try !Config.parse("[scrolling]\nspan-peek = false\n").scrolling.spanPeek)

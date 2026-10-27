@@ -167,12 +167,14 @@ extension Coordinator {
               var tree = workspaces[span.left] else { return }
         let seam = Seam(left: left.visibleArea, right: right.visibleArea)
         guard tree.seam != seam || tree.gaps != gaps(on: left) || !tree.walls.isEmpty
-                || tree.spanPeeks != config.scrolling.spanPeek || tree.spanHeight != spanHeight else { return }
+                || tree.spanPeeks != config.scrolling.spanPeek || tree.spanHeight != spanHeight
+                || tree.spanHeightAnimates != config.scrolling.spanHeightAnimate else { return }
         tree.gaps = gaps(on: left)
         // Two displays and no more: nothing beyond the outer edges.
         tree.walls = []
         tree.spanPeeks = config.scrolling.spanPeek
         tree.spanHeight = spanHeight
+        tree.spanHeightAnimates = config.scrolling.spanHeightAnimate
         tree.setSeam(seam)
         tree.alignToWalls()
         setWorkspace(span.left, tree)
@@ -187,6 +189,7 @@ extension Coordinator {
         tree.walls = []
         tree.spanPeeks = config.scrolling.spanPeek
         tree.spanHeight = spanHeight
+        tree.spanHeightAnimates = config.scrolling.spanHeightAnimate
         tree.setSeam(Seam(left: left.visibleArea, right: right.visibleArea))
         if let other = takeWorkspace(pair.right) { tree.takeColumns(of: other) }
         setWorkspace(pair.left, tree)

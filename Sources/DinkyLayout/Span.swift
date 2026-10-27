@@ -105,9 +105,20 @@ extension Workspace {
             let there = displayInset(at: rect.midX < x ? x + 1 : x - 1)
             // Short of half the column, less a gap: one resting beside the seam keeps its display's height.
             let lead = min(Self.seamLead, rect.width / 2 - gaps.horizontal)
-            if there.height < inset.height, abs(rect.midX - x) < lead { inset = there }
+            let away = abs(rect.midX - x)
+            if there.height < inset.height, away < lead {
+                inset = there
+            } else if spanHeightEases, there.height < inset.height {
+                // Easing down over `seamEase` before the lead, by the same curve as a glide, so it shrinks as it comes.
+                let ease = min(Self.seamEase, rect.width / 2 - gaps.horizontal) - lead
+                if ease > 0, away < lead + ease {
+                    let t = Easing.easeInOutCubic(Double((lead + ease - away) / ease))
+                    inset.origin.y += (there.minY - inset.minY) * CGFloat(t)
+                    inset.size.height += (there.height - inset.height) * CGFloat(t)
+                }
+            }
         }
-        return CGRect(x: rect.minX, y: inset.minY, width: rect.width, height: inset.height)
+        return CGRect(x: rect.minX, y: inset.minY.rounded(), width: rect.width, height: inset.height.rounded())
     }
 
     /// Strip frames such as a glide or fingers have them on the way, each window alone in its column as tall as the display
@@ -121,6 +132,11 @@ extension Workspace {
         for column in root.children {
             guard case .window(let id) = column, let frame = frames[id] else { continue }
             var shown = onDisplay(frame)
+            // Easing, a glide's own steps between its heights stand, kept no taller than the display has room as it comes.
+            if spanHeightEases {
+                if shown.height < frame.height { placed[id] = shown }
+                continue
+            }
             if spanHeight == .perDisplay, let rest = resting?[id] {
                 let there = displayInset(at: rest.midX)
                 if there.height < shown.height { shown = CGRect(x: frame.minX, y: there.minY, width: frame.width, height: there.height) }
@@ -132,6 +148,13 @@ extension Workspace {
 
     /// How far before the seam a column's middle takes the shorter display's height on its way there.
     static let seamLead: CGFloat = 100
+
+    /// With `spanHeightEases`, how far before the seam a column's middle starts easing to the shorter display's height,
+    /// reaching it `seamLead` before.
+    static let seamEase: CGFloat = 300
+
+    /// Whether heights ease between displays rather than step: `spanHeightAnimates` with `spanHeight` `perDisplay`.
+    var spanHeightEases: Bool { spanHeightAnimates && spanHeight == .perDisplay }
 
     /// The offsets that put a boundary between band columns on the seam, each with the boundary: band column k's start,
     /// the band's upper bound its end. Between two columns, half an inner gap of each either side of the seam; at the

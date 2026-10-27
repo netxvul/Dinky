@@ -170,6 +170,7 @@ struct SchemaTests {
         span-center-on = 'mouse'
         span-peek = false
         span-height = 'overlap'
+        span-height-animate = true
 
         [switcher]
         enabled = true

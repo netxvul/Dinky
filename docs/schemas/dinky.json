@@ -116,6 +116,11 @@
           "default": "per-display",
           "description": "With span-displays, how tall the strip's columns are on displays of different heights: per-display as the display a column's middle is on, changing once as that crosses between them, on the way to a shorter display a little before; overlap as high as both displays have room, top edges lined up, so nothing changes size crossing; at-rest as the display a column rests on, keeping its size while fingers or the mouse hold the strip and changing once they let go."
         },
+        "span-height-animate": {
+          "type": "boolean",
+          "default": false,
+          "description": "With span-displays and span-height = 'per-display', ease a window's height between the displays' as it crosses: down to the shorter display's as it comes to it, finished just before it shows there, and up to the taller's along the glide, rather than stepping. Each step resizes the window, which slow apps follow less closely."
+        },
         "span-peek": {
           "type": "boolean",
           "default": true,

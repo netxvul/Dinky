@@ -302,6 +302,9 @@ public struct Scrolling: Equatable {
     public var spanPeek = true
     /// With `spanDisplays`, how tall the strip's columns are on displays of different heights.
     public var spanHeight = SpanHeightKind.perDisplay
+    /// With `spanHeight` `perDisplay`, whether a window's height eases between the displays' as it crosses, rather than
+    /// stepping.
+    public var spanHeightAnimate = false
     /// Whether the file still sets `glide`, which no longer does anything: the strip scrolls through the Dock
     /// scripting addition when top-level `scripting-addition` allows it and the addition answers, and moves its windows
     /// frame by frame otherwise. `dinky doctor` says the key can go.
@@ -317,6 +320,7 @@ public struct Scrolling: Equatable {
         spanCenterOn = try t.choice("span-center-on") ?? spanCenterOn
         spanPeek = try t.bool("span-peek") ?? spanPeek
         spanHeight = try t.choice("span-height") ?? spanHeight
+        spanHeightAnimate = try t.bool("span-height-animate") ?? spanHeightAnimate
         retiredGlide = t.retired("glide")
         try t.done()
     }
