@@ -291,6 +291,9 @@ public struct Scrolling: Equatable {
     public var columnWidth = 0.49
     /// Where focusing a column scrolls it, as niri's `center-focused-column`.
     public var centerFocusedColumn = CenterFocusedColumn.never
+    /// Whether two displays side by side run one strip across both, while each shows a scrolling workspace: a prototype,
+    /// off by default.
+    public var spanDisplays = false
     /// Whether the file still sets `glide`, which no longer does anything: the strip scrolls through the Dock
     /// scripting addition when top-level `scripting-addition` allows it and the addition answers, and moves its windows
     /// frame by frame otherwise. `dinky doctor` says the key can go.
@@ -302,6 +305,7 @@ public struct Scrolling: Equatable {
         columnWidth = try t.double("column-width") ?? columnWidth
         guard (0.1...1).contains(columnWidth) else { throw ConfigError(path: t.path("column-width"), "must be 0.1 to 1") }
         centerFocusedColumn = try t.choice("center-focused-column") ?? centerFocusedColumn
+        spanDisplays = try t.bool("span-displays") ?? spanDisplays
         retiredGlide = t.retired("glide")
         try t.done()
     }

@@ -138,6 +138,34 @@ until you switch again. To cycle all three on one key:
 ctrl-alt-cmd-s = 'layout tiles accordion scrolling'
 ```
 
+### Across two displays
+
+A prototype, off unless `[scrolling] span-displays = true`. With exactly two
+displays side by side, the Nth Space of the left display pairs with the Nth
+of the right one. While both show a pair, and both are scrolling workspaces,
+they run one strip across both displays: the left one's columns, then the
+right one's. Switching either display to a Space of a pair, from dinky or with
+a swipe, switches the other to its partner; one that has no partner, as a
+full-screen app's Space, leaves the other display alone, and the two strips go
+their own ways again till both show a pair.
+
+Columns keep their widths as shares of one display, the narrower one if they
+differ, so none is wider than a display; a lone column fills the display it is
+on. A window shows on one display at a time, so where the strip rests, the
+line between the displays falls between two columns, half an inner gap either
+side; the focused column always shows whole. That line parks nothing: a column
+scrolled over it goes on to the other display, its windows moved to that
+display's Space as most of them crosses, and only the outer edges of the two
+displays park and peek. Each column is as tall as the display it is on.
+`focus`, `move` and `join-with` left and right go on across it,
+`center-focused-column` centres on the display the column is on, and
+fullscreen with `[fullscreen] scrolling = 'push'` fills that display only.
+
+```toml
+[scrolling]
+span-displays = true
+```
+
 ## `[scrolling]`
 
 <div class="wide-table" markdown="1">
@@ -146,6 +174,7 @@ ctrl-alt-cmd-s = 'layout tiles accordion scrolling'
 |---|---|---|
 | `column-width` | `0.49` | A new column's width, as a share of the display inside the outer gaps, from `0.1` to `1`. Omarchy's `0.49` fits two columns side by side. Once the columns no longer all fit and some park at the edges, it is a share of that width less the gutters they peek out in, 25 points and half an inner gap on each side with no other display beyond it. |
 | `center-focused-column` | `'never'` | Where focusing a column scrolls it. `'never'` scrolls just far enough to show it whole; `'always'` puts it in the middle of the display, the first and last columns too, leaving the display bare beyond them; `'always-fill'` puts it in the middle too, but never scrolls past the strip's ends: the first and last columns, and with narrow columns the ones next to them, go only as far as the display's edge, the columns beside them filling the rest; `'on-overflow'` puts it in the middle only when it did not all show, and leaves one already in view where it is. Columns that all fit stay centred as a whole. |
+| `span-displays` | `false` | A prototype. With exactly two displays side by side, each showing a scrolling workspace, one strip runs across both, as if they were one wide display: see [Across two displays](#across-two-displays). |
 
 </div>
 

@@ -166,6 +166,7 @@ struct SchemaTests {
         [scrolling]
         column-width = 0.5
         center-focused-column = 'on-overflow'
+        span-displays = true
 
         [switcher]
         enabled = true

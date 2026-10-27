@@ -181,6 +181,8 @@ struct ConfigTests {
         assertError("[scrolling]\ncolumn-width = 1.5\n", path: "scrolling.column-width", line: 2, contains: "0.1 to 1")
         #expect(Config().scrolling.centerFocusedColumn == .never)
         #expect(try Config.parse("[scrolling]\ncenter-focused-column = 'always'\n").scrolling.centerFocusedColumn == .always)
+        #expect(try Config.parse("").scrolling.spanDisplays == false)
+        #expect(try Config.parse("[scrolling]\nspan-displays = true\n").scrolling.spanDisplays)
         #expect(try Config.parse("[scrolling]\ncenter-focused-column = 'always-fill'\n").scrolling.centerFocusedColumn == .alwaysFill)
         #expect(try Config.parse("[scrolling]\ncenter-focused-column = 'on-overflow'\n").scrolling.centerFocusedColumn == .onOverflow)
         assertError("[scrolling]\ncenter-focused-column = 'yes'\n", path: "scrolling.center-focused-column", line: 2,
