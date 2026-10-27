@@ -220,9 +220,9 @@ final class Coordinator {
     /// By tree, a strip the fingers just let go of, its windows still moving at their speed, and whether through Dock
     /// (true) or Accessibility (false), so its next pass glides them on that way, from where they are.
     private var flung: [UInt64: Bool] = [:]
-    /// The windows put in front at a strip's walls (`orderWallCovers`) since fingers took hold of it or its glide set
-    /// out, by key: each is asked for once.
-    private var wallCoversOrdered: [UInt64: Set<WindowID>] = [:]
+    /// The covers at a strip's walls (`orderWallCovers`) in the frame placed last while fingers hold it or it glides,
+    /// by key: a window is put in front each time it becomes one.
+    private var wallCoversShown: [UInt64: Set<WindowID>] = [:]
     /// Looks every `stripScrollCheck` while fingers hold a strip, as SlideScroll does, for its Space going from under
     /// them.
     private var stripScrollWatch: Timer?
@@ -1102,11 +1102,21 @@ final class Coordinator {
                 // had focus (see `FrameApplier.raisingKeepsFocus`), as after a let-go of a strip of one app's windows,
                 // where the column coming into view stays under those hiding behind it: they go into order now, once
                 // the window server has this one in front and the apps are free (`RaiseAfterActivating`).
-                let layout = workspace.layout()
-                let pids = Dictionary(uniqueKeysWithValues: layout.order.compactMap { id in
-                    id == self.dragging ? nil : self.model.windows[id].map { (id, $0.pid) }
-                })
-                applier.raiseIntoOrder(afterActivating: id, layout, pids: pids)
+                // Only where the tree has this window focused: the window switcher, focus-follows-mouse, the
+                // activation follower and a grab focus a window without focusing the tree, which for an app coming
+                // from the background moves only after this, and a layout with the old pile's front on top would put
+                // the cover over the window just picked and make it key, till it went back on top: a flash. The pass
+                // after the tree catches up raises then. The let-go and the keyboard focus the tree first. Not while a
+                // drag, a click held or a press on a window is under way, as for the pins: the dragged window is left
+                // out, so its app's raised one would end up key. The pins are left to `raiseCoveredPins`: raised here,
+                // one of the app would be key for a moment, under the window over it, and then raised again there.
+                if workspace.focused == id, drag == nil, !clickHold, windowPress == nil {
+                    let layout = workspace.layout(), pinned = Set(workspace.pinnedWindows)
+                    let pids = Dictionary(uniqueKeysWithValues: layout.order.compactMap { id in
+                        pinned.contains(id) ? nil : self.model.windows[id].map { (id, $0.pid) }
+                    })
+                    applier.raiseIntoOrder(afterActivating: id, layout, pids: pids)
+                }
                 // Activated, its app brought it to the front: over a pin, as one wider than the band hangs, the pin goes
                 // back over it now, not only once the window events come.
                 if !workspace.pinnedWindows.isEmpty { raiseCoveredPins(in: key) }
@@ -1578,21 +1588,26 @@ final class Coordinator {
     /// (`Workspace.wallCovers`) slides in under the windows parked there, the curtain and those hiding behind it, as
     /// no raise runs on the way, and Accessibility could not put it in front of the app in front's windows, the
     /// curtain's often, and would make it key. So each cover there is put in front through Dock as it becomes one,
-    /// which moves no focus, once since the hold or glide began. Not without Dock's ordering, nor a cover dragged, one
-    /// over a pin, or while a window of the strip is fullscreen; the rest of what is left out is judged on the raise
-    /// queue (`FrameApplier.orderWallCovers`). `strip` is the strip frames as `placeStrip` takes them.
+    /// which moves no focus: each time, as one swiped back and forth in one hold is a cover, then hides behind the
+    /// next, which went in front of it, then is a cover again. Not without Dock's ordering, nor a cover dragged, one
+    /// over a pin, one in an accordion, whose biggest window would go over the one the accordion shows in front, or
+    /// while a window of the strip is fullscreen; the rest of what is left out is judged on the raise queue
+    /// (`FrameApplier.orderWallCovers`). `strip` is the strip frames as `placeStrip` takes them.
     private func orderWallCovers(_ key: UInt64, _ workspace: Workspace, strip: [WindowID: CGRect]) {
-        let ordered = wallCoversOrdered[key] ?? []
-        let covers = workspace.wallCovers(strip).filter { !ordered.contains($0) }
+        let shown = workspace.wallCovers(strip), before = wallCoversShown[key] ?? []
+        wallCoversShown[key] = Set(shown)
+        let covers = shown.filter { !before.contains($0) }
         guard !covers.isEmpty else { return }
-        wallCoversOrdered[key] = ordered.union(covers)
         let pins = workspace.pinnedWindows.compactMap { model.windows[$0]?.frame }
         var order: [WindowID] = []
         for id in covers {
             let frame = strip[id] ?? .null
+            let accordion = workspace.columns(around: id).own.contains { other in
+                other != id && strip[other].map { !$0.intersection(frame).isEmpty } == true
+            }
             let left = !(ScriptingAddition.available && ScriptingAddition.orders) ? "no ordering through Dock"
                 : id == dragging ? "dragged" : !workspace.fullscreenWindows.isEmpty ? "a window fullscreen"
-                : pins.contains(where: { $0.intersects(frame) }) ? "over a pin" : nil
+                : pins.contains(where: { $0.intersects(frame) }) ? "over a pin" : accordion ? "in an accordion" : nil
             if let left {
                 print("\(stamp()) strip \(key): wall cover \(telemetry.name(id)) left out, \(left)")
             } else {
@@ -1693,7 +1708,7 @@ final class Coordinator {
     private func handBack(_ key: UInt64) {
         guard let scroll = stripScroll, scroll.key == key else { return }
         stripScroll = nil
-        wallCoversOrdered[key] = nil
+        wallCoversShown[key] = nil
         // A press of the mouse's that held it moves nothing more, its hand gone till the button comes up.
         mouseStripScroll.holdEnded(scroll.hold)
         mouseCursorInterrupted(settle: false)
@@ -2123,7 +2138,7 @@ final class Coordinator {
             }
         }
         let write = { [weak self] in
-            self?.wallCoversOrdered[key] = nil
+            self?.wallCoversShown[key] = nil
             writeThen {}
         }
         lastStrips[key] = strip.isEmpty ? nil : (strip, layout.frames, fullscreen)
