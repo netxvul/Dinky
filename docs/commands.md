@@ -308,8 +308,8 @@ mode at any time. `exec-and-forget` has `dinky` and Homebrew on `PATH`.
 
 ### Docking
 
-`display-changed` runs once the workspaces have moved after a display connects
-or disconnects. It sets `DINKY_DISPLAYS` and `DINKY_PREV_DISPLAYS`, the number
+`display-changed` runs once dinky has arranged the workspaces after a display
+connects or disconnects. It sets `DINKY_DISPLAYS` and `DINKY_PREV_DISPLAYS`, the number
 of displays now and before; `dinky list-monitors` names them.
 
 ```toml

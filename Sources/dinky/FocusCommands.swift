@@ -42,7 +42,7 @@ extension Dispatcher {
         guard let from = model.focusedDisplay() else { return .error("no display") }
         if target == .recent {
             guard let recent = model.recentDisplay, recent != from else { return .nothing("no recent display", ok: false) }
-            return focus(recent, window: AppState.shared.coordinator?.workspace(on: recent)?.focused)
+            return focus(recent, window: windowToFocus(on: recent))
         }
         let line = target.direction.map { displays(inLineWith: from, $0.orientation, model.displays) }
             ?? model.displays.sorted { ($0.frame.minX, $0.frame.minY) < ($1.frame.minX, $1.frame.minY) }
@@ -52,7 +52,7 @@ extension Dispatcher {
             return .nothing(target.direction == nil ? "no \(target.rawValue) display" : "no display \(target.rawValue) of the focused one",
                             ok: false)
         }
-        return focus(line[index], window: AppState.shared.coordinator?.workspace(on: line[index])?.focused)
+        return focus(line[index], window: windowToFocus(on: line[index]))
     }
 
     /// Focuses the display numbered `n` (1-based, `list-monitors` order), as `focusMonitor` does. Focusing the
@@ -62,12 +62,15 @@ extension Dispatcher {
         model.reconcile()
         guard model.displays.indices.contains(n - 1) else { return .nothing("no display \(n), there are \(model.displays.count)", ok: false) }
         let display = model.displays[n - 1]
-        return focus(display, window: AppState.shared.coordinator?.workspace(on: display)?.focused)
+        return focus(display, window: windowToFocus(on: display))
     }
 
-    /// Enters a display from `direction`: the window at the edge facing where focus came from.
+    /// Enters a display from `direction`: the window at the edge facing where focus came from, unless that one is away
+    /// on a native full-screen Space (`windowToFocus`).
     private static func enter(_ display: Display, from direction: Direction) -> Reply {
-        focus(display, window: AppState.shared.coordinator?.workspace(on: display)?.edgeWindow(direction.opposite))
+        let edge = AppState.shared.coordinator?.workspace(on: display)?.edgeWindow(direction.opposite)
+        let here = edge.flatMap { dinky_window_space_id($0) == display.currentSpaceID ? $0 : nil }
+        return focus(display, window: here ?? windowToFocus(on: display))
     }
 
     /// Focuses `window`, or, with none, makes `display` the focused one until a window takes focus, and takes the

@@ -3,7 +3,7 @@ import Foundation
 // The config's `[hooks]`: `workspace-changing` when dinky starts or retargets a switch, `workspace-changed`
 // when any display's current workspace changes (dinky's switches and native ones alike) or a dinky switch
 // gives up, `focus-changed` when the focused window changes, debounced, `mode-changed` when the binding mode
-// changes, with the new mode and the previous one, `display-changed` once the workspaces have moved after a
+// changes, with the new mode and the previous one, `display-changed` once the workspaces have been arranged after a
 // display connects or disconnects, and `startup` once. Started once the coordinator has read the windows and
 // displays, so startup fires nothing but `startup`. Main thread only.
 final class Hooks {
@@ -49,8 +49,8 @@ final class Hooks {
         }
     }
 
-    /// Reports displays that came or went once the workspaces have moved to the displays now present, which
-    /// waits for the displays to settle.
+    /// Reports displays that came or went once an arrangement has run for the displays now present, which waits for
+    /// the displays to settle.
     private func arranged() {
         let now = Set(AppState.shared.displays.displays.map(\.uuid))
         guard now != connected else { return }

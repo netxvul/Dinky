@@ -537,8 +537,8 @@ workspace each display shows. A display with no numbered workspace shows the
 Space it is on, and picking it focuses that display. With `show-fullscreen`,
 each native full-screen Space (the green button's) follows its display's
 workspaces as a card of its window filling the display, or of both windows
-side by side in Split View, named for its apps; picking it focuses the window
-in front, and macOS goes to its Space.
+side by side in Split View, named for its apps; picking it, or a letter on it,
+swipes the display to that Space and focuses the window there.
 
 Thumbnails are the [window-switcher](#window-switcher)'s and need Screen Recording too.
 macOS draws no Space but the ones on screen, so a workspace's windows are
@@ -832,7 +832,7 @@ environment `exec-and-forget` gets.
 | `workspace-changed` | When a display's workspace changes, or a switch gives up. |
 | `focus-changed` | When focus changes, debounced 50 ms. |
 | `mode-changed` | When the binding mode changes, including back to `main` when the config reloads. Sets `DINKY_MODE` and `DINKY_PREV_MODE`. |
-| `display-changed` | When a display connects or disconnects, once the displays have settled and dinky has moved the workspaces to them, about a second later. Sets `DINKY_DISPLAYS` and `DINKY_PREV_DISPLAYS`, how many displays there are now and were before. |
+| `display-changed` | When a display connects or disconnects, once the displays have settled and dinky has arranged the workspaces on them (or tried to), about a second later. Sets `DINKY_DISPLAYS` and `DINKY_PREV_DISPLAYS`, how many displays there are now and were before. |
 
 </div>
 
@@ -1092,6 +1092,7 @@ show-single = true              # also show it for a workspace with a lone tiled
 modifier = 'none'               # none (off) | alt | ctrl | cmd | shift | hyper; not [window-switcher]'s unless the triggers differ
 displays = 'all'                # all (a group per display) | pointer (the display under the pointer)
 show-empty = true               # cards for workspaces without windows
+show-fullscreen = true          # a card for each native full-screen Space, after its display's workspaces
 exclude = []                    # workspace numbers left out
 card-height = 85                # points, 60 to 200; the width follows each display's proportions
 thumbnails = 'windows'          # windows (pictures, need Screen Recording) | icons (app icons) | schematic (a fixed picture of the layout)

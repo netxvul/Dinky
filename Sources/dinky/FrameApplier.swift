@@ -443,15 +443,14 @@ final class FrameApplier {
         for id in ids {
             guard let pid = pids[id], !unanswered.contains(pid), !scheduler.isBusy(pid), unansweredRaises[pid] == nil
             else { continue }
-            switch element(pid: pid, id: id) {
-            case .found(let element):
+            let (asked, slow) = withElement(pid: pid, id: id, busy: (false, true), gone: (false, false)) { element, key in
                 let started = Date()
                 let error = AXUIElementPerformAction(element, kAXRaiseAction as CFString)
-                raised.append(id)
-                if Self.timedOut(error, since: started) { giveUp(pid) }
-            case .busy: giveUp(pid)
-            case .gone: continue
+                noteInvalid(error, key: key)
+                return (true, Self.timedOut(error, since: started))
             }
+            if asked { raised.append(id) }
+            if slow { giveUp(pid) }
         }
         return raised
     }

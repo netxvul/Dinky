@@ -327,8 +327,8 @@ final class WorkspaceSwitcher {
         let card = cards[view.picked]
         if card.number == nil, let display = AppState.shared.displays.displays.first(where: { $0.uuid == card.display.uuid }),
            !display.userSpaces.contains(card.space) {
-            // Focusing a window on a native full-screen Space does not take macOS there; swipe the display to it,
-            // then focus the window.
+            // Focusing a window on a native full-screen Space does not reliably take macOS there; swipe the display to
+            // it first, then focus the window.
             let known = jump.flatMap { AppState.shared.coordinator?.model.windows[$0] != nil ? $0 : nil }
             let window = known ?? fullscreenWindows(on: card.space).first
             let focus = { if let window { AppState.shared.coordinator?.focus(window) } }
