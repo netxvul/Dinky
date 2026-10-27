@@ -487,13 +487,16 @@ extension MouseStripScroll {
     private func updateCursor() {
         let state: GrabCursorRule.Press = press.map { $0.spent ? .spent : $0.hold != nil ? .holding : .taken } ?? .none
         let point = CGEvent(source: nil)?.location ?? .zero
-        var strokeBusy = false, strokePassing = false
-        if case .holding = stroke { strokeBusy = true }
-        if case .passing = stroke { (strokeBusy, strokePassing) = (true, true) }
+        let strokeBusy = switch stroke {
+        case .holding, .passing: true
+        default: false
+        }
         let now = CACurrentMediaTime(), lastScroll = max(passedScrollAt, grabGuard.lastScroll)
         let scrolling = GrabCursorRule.scrolling(at: now, lastScroll: lastScroll, stroke: strokeBusy)
-        // A scroll going on to the app through a press: swallowed spent strokes stamp no time, so they hide nothing.
-        let passing = GrabCursorRule.scrolling(at: now, lastScroll: lastScroll, stroke: strokePassing)
+        // A scroll going on to the app through a press: swallowed spent strokes stamp no time, so they hide nothing. By
+        // time alone, as each event of a passing stroke stamps it: one left resting, as a finger on a Magic Mouse, or
+        // whose end goes unheard, keeps the closed hand off no longer.
+        let passing = GrabCursorRule.scrolling(at: now, lastScroll: lastScroll, stroke: false)
         // While a right or other button is down its drag and release go to the app that got the press: no panel.
         let otherDown = CGEventSource.buttonState(.hidSystemState, button: .right)
             || CGEventSource.buttonState(.hidSystemState, button: .center)
