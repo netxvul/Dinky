@@ -564,7 +564,7 @@ final class Coordinator {
             if moved, dragging != window.id { noteFrameChange(of: window.id, from: event.frameBefore) }
             if moved { noteSize(of: window.id) }
             if moved { ScriptingAddition.noteShown(window.id, at: window.frame.origin) }
-            if moved, let span, placements[window.id]?.space == span.left { settleSpanSpacesSoon() }
+            if moved, let span, placements[window.id]?.space == span.left { spanWindowMoved(window.id) }
         }
         // An app come to the front or a new window: what it focuses is read afresh.
         if [.frontApp, .windowCreate].contains(event.kind) { forgetFrontRead() }

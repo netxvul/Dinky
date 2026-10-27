@@ -294,12 +294,28 @@ extension Coordinator {
         }
     }
 
-    /// Notes the Space window `id` is on now, and when it changed: for `spanCarried`.
-    func noteSpanSpace(_ id: WindowID) {
+    /// Notes the Space window `id` is on now, and when it changed: for `spanCarried`. Whether it changed.
+    @discardableResult
+    func noteSpanSpace(_ id: WindowID) -> Bool {
         let now = dinky_window_space_id(id)
-        guard now != 0 else { return }
-        if let was = spanSpaces[id], was != now { spanCrossedAt[id] = CACurrentMediaTime() }
-        spanSpaces[id] = now
+        guard now != 0 else { return false }
+        defer { spanSpaces[id] = now }
+        guard let was = spanSpaces[id], was != now else { return false }
+        spanCrossedAt[id] = CACurrentMediaTime()
+        return true
+    }
+
+    /// Window `id` of the strip across two displays moved. Once it rests, its Space is looked at (`settleSpanSpaces`).
+    /// Held or gliding, a window as tall as neither display has room for, as when its app kept it to the shorter display's
+    /// height while it was still partly there, has its size taken as it shows: the steps after only move a window whose
+    /// size they take for done, and now they ask for it again, till it takes it.
+    func spanWindowMoved(_ id: WindowID) {
+        guard holdsStrip || isAnimating(id) else { return settleSpanSpacesSoon() }
+        guard let span, let tree = workspaces[span.left], let seam = tree.seam, let pid = model.windows[id]?.pid,
+              let frame = serverFrame(id) else { return }
+        let heights = [seam.left, seam.right].map { tree.gaps.inset($0).height }
+        guard !heights.contains(where: { abs($0 - frame.height) <= 1 }) else { return }
+        applier.assume([id: frame.size], pids: [id: pid])
     }
 
     /// For window `id` read as focused: the window the strip across two displays has focused instead, of the same app,
