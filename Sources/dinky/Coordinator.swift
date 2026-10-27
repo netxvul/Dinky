@@ -1102,7 +1102,7 @@ final class Coordinator {
                 // The passes before this one could not raise its app's other windows into order while another of them
                 // had focus (see `FrameApplier.raisingKeepsFocus`), as after a let-go of a strip of one app's windows,
                 // where the column coming into view stays under those hiding behind it: they go into order now, once
-                // the window server has this one in front and the apps are free (`RaiseAfterActivating`).
+                // the window server has this one in front, an app not answering left out (`RaiseAfterActivating`).
                 // Only where the tree has this window focused: the window switcher, focus-follows-mouse, the
                 // activation follower and a grab focus a window without focusing the tree, which for an app coming
                 // from the background moves only after this, and a layout with the old pile's front on top would put
@@ -1119,7 +1119,12 @@ final class Coordinator {
                     let pids = Dictionary(uniqueKeysWithValues: layout.order.compactMap { id in
                         pinned.contains(id) ? nil : self.model.windows[id].map { (id, $0.pid) }
                     })
-                    applier.raiseIntoOrder(afterActivating: id, layout, pids: pids, pinned: pinned)
+                    // Raised, band windows of a pin's app can go over the pin, put in front through Dock meanwhile: the
+                    // pins go back over them.
+                    let raised: (() -> Void)? = pinned.isEmpty ? nil : { [weak self] in
+                        self?.raiseCoveredPins(in: key)
+                    }
+                    applier.raiseIntoOrder(afterActivating: id, layout, pids: pids, pinned: pinned, raised: raised)
                 }
                 // Activated, its app brought it to the front: over a pin, as one wider than the band hangs, the pin goes
                 // back over it now, not only once the window events come.

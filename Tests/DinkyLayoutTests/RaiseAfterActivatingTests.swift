@@ -3,15 +3,16 @@ import Testing
 
 struct RaiseAfterActivatingTests {
     // A strip of one app's windows (pid 7), a let-go having activated 1: 2, the column in view at the wall, is under 3
-    // and 4, which hide behind it. 9 is another app's (pid 8), 5 a pin of the strip's app.
-    private let owners: [WindowID: Int32] = [1: 7, 2: 7, 3: 7, 4: 7, 5: 7, 9: 8, 10: 8]
+    // and 4, which hide behind it. 9 and 10 are another app's (pid 8), 11 a third's (pid 9), 5 a pin of the strip's
+    // app.
+    private let owners: [WindowID: Int32] = [1: 7, 2: 7, 3: 7, 4: 7, 5: 7, 9: 8, 10: 8, 11: 9]
 
     private func step(_ raises: [WindowID], focused: WindowID, busy: @escaping (Int32) -> Bool = { _ in false },
-                      elapsed: Double = 0, retry: Bool = false,
-                      pinned: Set<WindowID> = []) -> RaiseAfterActivating.Step {
+                      elapsed: Double = 0, retry: Bool = false, pinned: Set<WindowID> = [],
+                      firstOwner: Int32? = nil) -> RaiseAfterActivating.Step {
         RaiseAfterActivating.step(raises: raises, front: 1, owners: owners, focused: focused,
                                   focusedOwner: owners[focused] ?? 0, pinned: pinned, busy: busy, elapsed: elapsed,
-                                  retry: retry)
+                                  retry: retry, firstOwner: firstOwner)
     }
 
     @Test func `Nothing out of order is done`() {
@@ -34,10 +35,14 @@ struct RaiseAfterActivatingTests {
         #expect(step([2], focused: 9) == .raise([2, 1], busy: []))
     }
 
-    @Test func `Focus gone to another app on a retry gives up`() {
+    @Test func `Focus still on the app focused at the first try waits, on a third app gives up`() {
+        // A let-go from app 8's window to app 7's: the activation lands a moment after it was asked for, so app 8 can
+        // still be in front on the first tries.
         let wait = RaiseAfterActivating.Wait(focused: 9, pid: 8)
         #expect(step([2, 10], focused: 9) == .wait(wait), "first try: 10 of the focused app would take its focus")
-        #expect(step([2, 10], focused: 9, retry: true) == .giveUp(wait))
+        #expect(step([2, 10], focused: 9, retry: true, firstOwner: 8) == .wait(wait), "retry, still app 8: waits")
+        #expect(step([2, 10], focused: 11, retry: true, firstOwner: 8)
+            == .giveUp(RaiseAfterActivating.Wait(focused: 11, pid: 9)), "retry, focus gone to a third app")
     }
 
     @Test func `A focused pin of the front's app does not hold it up`() {
@@ -48,8 +53,8 @@ struct RaiseAfterActivatingTests {
     @Test func `A busy app's windows are left out, the rest raised`() {
         let busy = { (pid: Int32) in pid == 8 }
         #expect(step([2, 10], focused: 1, busy: busy) == .raise([2, 1], busy: [8]))
-        #expect(step([10], focused: 1, busy: busy) == .done, "only a busy app's to raise")
-        #expect(step([2], focused: 1, busy: { $0 == 7 }) == .done, "front's app busy: nothing to raise")
+        #expect(step([10], focused: 1, busy: busy) == .busy([8]), "only a busy app's to raise")
+        #expect(step([2], focused: 1, busy: { $0 == 7 }) == .busy([7]), "front's app busy: nothing to raise")
     }
 
     @Test func `A wait tells why`() {
