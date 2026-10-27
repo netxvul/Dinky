@@ -606,13 +606,32 @@ extension Workspace {
             let offLeft = frame.minX < bounds.minX - 1, offRight = frame.maxX > bounds.maxX + 1
             if offLeft != offRight, walls.contains(offLeft ? .left : .right), let cover = offLeft ? left : right,
                !hanging.contains(id) {
-                return (id, hiddenAtWall(id, frame, behind: cover, wall: offLeft ? .left : .right, keepsSize: keepsSize))
+                let wall: Direction = offLeft ? .left : .right
+                if let curtain = curtain(frame, at: wall, under: cover), !keepsSize { return (id, curtain) }
+                return (id, hiddenAtWall(id, frame, behind: cover, wall: wall, keepsSize: keepsSize))
             }
             var x = frame.minX
             x = min(x, walls.contains(.right) ? bounds.maxX - frame.width : rightLimit[id] ?? bounds.maxX - Self.peek)
             x = max(x, walls.contains(.left) ? bounds.minX : leftLimit[id] ?? bounds.minX + Self.peek - frame.width)
             return (id, CGRect(x: x, y: frame.minY, width: frame.width, height: frame.height))
         })
+    }
+
+    /// Where a window part past `wall` stays as a curtain: at its size, held at the wall where the strip holds a
+    /// window that reaches it, under `cover`, the biggest window of the column in view nearest the wall, so the room
+    /// between that column and the wall shows the window rather than nothing. Only while the cover leaves room at the
+    /// wall, and the window's edge away from the wall, and its shadow, stay `shadowReach` inside the cover's far edge,
+    /// short of the column beyond; nil otherwise, and for a window wholly past the wall, inside the outer gap or
+    /// beyond, which hide behind the cover.
+    func curtain(_ frame: CGRect, at wall: Direction, under cover: CGRect) -> CGRect? {
+        let inset = stripInset, reach = Self.shadowReach
+        // Only where the cover leaves room at the wall: one reaching out to the outer gap covers it all.
+        let partly = wall == .right ? frame.minX < inset.maxX - 1 : frame.maxX > inset.minX + 1
+        let room = wall == .right ? cover.maxX < inset.maxX - 1 : cover.minX > inset.minX + 1
+        guard partly, room else { return nil }
+        let held = keptOffWalls(frame)
+        return wall == .right ? held.minX >= cover.minX + reach ? held : nil
+            : held.maxX <= cover.maxX - reach ? held : nil
     }
 
     /// Where a window scrolled out past `wall` hides behind `cover`, the biggest window of the column in view nearest

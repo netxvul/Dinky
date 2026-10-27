@@ -480,6 +480,61 @@ struct ScrollingWallAlignTests {
         }
     }
 
+    /// The external display beside the built-in one, its wall at the left, the strip's last column focused.
+    private func flipGo(shares: [Double]) -> Workspace {
+        var ws = Workspace(bounds: rect(1800, -294, 1280, 1570), gaps: Gaps(all: 8), algorithm: .scrolling)
+        ws.columnWidth = 0.5
+        ws.walls = [.left]
+        ws.columnCentring = .alwaysFill
+        for id in 0..<shares.count { ws.insert(WindowID(id + 1)) }
+        for (i, share) in shares.enumerated() { ws.setWidth(ofColumn: i, share) }
+        ws.focus(WindowID(shares.count))
+        return ws
+    }
+
+    @Test func `At the strip's end a column part past the wall stays flush at it, under the column in view`() {
+        let ws = flipGo(shares: [0.5, 0.5, 0.5, 0.5, 0.57])
+        let layout = ws.layout(), frames = layout.frames
+        #expect(frames[4]!.minX == 1800, "the curtain held at the wall, as the strip holds a window that reaches it")
+        #expect(frames[4]!.maxX <= frames[5]!.maxX - reach, "its far edge and shadow under the focused column")
+        #expect(layout.order.firstIndex(of: 5)! < layout.order.firstIndex(of: 4)!, "behind the focused column")
+        #expect(frames.values.map(\.minX).min()! - 1800 <= 8, "no room bare at the wall")
+        #expect(frames[3] == frames[5]!.insetBy(dx: reach, dy: reach), "one wholly past the wall hidden as before")
+        #expect(ws.layout() == layout, "the same laid out again")
+    }
+
+    @Test func `Scrolled past a wall a window stays held at it, then hides once, without a jump`() {
+        // A point at a time across the strip while fingers hold it: each window crossing the wall keeps its size held
+        // at the wall, then changes size once, as it goes wholly past and hides behind the column in view.
+        var ws = flipGo(shares: [0.5, 0.5, 0.5, 0.5, 0.57])
+        ws.beginFreeScroll()
+        ws.scrollFreely(by: -100_000)
+        var last: [WindowID: CGRect] = [:], resized: [WindowID: Int] = [:]
+        while ws.shownOffset < 1860, ws.scrollFreely(by: 1) != 0 {
+            let strip = ws.stripFrames
+            for (id, frame) in ws.layout().frames {
+                if frame.size == strip[id]!.size, strip[id]!.minX < 1800 - 0.5 {
+                    #expect(frame.minX == 1800, "\(id) at \(ws.shownOffset): held at the wall")
+                }
+                if let was = last[id] {
+                    if was.size != frame.size { resized[id, default: 0] += 1 }
+                    if was.size == frame.size, frame.size == strip[id]!.size {
+                        #expect(abs(was.minX - frame.minX) <= 2, "\(id) at \(ws.shownOffset): no jump")
+                    }
+                }
+                last[id] = frame
+            }
+        }
+        for id: WindowID in [1, 2, 3] { #expect(resized[id] == 1, "\(id) changes size once crossing the wall") }
+    }
+
+    @Test func `A column part past the wall too wide to curtain under the column in view hides behind it`() {
+        let ws = flipGo(shares: [0.5, 0.6, 0.25, 0.57])
+        let frames = ws.layout().frames
+        #expect(frames[3]!.minX >= 1808, "the column in view nearest the wall")
+        #expect(frames[2]!.minX >= frames[3]!.minX && frames[2]!.maxX <= frames[3]!.maxX, "hidden behind it, not flush")
+    }
+
     @Test func `At a wall a nudge let go keeps the focused column, as without one`() {
         for walls: Set<Direction> in [[.right], []] {
             for (delta, settles): (CGFloat, WindowID) in [(37, 2), (-37, 2), (300, 3)] {
