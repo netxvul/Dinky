@@ -65,6 +65,9 @@ final class Coordinator {
     var spanRetryPending = false
     /// Whether `alignCompanion` has had its one look since launch or the option was turned on.
     var spanAligned = false
+    /// The Space each window of a strip across two displays was last seen on, and when each last changed it.
+    var spanSpaces: [WindowID: UInt64] = [:]
+    var spanCrossedAt: [WindowID: CFTimeInterval] = [:]
     var placements: [WindowID: Placement] = [:]
     var dirty: Set<UInt64> = []
     /// Classification attempts for windows whose AX element has not appeared yet.
@@ -1191,6 +1194,13 @@ final class Coordinator {
             print("\(stamp()) span: \(pid) put \(id) in front of \(want), which dinky focused: focused again")
             focus(want)
             spanFocused = nil
+            return
+        }
+        // Nor does a window the strip carries over the seam take focus from another of its app's: macOS hands it the
+        // app's focus as it changes Space, while fingers or the mouse hold the strip or it glides.
+        if let want = spanCarried(id) {
+            print("\(stamp()) span: \(id) carried over the seam came in front of \(want), of its app: focus stays")
+            keepFocus(on: want)
             return
         }
         // Only what dinky had, answered while a strip moves: focus moves once the read after it says so, or as a

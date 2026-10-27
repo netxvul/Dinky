@@ -243,6 +243,7 @@ extension Coordinator {
     func settleSpanSpaces() {
         guard let span, let tree = workspaces[span.left], tree.spansDisplays else { return }
         var moves: [UInt64: [UInt32]] = [:]
+        for id in tree.windows { noteSpanSpace(id) }
         for id in tree.windows where id != dragging {
             guard let frame = serverFrame(id) ?? model.windows[id]?.frame, let left = tree.isLeftOfSeam(frame) else { continue }
             let want = left ? span.left : span.right, now = dinky_window_space_id(id)
@@ -261,6 +262,29 @@ extension Coordinator {
            moves.values.joined().contains(where: { $0 != focused && windows[$0]?.pid == pid }) {
             keepFocus(on: focused)
         }
+    }
+
+    /// Notes the Space window `id` is on now, and when it changed: for `spanCarried`.
+    func noteSpanSpace(_ id: WindowID) {
+        let now = dinky_window_space_id(id)
+        guard now != 0 else { return }
+        if let was = spanSpaces[id], was != now { spanCrossedAt[id] = CACurrentMediaTime() }
+        spanSpaces[id] = now
+    }
+
+    /// For window `id` read as focused: the window the strip across two displays has focused instead, of the same app,
+    /// where `id` is one the strip is carrying over the seam rather than one the user brought forward: while fingers or
+    /// the mouse hold the strip, either glides, or `id` changed Space within the last second. Not with a click under
+    /// way outside a hold. Nil otherwise.
+    func spanCarried(_ id: WindowID) -> WindowID? {
+        guard let span, id != 0, placements[id]?.space == span.left, let tree = workspaces[span.left],
+              let want = tree.focused, want != id, let pid = model.windows[want]?.pid, model.windows[id]?.pid == pid
+        else { return nil }
+        noteSpanSpace(id)
+        let crossed = spanCrossedAt[id].map { CACurrentMediaTime() - $0 < 1 } ?? false
+        let moving = holdsStrip || isAnimating(id) || isAnimating(want)
+        guard crossed || moving, holdsStrip || !clickUnderWay(within: 0.3) else { return nil }
+        return want
     }
 
     /// `settleSpanSpaces` once the events in hand are taken in, and once more as a pass's glide is done.
