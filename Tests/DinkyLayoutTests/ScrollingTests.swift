@@ -461,6 +461,25 @@ struct ScrollingWallAlignTests {
         }
     }
 
+    @Test func `Next to the strip's start, a wide neighbour at the wall goes past it`() {
+        // The built-in display, Claude's column at 80% beside the focused second column: lined up, the first column
+        // reaches into the gutter at the strip's start, and the focused one reaches the wall over what is left.
+        for share in [0.6, 0.7, 0.8] {
+            var ws = Workspace(bounds: rect(0, 39, 1800, 1066), gaps: Gaps(all: 8), algorithm: .scrolling)
+            ws.columnWidth = 0.5
+            ws.walls = [.right]
+            ws.columnCentring = .alwaysFill
+            for id in 0..<5 { ws.insert(WindowID(id + 1)) }
+            ws.setWidth(ofColumn: 2, share)
+            ws.focus(2)
+            let layout = ws.layout(), frames = layout.frames
+            #expect(frames.values.allSatisfy { $0.maxX <= 1800 }, "\(share): nothing past the wall")
+            #expect(1792 - frames.values.map(\.maxX).max()! <= 8, "\(share): no more than a gap bare at the wall")
+            #expect(frames[2]!.minX >= 8 && frames[2]!.maxX <= 1792, "\(share): the focused column whole")
+            #expect(ws.layout() == layout && ws.layout() == layout, "\(share): the same however often laid out")
+        }
+    }
+
     @Test func `At a wall a nudge let go keeps the focused column, as without one`() {
         for walls: Set<Direction> in [[.right], []] {
             for (delta, settles): (CGFloat, WindowID) in [(37, 2), (-37, 2), (300, 3)] {

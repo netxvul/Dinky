@@ -318,12 +318,24 @@ extension Workspace {
                 return span.minX < edge - slack && span.maxX > edge + slack
             }
         }
+        // Past an end of the strip, as when the column at it reaches into the gutter there, a candidate goes no further
+        // than the end: taken all the same where what it leaves of the straddler on screen is room the column in view
+        // nearest the wall reaches over (`reachingWalls`).
+        let reach = area.width * CGFloat(Self.minimumColumnWidth)
+        func taken(_ c: CGFloat, straddling j: Int, at wall: Direction) -> CGFloat? {
+            if valid(c) { return c }
+            let clamped = min(max(c, limits.lowerBound), limits.upperBound)
+            guard clamped != c, valid(clamped) else { return nil }
+            let span = onScreen(j, at: clamped)
+            let left = wall == .right ? area.maxX - span.minX : span.maxX - area.minX
+            return left < reach ? clamped : nil
+        }
         func aligned(_ wall: Direction, from c: CGFloat) -> CGFloat {
             guard let j = straddler(wall, at: c) else { return c }
             let (start, width) = spans[j]
             let show = wall == .right ? start + width - area.width : start
             let past = wall == .right ? start - area.width : start + width
-            return valid(show) ? show : valid(past) ? past : c
+            return taken(show, straddling: j, at: wall) ?? taken(past, straddling: j, at: wall) ?? c
         }
         // The room bare between each wall and the nearest edge of a column shown whole on its half of the area.
         func bare(at c: CGFloat) -> CGFloat {
