@@ -146,7 +146,8 @@ extension Workspace {
         return placed
     }
 
-    /// Across a seam, with focus on a column of the display at an end of the strip as it rests there, that display filled
+    /// Across a seam, with focus near enough an end of the strip that it rests there, the columns from the end to it fitting
+    /// on the two displays together, the display at that end filled
     /// to the outer margin as one display's strip at its end is: the columns from the end keep their widths at the
     /// margin, and the one that would reach over the seam narrows to the room left between them and it, so the seam still
     /// falls between columns; where that one cannot go so narrow, the end column widens over the room instead. Only where
@@ -163,8 +164,10 @@ extension Workspace {
                 on.append(i)
                 i += step
             }
-            // All of the band fits on that display, or nothing does: no end to fill.
-            guard band.contains(i), !on.isEmpty, on.contains(focus) || focus == i else { return }
+            // All of the band fits on that display, or nothing does: no end to fill. Nor with focus too far from the end
+            // for the strip to rest there.
+            let toFocus = stride(from: end, through: focus, by: step).reduce(CGFloat(0)) { $0 + widths[$1] }
+            guard band.contains(i), !on.isEmpty, (focus - end) * step >= 0, toFocus <= area.width + 0.5 else { return }
             guard !reachesOver(left - half, in: area) else { return }
             if let floor = narrowest[i], floor <= left {
                 widths[i] = left

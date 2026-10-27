@@ -450,6 +450,21 @@ struct SpanTests {
         #expect(straddling(ws).isEmpty)
     }
 
+    @Test func `With focus across the seam from an end the strip rests at, that end's display still fills`() {
+        let seam = Seam(left: rect(-1920, 30, 1920, 1170), right: rect(0, 39, 1800, 1066))
+        var ws = spanning(6, gaps: Gaps(all: 8), seam: seam, centring: .alwaysFill)
+        ws.spanPeeks = false
+        ws.focus(1)
+        _ = ws.resizeColumn(by: 268)
+        for id in [1, 2, 3] as [WindowID] {
+            ws.focus(id)
+            let frames = ws.layout().frames
+            let left = ws.windows.map { frames[$0]! }.filter { $0.minX >= -1920 && $0.maxX <= 0 }
+            #expect(left.map(\.minX).min() == -1912 && left.map(\.maxX).max() == -4, "\(id) focused: \(left)")
+            #expect(straddling(ws).isEmpty)
+        }
+    }
+
     @Test func `Two strips coming together meet at the seam`() {
         var left = Workspace(bounds: rect(0, 0, 1000, 600), algorithm: .scrolling)
         left.insert(1)
