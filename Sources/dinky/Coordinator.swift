@@ -59,8 +59,8 @@ final class Coordinator {
     /// Each display's Space as `followSpan` last saw it, by UUID.
     var spanShown: [String: UInt64] = [:]
     var spanSettlePending = false
-    /// The window `focus` last focused in a strip across two displays, and when: activating its app can hand focus on
-    /// to another of its windows, on the other display, which `syncFocus` then takes back once.
+    /// The window `activate` last focused in a strip across two displays, and when: activating its app can hand focus
+    /// on to another of its windows, on the other display, which `syncFocus` takes back for a second.
     var spanFocused: (id: WindowID, at: CFTimeInterval)?
     var spanRetryPending = false
     /// Whether `alignCompanion` has had its one look since launch or the option was turned on.
@@ -1136,7 +1136,13 @@ final class Coordinator {
     /// Activates `id`'s app on it, now: `focus` without waiting for a glide.
     private func activate(_ id: WindowID) {
         guard let window = model.windows[id] else { return }
-        spanFocused = span != nil && placements[id]?.space == span?.left ? (id, CACurrentMediaTime()) : nil
+        // Its second from the first activation, not from this one: taking focus back activates again.
+        let now = CACurrentMediaTime()
+        if span == nil || placements[id]?.space != span?.left {
+            spanFocused = nil
+        } else if spanFocused.map({ $0.id != id || now - $0.at >= 1 }) ?? true {
+            spanFocused = (id, now)
+        }
         applier.cancelActivationRaise()
         forgetFrontRead()
         readWhileMoving = nil
@@ -1198,7 +1204,6 @@ final class Coordinator {
            let pid = model.windows[want]?.pid, model.windows[id]?.pid == pid {
             print("\(stamp()) span: \(pid) put \(id) in front of \(want), which dinky focused: focused again")
             focus(want)
-            spanFocused = nil
             return
         }
         // Nor does a window the strip carries over the seam take focus from another of its app's: macOS hands it the
