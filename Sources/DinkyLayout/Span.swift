@@ -78,9 +78,16 @@ extension Workspace {
         return gaps.inset(x < seam.x ? seam.left : seam.right)
     }
 
-    /// `rect` as tall as the display its middle is on, inside the outer gaps there; as it is on one display.
+    /// `rect` as tall as the display it is on, inside the outer gaps there; as it is on one display. Across the seam, as
+    /// a column passing over it is, as tall as both displays have room, inside both's outer gaps: it shows on neither
+    /// past what that display has, and changes size only as it comes to the seam and as it leaves it, not on the way.
     func onDisplay(_ rect: CGRect) -> CGRect {
-        guard seamLine != nil else { return rect }
+        guard let x = seamLine else { return rect }
+        if rect.minX < x - 0.5, rect.maxX > x + 0.5, let seam {
+            let left = gaps.inset(seam.left), right = gaps.inset(seam.right)
+            let top = max(left.minY, right.minY), bottom = min(left.maxY, right.maxY)
+            if bottom > top { return CGRect(x: rect.minX, y: top, width: rect.width, height: bottom - top) }
+        }
         let inset = displayInset(at: rect.midX)
         return CGRect(x: rect.minX, y: inset.minY, width: rect.width, height: inset.height)
     }
