@@ -76,16 +76,6 @@ final class HoverFocus {
         (self.tap, source) = (nil, nil)
     }
 
-    /// Looks under the pointer again, as when the mouse's hand went: the move posted then is too short to count.
-    func recheck() {
-        guard tap != nil, let point = CGEvent(source: nil)?.location else { return }
-        latestPoint = point
-        lastPoint = CGPoint(x: -1, y: -1)
-        guard !evaluationPending else { return }
-        evaluationPending = true
-        DispatchQueue.main.async { [weak self] in self?.evaluate() }
-    }
-
     fileprivate func handle(_ type: CGEventType, at location: CGPoint) {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }

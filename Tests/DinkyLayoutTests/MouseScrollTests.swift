@@ -96,9 +96,10 @@ struct LetGoVelocityTests {
 
 struct GrabCursorRuleTests {
     private func shape(enabled: Bool = true, cursor: Bool = true, drag: Bool = true, press: GrabCursorRule.Press = .none,
-                       armed: Bool = true, buttonDown: Bool = false, over: Bool = true, spoiled: Bool = false) -> GrabShape? {
+                       armed: Bool = true, buttonDown: Bool = false, over: Bool = true, spoiled: Bool = false,
+                       scrolling: Bool = false) -> GrabShape? {
         GrabCursorRule.shape(enabled: enabled, cursor: cursor, drag: drag, press: press, armed: armed,
-                             buttonDown: buttonDown, over: over, spoiled: spoiled)
+                             buttonDown: buttonDown, over: over, spoiled: spoiled, scrolling: scrolling)
     }
 
     @Test func `No hand unless the gesture, its drag and its cursor are on`() {
@@ -120,6 +121,22 @@ struct GrabCursorRuleTests {
         #expect(shape(buttonDown: true) == nil)
         #expect(shape(over: false) == nil)
         #expect(shape(spoiled: true) == nil)
+    }
+
+    @Test func `A scroll keeps the open hand off only while it goes on`() {
+        #expect(shape(scrolling: true) == nil)
+        #expect(shape(press: .holding, scrolling: true) == .closed, "a press holds the strip whatever the wheel does")
+        // A momentum whose end never came: once quiet, the hand opens again, the modifier held anew.
+        #expect(!GrabCursorRule.scrolling(at: 10, lastScroll: 9, stroke: false))
+        // Scrolls every 50 ms keep it off; 150 ms after the last, it opens.
+        var last = 0.0
+        for t in stride(from: 0.0, through: 1.0, by: 0.05) {
+            #expect(GrabCursorRule.scrolling(at: t + 0.01, lastScroll: t, stroke: false))
+            last = t
+        }
+        #expect(GrabCursorRule.scrolling(at: last + 0.14, lastScroll: last, stroke: false))
+        #expect(!GrabCursorRule.scrolling(at: last + 0.151, lastScroll: last, stroke: false))
+        #expect(GrabCursorRule.scrolling(at: 100, lastScroll: 0, stroke: true), "a stroke holding or passing")
     }
 
     @Test func `The arrow comes back only over the cursor dinky set`() {

@@ -108,17 +108,27 @@ public enum GrabCursorRule {
         case spent
     }
 
+    /// How long after the last scroll seen the open hand may show again.
+    public static let scrollQuiet: CFTimeInterval = 0.15
+
     /// None unless the gesture, its drag and its cursor are on. A press taken or holding the strip: closed; one spent,
     /// none. No press: open while the modifier is held (`armed`) with the button up over a window a press would take
-    /// (`over`), unless something else spoiled the hold, as a key going down with the modifier.
+    /// (`over`), unless something else spoiled the hold, as a key going down with the modifier, or a scroll goes on
+    /// (`scrolling`).
     public static func shape(enabled: Bool, cursor: Bool, drag: Bool, press: Press, armed: Bool, buttonDown: Bool,
-                             over: Bool, spoiled: Bool) -> GrabShape? {
+                             over: Bool, spoiled: Bool, scrolling: Bool = false) -> GrabShape? {
         guard enabled, cursor, drag else { return nil }
         switch press {
         case .taken, .holding: return .closed
         case .spent: return nil
-        case .none: return armed && !buttonDown && over && !spoiled ? .open : nil
+        case .none: return armed && !buttonDown && over && !spoiled && !scrolling ? .open : nil
         }
+    }
+
+    /// Whether a scroll goes on at `now`: a stroke holding the strip or going to the app (`stroke`), or any scroll seen
+    /// within `scrollQuiet`, its momentum's too. Only by time, so a momentum whose end goes unheard keeps nothing off.
+    public static func scrolling(at now: CFTimeInterval, lastScroll: CFTimeInterval, stroke: Bool) -> Bool {
+        stroke || now - lastScroll < scrollQuiet
     }
 
     /// Whether the arrow is set once the hand has gone: only while the cursor is still the one dinky set, its seed then

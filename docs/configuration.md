@@ -766,9 +766,10 @@ press with the modifier would drag, once the modifier has been held a moment,
 and a closed hand while the press drags the strip; a key pressed with the
 modifier, as a chord like `alt-1`, hides it till the modifier is let go of. A
 click, right click or scroll that is not the strip's goes to the app as ever,
-and the hand goes with it. macOS lets dinky set the pointer over another app's
-window only through a private setting; where that is missing, the pointer stays
-the app's.
+and the hand goes with it. Another app's window in front of a strip window,
+even one that lets clicks through, keeps the press and the hand away there.
+macOS lets dinky set the pointer over another app's window only through a
+private setting; where that is missing, the pointer stays the app's.
 
 <div class="wide-table" markdown="1">
 

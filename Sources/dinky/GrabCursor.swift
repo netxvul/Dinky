@@ -31,6 +31,9 @@ final class GrabCursor {
     /// Whether `id` is the hand's panel, which hover focus looks through.
     static func isPanel(_ id: UInt32) -> Bool { id != 0 && id == panelNumber }
 
+    /// Whether the panel is shown, as `GrabGuard` would find it: not once it has taken it. Any thread.
+    static var isShown: Bool { shown.withLock { $0 != 0 } }
+
     /// The panel shown, taken so it is ordered out once only: nil with none. Any thread.
     static func takeShown() -> UInt32? {
         shown.withLock { number in
@@ -62,6 +65,8 @@ final class GrabCursor {
     /// the app may have raised the window over it since.
     func showOpen(over window: ScreenWindow) {
         if shape == .open, over?.id == window.id, over?.frame == window.frame, let panel {
+            // The guard ordered it out for an event let through meanwhile: it goes, rather than coming back over it.
+            guard Self.isShown else { return clear() }
             panel.order(.above, relativeTo: Int(window.id))
             return
         }
@@ -109,8 +114,6 @@ final class GrabCursor {
             move.setIntegerValueField(.eventSourceUserData, value: Self.moveTag)
             move.post(tap: .cghidEventTap)
         }
-        // Hover focus passes over that move, too short to count: it looks under the pointer once more.
-        DispatchQueue.main.async { AppState.shared.recheckHover() }
         let generation = self.generation, ours = ourSeed
         let giveBack = { [weak self] in
             guard let self, self.generation == generation else { return }
@@ -126,12 +129,13 @@ final class GrabCursor {
         let primary = NSScreen.screens.first?.frame.maxY ?? 0
         panel.setFrame(NSRect(x: frame.minX, y: primary - frame.maxY, width: frame.width, height: frame.height), display: false)
         panel.level = NSWindow.Level(rawValue: level)
-        // Above means just in front of `window`; with none, in front of every window at its level.
-        panel.order(.above, relativeTo: window.map(Int.init) ?? 0)
-        shownFrame = frame
+        // Published before it is ordered in, so the guard can order out a panel that shows by the time an event comes.
         let number = UInt32(panel.windowNumber)
         Self.panelNumber = number
         Self.shown.withLock { $0 = number }
+        // Above means just in front of `window`; with none, in front of every window at its level.
+        panel.order(.above, relativeTo: window.map(Int.init) ?? 0)
+        shownFrame = frame
         if !tagged, number > 0 { tagged = dinky_window_cursor_tag(number) }
         if let view { panel.invalidateCursorRects(for: view) }
     }
@@ -213,14 +217,28 @@ final class GrabGuard {
     /// quick look and begin gesture.
     private static let raw: [UInt32] = [23, 24, 29, 30, 31, 18, 32, 33, 19]
 
-    /// On the main thread, for each event the panel was ordered out for: its type and, for a scroll, its momentum phase.
-    var onOrderedOut: (CGEventType, Int64) -> Void = { _, _ in }
+    /// On the main thread, for each event the panel was ordered out for: its type.
+    var onOrderedOut: (CGEventType) -> Void = { _ in }
 
     private let tapRunning = OSAllocatedUnfairLock(initialState: false)
+    /// Whether the tap is meant to be on, as `enable` last had it, so one turned off is not turned on again by its own
+    /// news of it.
+    private let wanted = OSAllocatedUnfairLock(initialState: false)
+    /// When it last saw a scroll, the panel shown or not: no open hand while scrolls go on (`GrabCursorRule.scrolling`).
+    private let scrolledAt = OSAllocatedUnfairLock(initialState: -CFTimeInterval.infinity)
     private var tap: CFMachPort?
 
     /// Whether its tap is in place: no hand shows without it.
     var isRunning: Bool { tapRunning.withLock { $0 } }
+
+    /// When it last saw a scroll.
+    var lastScroll: CFTimeInterval { scrolledAt.withLock { $0 } }
+
+    /// Turns its tap on or off: on only while the modifier is held with the hand on, or the hand shows. Main thread.
+    func enable(_ on: Bool) {
+        guard let tap, wanted.withLock({ was in defer { was = on }; return was != on }) else { return }
+        CGEvent.tapEnable(tap: tap, enable: on)
+    }
 
     /// Makes the tap here, so it goes in behind those made after it, and runs it on a thread of its own. Once. Main
     /// thread.
@@ -236,10 +254,11 @@ final class GrabGuard {
         }
         self.tap = tap
         tapRunning.withLock { $0 = true }
+        // Off till `enable`: it hears every press and scroll while on.
+        CGEvent.tapEnable(tap: tap, enable: false)
         let source = CFMachPortCreateRunLoopSource(nil, tap, 0)
         let thread = Thread {
             CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
-            CGEvent.tapEnable(tap: tap, enable: true)
             CFRunLoopRun()
         }
         thread.name = "dinky.grab-guard"
@@ -250,14 +269,18 @@ final class GrabGuard {
     /// Tap thread.
     fileprivate func handle(_ type: CGEventType, _ event: CGEvent) {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
+            if let tap, wanted.withLock({ $0 }) { CGEvent.tapEnable(tap: tap, enable: true) }
             return
         }
-        if type.rawValue == 29, !(NSEvent(cgEvent: event).map { Self.gestures.contains($0.type) } ?? false) { return }
-        guard let number = GrabCursor.takeShown() else { return }
-        _ = dinky_window_order_out(number)
-        let momentum = type == .scrollWheel ? event.getIntegerValueField(.scrollWheelEventMomentumPhase) : 0
-        DispatchQueue.main.async { [self] in onOrderedOut(type, momentum) }
+        if type == .scrollWheel { scrolledAt.withLock { $0 = CACurrentMediaTime() } }
+        // Nothing shown: nothing to do, and no event read further.
+        guard GrabCursor.isShown else { return }
+        autoreleasepool {
+            if type.rawValue == 29, !(NSEvent(cgEvent: event).map { Self.gestures.contains($0.type) } ?? false) { return }
+            guard let number = GrabCursor.takeShown() else { return }
+            _ = dinky_window_order_out(number)
+            DispatchQueue.main.async { [self] in onOrderedOut(type) }
+        }
     }
 }
 

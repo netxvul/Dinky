@@ -1333,8 +1333,15 @@ final class Coordinator {
         guard dragging == nil, let display = mouseStripDisplay(at: point),
               !WindowSwitcher.shared.covers(point), !WorkspaceSwitcher.shared.covers(point) else { return nil }
         let info = onScreenWindowInfo()
-        guard let window = pressedWindow(at: point, in: info), placements[window.id]?.space == display.currentSpaceID,
-              frontmostWindow(at: point, in: info)?.id == window.id else { return nil }
+        guard let window = pressedWindow(at: point, in: info), placements[window.id]?.space == display.currentSpaceID else {
+            return nil
+        }
+        // Another app's window in front of it, one that lets clicks through too, keeps the press and the hand away.
+        let front = frontmostWindow(at: point, in: info)
+        guard front?.id == window.id else {
+            if let front { noteInFront(front, over: window.id, in: info) }
+            return nil
+        }
         return window
     }
 

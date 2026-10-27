@@ -81,10 +81,8 @@ final class MouseStripScroll {
     /// Orders the hand's panel out for what goes past the other taps to the window under it.
     private let grabGuard = GrabGuard()
     private var throttle: HoverThrottle?
-    /// A scroll the app had: no open hand while its stroke or the momentum after it goes on, or `scrollQuiet` after.
+    /// When a scroll last went to the app: no open hand while scrolls go on (`GrabCursorRule.scrolling`).
     private var passedScrollAt: CFTimeInterval = -.infinity
-    private var momentumPassing = false
-    private static let scrollQuiet: CFTimeInterval = 0.15
     /// Bumped as the modifier goes down or the hand is interrupted, so a look scheduled before does nothing.
     private var hoverGeneration = 0
     private var armedAt: CFTimeInterval = 0
@@ -101,11 +99,13 @@ final class MouseStripScroll {
 
     init(coordinator: Coordinator) {
         self.coordinator = coordinator
-        grabGuard.onOrderedOut = { [weak self] type, momentum in self?.guardOrderedOut(type, momentum: momentum) }
+        grabGuard.onOrderedOut = { [weak self] type in self?.guardOrderedOut(type) }
         grab.onExit = { [weak self] in self?.updateCursor() }
     }
 
     func update(_ settings: MouseScroll, sides: ModifierSides) {
+        // The hand turned on with the taps in place: they are made again, so the guard goes in behind them.
+        if modifierTap != nil, wantsGuard(settings), !grabGuard.isRunning { stop() }
         self.settings = settings
         self.sides = sides
         grab.clear()
@@ -120,10 +120,15 @@ final class MouseStripScroll {
         arm(exactlyHeld(settings.modifier, sides: sides, in: CGEventSource.flagsState(.combinedSessionState)))
     }
 
+    /// Whether the hand's guard is wanted: with the cursor on and the calls it needs there.
+    private func wantsGuard(_ settings: MouseScroll) -> Bool {
+        settings.enabled && settings.drag && settings.cursor && GrabCursor.available
+    }
+
     private func start() {
         guard modifierTap == nil else { return }
-        // First, so it goes in behind every tap made after it.
-        if GrabCursor.available { grabGuard.start() }
+        // First, so it goes in behind every tap made after it; only with the hand on.
+        if wantsGuard(settings) { grabGuard.start() }
         let presses = MainEventTap([.leftMouseDown], options: .defaultTap, enabled: false, owner: self,
                                    callback: mouseScrollPressCallback)
         let grabs = MainEventTap([.leftMouseDown, .leftMouseDragged, .leftMouseUp, .mouseMoved], options: .defaultTap,
@@ -146,6 +151,7 @@ final class MouseStripScroll {
         if case .holding(let hold, _, _) = stroke { coordinator.mouseLetGo(velocity: 0, hold: hold) }
         stroke = .idle
         stopCursor()
+        grabGuard.enable(false)
         [pressTap, grabTap, wheelTap, modifierTap, hoverTap].forEach { $0?.remove() }
         (pressTap, grabTap, wheelTap, modifierTap, hoverTap, armed, wheelOn) = (nil, nil, nil, nil, nil, false, false)
     }
@@ -271,8 +277,6 @@ final class MouseStripScroll {
                 return
             }
             press.hold = hold
-            // A stroke going to the app meanwhile, begun while the press was taken, is the press's now: swallowed.
-            if case .passing = stroke { stroke = .spent }
             // From where it was pressed: the strip has the grabbed point under the pointer.
             press.last = press.at
             // A hold ended to take this one cleared the hand: closed again, once the press is noted holding.
@@ -311,7 +315,7 @@ final class MouseStripScroll {
     /// A scroll; whether it goes on to the app, the hand cleared first if it does.
     fileprivate func scrolled(_ type: CGEventType, _ event: CGEvent) -> Bool {
         let passes = scroll(type, event)
-        if passes, type == .scrollWheel { scrollPassed(momentum: event.getIntegerValueField(.scrollWheelEventMomentumPhase)) }
+        if passes, type == .scrollWheel { scrollPassed() }
         return passes
     }
 
@@ -479,10 +483,11 @@ extension MouseStripScroll {
     private func updateCursor() {
         let state: GrabCursorRule.Press = press.map { $0.spent ? .spent : $0.hold != nil ? .holding : .taken } ?? .none
         let point = CGEvent(source: nil)?.location ?? .zero
-        let now = CACurrentMediaTime()
-        var scrolling = momentumPassing || now - passedScrollAt < Self.scrollQuiet
-        if case .holding = stroke { scrolling = true }
-        if case .passing = stroke { scrolling = true }
+        var strokeBusy = false
+        if case .holding = stroke { strokeBusy = true }
+        if case .passing = stroke { strokeBusy = true }
+        let scrolling = GrabCursorRule.scrolling(at: CACurrentMediaTime(), lastScroll: max(passedScrollAt, grabGuard.lastScroll),
+                                                 stroke: strokeBusy)
         // While a right or other button is down its drag and release go to the app that got the press: no panel.
         let otherDown = CGEventSource.buttonState(.hidSystemState, button: .right)
             || CGEventSource.buttonState(.hidSystemState, button: .center)
@@ -492,7 +497,7 @@ extension MouseStripScroll {
         let shape = cursorOn ? GrabCursorRule.shape(enabled: settings.enabled, cursor: settings.cursor, drag: settings.drag,
                                                     press: state, armed: armed,
                                                     buttonDown: CGEventSource.buttonState(.hidSystemState, button: .left),
-                                                    over: window != nil, spoiled: spoiled) : nil
+                                                    over: window != nil, spoiled: spoiled, scrolling: scrolling) : nil
         switch otherDown ? nil : shape {
         case .open?:
             grab.showOpen(over: window!)
@@ -513,21 +518,19 @@ extension MouseStripScroll {
         updateKeeper()
     }
 
-    /// A scroll the app had: the hand goes first, and no open hand shows while its stroke or momentum goes on, nor
-    /// `scrollQuiet` after, but the hold is not spoiled for it, as momentum from an earlier flick would spoil it.
-    private func scrollPassed(momentum: Int64) {
+    /// A scroll the app had: the hand goes first, and no open hand shows while scrolls go on, but the hold is not
+    /// spoiled for it, as momentum from an earlier flick would spoil it.
+    private func scrollPassed() {
         passedScrollAt = CACurrentMediaTime()
-        // Momentum begins (1) and goes on (2) till it ends (3).
-        if momentum == 1 || momentum == 2 { momentumPassing = true } else if momentum == 3 { momentumPassing = false }
         if grab.isShowing {
             grab.clear()
             updateKeeper()
         }
     }
 
-    /// `GrabGuard` ordered the panel out for an event going past the taps, `type`, with `momentum` for a scroll.
-    private func guardOrderedOut(_ type: CGEventType, momentum: Int64) {
-        if type == .scrollWheel { return scrollPassed(momentum: momentum) }
+    /// `GrabGuard` ordered the panel out for an event of `type` going past the taps.
+    private func guardOrderedOut(_ type: CGEventType) {
+        if type == .scrollWheel { return scrollPassed() }
         grab.clear()
         // A right or other press, a gesture or the tablet: the modifier at work for something else.
         spoiled = true
@@ -545,6 +548,8 @@ extension MouseStripScroll {
             throttle = HoverThrottle(armedAt: armedAt)
             if let due = throttle?.moved(at: armedAt) { lookAgain(at: due) }
         } else {
+            // Looked at now: a look the throttle had due is taken by this one, so moves go on asking for looks.
+            throttle?.checked(at: CACurrentMediaTime())
             updateCursor()
         }
         updateKeeper()
@@ -601,6 +606,8 @@ extension MouseStripScroll {
 
     private func updateKeeper() {
         let wanted = (armed && cursorOn) || grab.isShowing
+        // The guard hears presses and scrolls only while the hand may show, its scrolls keeping the open hand off.
+        grabGuard.enable(wanted)
         guard wanted != (keeper != nil) else { return }
         if wanted {
             let keeper = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in self?.tick() }
