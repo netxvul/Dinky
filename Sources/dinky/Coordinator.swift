@@ -59,6 +59,9 @@ final class Coordinator {
     /// Each display's Space as `followSpan` last saw it, by UUID.
     var spanShown: [String: UInt64] = [:]
     var spanSettlePending = false
+    /// The window `focus` last focused in a strip across two displays, and when: activating its app can hand focus on
+    /// to another of its windows, on the other display, which `syncFocus` then takes back once.
+    var spanFocused: (id: WindowID, at: CFTimeInterval)?
     var spanRetryPending = false
     var placements: [WindowID: Placement] = [:]
     var dirty: Set<UInt64> = []
@@ -129,6 +132,17 @@ final class Coordinator {
 
     /// Whether fingers or the mouse hold a strip.
     var holdsStrip: Bool { stripScroll != nil }
+
+    /// Keeps focus on `id` as other windows of its app move to another Space (SpanDisplays.swift): macOS hands the app's
+    /// focus to one of them, which would read as the user focusing it and scroll the strip back to it. Its app is
+    /// activated on `id` again, focus read meanwhile left alone.
+    func keepFocus(on id: WindowID) {
+        focusing = (id, Date() + 1, true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            guard let self, focusing?.id == id else { return }
+            activate(id)
+        }
+    }
     /// A raise of the pins of a strip fingers hold is under way.
     private var pinRaiseInFlight = false
     /// A pass of `raiseCoveredPins` is waiting to run after window events.
@@ -1079,6 +1093,7 @@ final class Coordinator {
     /// report the previous window are ignored, so they do not pull the trees back to it.
     func focus(_ id: WindowID) {
         guard let window = model.windows[id] else { return }
+        spanFocused = span != nil && placements[id]?.space == span?.left ? (id, CACurrentMediaTime()) : nil
         if let space = placements[id]?.space { telemetry.command(space, "dinky focused \(id) \(window.appName ?? "?")") }
         // A pin focused on purpose is the user's choice, not one raised in the background.
         raisedInBackground.remove(id)
@@ -1159,6 +1174,15 @@ final class Coordinator {
     /// Follows focus into the trees, so new windows land beside the focused one and accordions show it.
     private func syncFocus(fresh: Bool = false, whileMoving: Bool = false) {
         let id = frontWindow(fresh: fresh, whileMoving: whileMoving)
+        // In a strip across two displays, activating an app on one window can make its window on the other display key
+        // just after: back to the one dinky focused, once.
+        if let (want, at) = spanFocused, want != id, id != 0, CACurrentMediaTime() - at < 1,
+           let pid = model.windows[want]?.pid, model.windows[id]?.pid == pid {
+            print("\(stamp()) span: \(pid) put \(id) in front of \(want), which dinky focused: focused again")
+            focus(want)
+            spanFocused = nil
+            return
+        }
         // Only what dinky had, answered while a strip moves: focus moves once the read after it says so, or as a
         // command read it meanwhile. Not even back to the window dinky had, which would undo a command's focus.
         if lastReadDeferred, id != readWhileMoving { return }

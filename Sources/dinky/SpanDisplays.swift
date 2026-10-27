@@ -201,6 +201,12 @@ extension Coordinator {
                 print("\(stamp()) span: \(ids.sorted()) crossed the seam, moved to Space \(space)")
             }
         }
+        // Another window of the focused one's app moved: macOS would give it the app's focus.
+        let windows = model.windows
+        if let focused = tree.focused, let pid = windows[focused]?.pid,
+           moves.values.joined().contains(where: { $0 != focused && windows[$0]?.pid == pid }) {
+            keepFocus(on: focused)
+        }
     }
 
     /// `settleSpanSpaces` once the events in hand are taken in, and once more as a pass's glide is done.
