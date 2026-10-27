@@ -670,6 +670,8 @@ final class Coordinator {
             && displays.display(containingSpace: window.spaceID)?.userSpaces.contains(window.spaceID) == true
         let free = settings(for: window.spaceID).isFree
         if shown, !placements[window.id]!.floating, free {
+            // Poured onto a free workspace, it leaves its tree as one moved to another Space does.
+            if let old = placements[window.id]!.space { onWindowLeft?(window.id, old) }
             float(window.id)
         } else if shown, placements[window.id]!.freed, !free {
             filledFrom[window.id] = nil
@@ -874,12 +876,12 @@ final class Coordinator {
             // The pin is what its app has focused: it may be read straight from now on, till focus moves.
             confirmedPin = id
             focused = id
-            // The app answered: what a command read while the strip moved is past.
-            readWhileMoving = nil
+            // The app answered: its answer is the newest, kept till focus follows it if it is not the window dinky had.
+            readWhileMoving = focused == lastFocused ? nil : focused
         } else if let answer = model.windows[real], isVisible(answer.spaceID) {
             confirmedPin = nil
             focused = real
-            readWhileMoving = nil
+            readWhileMoving = focused == lastFocused ? nil : focused
         } else {
             focused = fallback()
         }
@@ -913,8 +915,8 @@ final class Coordinator {
     /// When the button last went down, and the window it went down on (`frontmostWindow`), while a strip that shows has
     /// pins.
     private var lastPress: (at: CFTimeInterval, window: WindowID?)?
-    /// A window `commandFocusedWindow` read focused while a strip moved, other than the one dinky had: answered first
-    /// by `frontWindow` till `syncFocus` takes it.
+    /// The newest window an app named focused, other than the one dinky had, as a command's read or any read the app
+    /// answered: answered first by `frontWindow` till `syncFocus` takes it.
     private var readWhileMoving: WindowID?
 
     /// `whileMoving` asks the app even while the strip still moves (`frontWindow`), as the wait for it to rest gave up.
