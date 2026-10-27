@@ -626,12 +626,17 @@ struct PinTreeTests {
         #expect(ws.pins.isEmpty, "a new window with the old id is no pin")
     }
 
-    @Test func `Back to scrolling on a narrower display, pins without room are let go`() throws {
+    @Test func `Back to scrolling with too little room, the pins narrow first and are let go only where that is not enough`() throws {
         var ws = try pinned(pinned(strip(4, width: 0.35), 1, .left), 4, .right)
         ws.setAlgorithm(.dwindle(.tiles))
         ws.minimumSizes[1] = CGSize(width: 450, height: 100)
+        var narrowed = ws
+        narrowed.setAlgorithm(.scrolling)
+        #expect(narrowed.pinnedWindows.count == 2, "the other pin narrows and leaves the band its room")
+        #expect(narrowed.bandHasRoom)
+        ws.minimumSizes[4] = CGSize(width: 450, height: 100)
         ws.setAlgorithm(.scrolling)
-        #expect(ws.pinnedWindows.count < 2)
+        #expect(ws.pinnedWindows.count < 2, "neither can narrow enough")
     }
 
     @Test func `Settling drops a mark off its end and a column marked for both sides keeps the left`() {
@@ -1574,9 +1579,29 @@ struct StackShareTests {
     @Test func `Other layouts still split the tile in half`() {
         var ws = Workspace(bounds: rect(0, 0, 1000, 600), gaps: .zero, algorithm: .dwindle(.tiles))
         for id in 1...3 { ws.insert(WindowID(id)) }
-        let before = ws.layout().frames[1]!
-        do { let r = ws.drop(3, onto: 1, .split(.down)); #expect(r) }
-        #expect(abs(ws.layout().frames[3]!.height - before.height / 2) < 1)
+        try? #require(shape(ws.root) == "h[1 v[2 3]]")
+        do { let r = ws.drop(1, onto: 3, .split(.down)); #expect(r) }
+        #expect(shape(ws.root) == "v[2 3 1]")
+        let ratios = ws.root.ratios
+        #expect(ratios.count == 3 && abs(ratios[0] - 0.5) < 1e-9 && abs(ratios[1] - 0.25) < 1e-9 && abs(ratios[2] - 0.25) < 1e-9)
+    }
+
+    @Test func `Stacking where it already is changes nothing, whatever the heights`() {
+        var ws = strip(4, width: 0.3)
+        do { let r = ws.drop(2, onto: 1, .split(.down)); #expect(r) }
+        do { let r = ws.drop(3, onto: 2, .split(.down)); #expect(r) }
+        ws.root.modify(at: [0]) { $0.setRatios([0.5, 0.25, 0.25]) }
+        for (id, target, side) in [(WindowID(3), WindowID(2), Direction.down), (2, 3, .up)] {
+            var again = ws
+            do { let r = again.drop(id, onto: target, .split(side)); #expect(r) }
+            #expect(again.root.container(at: [0]).ratios == [0.5, 0.25, 0.25])
+            #expect(shape(again.root) == shape(ws.root))
+        }
+        var two = strip(3, width: 0.3)
+        do { let r = two.drop(2, onto: 1, .split(.down)); #expect(r) }
+        two.root.modify(at: [0]) { $0.setRatios([0.7, 0.3]) }
+        do { let r = two.drop(2, onto: 1, .split(.down)); #expect(r) }
+        #expect(two.root.container(at: [0]).ratios == [0.7, 0.3])
     }
 }
 
@@ -1590,6 +1615,13 @@ struct GlideCarryTests {
         moved.frames[1] = rect(0, 0, 90, 100)
         #expect(!GlideCarry(layout: layout, frozen: []).carriesOn(into: moved, frozen: []))
         #expect(GlideCarry(layout: layout, frozen: []).carriesOn(into: layout, frozen: []))
+    }
+
+    @Test func `A drag of a window on another display leaves a glide here as it is`() {
+        let layout = Layout(frames: [1: rect(0, 0, 100, 100), 2: rect(100, 0, 100, 100)], order: [1, 2])
+        #expect(GlideCarry(layout: layout, frozen: []).carriesOn(into: layout, frozen: [7]))
+        #expect(GlideCarry(layout: layout, frozen: [7]).carriesOn(into: layout, frozen: []))
+        #expect(!GlideCarry(layout: layout, frozen: [7]).carriesOn(into: layout, frozen: [2]))
     }
 }
 
@@ -1682,5 +1714,148 @@ struct SwapWidthTests {
         #expect(ws.root.children[stack].windows.count == 2)
         #expect(ws.width(ofColumn: stack) == shares.0 && ws.width(ofColumn: alone) == shares.1)
         for id in ws.root.children[stack].windows { #expect(ws.columnWidths[id] == shares.0) }
+    }
+}
+
+struct StripRestoreTests {
+    @Test func `A strip put back after a display change keeps its order, widths and pins, without gone windows, with new ones`() throws {
+        var snapshot = try pinned(strip(5, width: 0.3), 5, .right)
+        snapshot.focus(2)
+        _ = snapshot.resize(by: 100)
+        let widths = snapshot.columnWidths
+        let restored = snapshot.restored(keeping: [1, 2, 4, 5], adding: [9, 2])
+        #expect(restored.windows.filter { $0 != 9 } == snapshot.windows.filter { $0 != 3 }, "in its order, 3 gone")
+        #expect(restored.contains(9), "the new window comes in")
+        #expect(!restored.contains(3))
+        #expect(restored.pins == [.right: 5])
+        for id: WindowID in [1, 2, 4, 5] { #expect(restored.columnWidths[id] == widths[id]) }
+        marked(restored, pins: [.right: 5])
+    }
+
+    @Test func `A strip put back holds nothing it held as it was noted`() throws {
+        var snapshot = try pinned(strip(6, width: 0.3), 1, .left)
+        snapshot.focus(4)
+        do { let r = snapshot.beginFreeScroll(); #expect(r) }
+        snapshot.scrollFreely(by: 150)
+        try #require(snapshot.isScrollingFreely)
+        var held = snapshot
+        held.focus(5, holdingScroll: true)
+        held.keepsScroll = true
+        try #require(held.holdsScroll && held.keepsScroll)
+        #expect({ let r = held.restored(keeping: Set(held.windows), adding: []); return !r.holdsScroll && !r.keepsScroll }())
+        let restored = snapshot.restored(keeping: Set(snapshot.windows), adding: [])
+        #expect(!restored.isScrollingFreely)
+        #expect(!restored.holdsScroll && !restored.keepsScroll)
+        let focused = try #require(restored.focused)
+        #expect(restored.isInView(focused), "the focused column whole")
+    }
+
+    @Test func `A pin gone since leaves no pin`() throws {
+        let snapshot = try pinned(strip(3), 1, .left)
+        let restored = snapshot.restored(keeping: [2, 3], adding: [])
+        #expect(restored.pins.isEmpty)
+        #expect(restored.windows == [2, 3])
+    }
+}
+
+struct BatchURoomTests {
+    @Test func `A drop from another display into a pin is judged with the dragged window's minimum`() throws {
+        var source = Workspace(bounds: rect(0, 0, 1000, 600), gaps: .zero, algorithm: .scrolling)
+        source.insert(10)
+        source.insert(11)
+        source.minimumSizes[10] = CGSize(width: 820, height: 100)
+        var target = try pinned(strip(4, width: 0.3), 1, .left)
+        target.focus(2)
+        do { let r = target.join(.left); #expect(r) }
+        try #require(shape(target.root) == "h[v[1 2] 3 4]" && target.minimumSizes[10] == nil)
+        let (sourceBefore, targetBefore) = (source, target)
+        do { let r = target.receive(10, from: &source, onto: 2, .split(.down)); #expect(!r) }
+        #expect(source == sourceBefore)
+        #expect(target == targetBefore)
+    }
+
+    @Test func `Up or down within a pin is refused where its new shape needs more room than the band has`() throws {
+        var ws = Workspace(bounds: rect(0, 0, 1440, 900), gaps: .zero, algorithm: .scrolling)
+        ws.columnWidth = 0.3
+        for id in 1...5 { ws.insert(WindowID(id)) }
+        ws.focus(1)
+        do { let r = ws.pin(.left); #expect(r == .changed) }
+        for id: WindowID in [2, 3] {
+            ws.focus(id)
+            do { let r = ws.join(.left); #expect(r) }
+        }
+        try #require(shape(ws.root) == "h[v[1 2 3] 4 5]")
+        ws.minimumSizes[1] = CGSize(width: 600, height: 100)
+        ws.minimumSizes[2] = CGSize(width: 600, height: 100)
+        ws.focus(1)
+        let before = ws
+        do { let r = ws.join(.down); #expect(!r, "1 and 2 side by side would need 1200 of 1440") }
+        #expect(shape(ws.root) == shape(before.root) && ws.pins == before.pins)
+    }
+
+    @Test func `The back window of a pinned accordion is over its own place`() throws {
+        var ws = try pinned(strip(4, width: 0.3), 1, .left)
+        ws.focus(2)
+        do { let r = ws.join(.left); #expect(r) }
+        let column = try #require(ws.root.path(of: 1)?.first)
+        ws.root.modify(at: [column]) { $0.mode = .accordion }
+        ws.focus(1)
+        let layout = ws.layout()
+        let back = try #require(layout.frames[2]), front = try #require(layout.frames[1])
+        let both = back.intersection(front)
+        try #require(!both.isEmpty, "the front window covers the back one there")
+        let point = CGPoint(x: both.midX, y: both.midY)
+        try #require(layout.order.first { layout.frames[$0]!.contains(point) } == 1)
+        #expect(ws.dropHit(at: point, in: layout, excluding: 2) == .own)
+    }
+
+    @Test func `An accordion window grabbed from behind is over its own place`() throws {
+        var ws = workspace(3, algorithm: .dwindle(.accordion))
+        ws.focus(1)
+        let layout = ws.layout()
+        let own = try #require(layout.frames[2])
+        let front = layout.order.first { layout.frames[$0]!.contains(CGPoint(x: own.midX, y: own.midY)) }
+        try #require(front != nil && front != 2, "another window is in front of 2 there")
+        #expect(ws.dropHit(at: CGPoint(x: own.midX, y: own.midY), in: layout, excluding: 2) == .own)
+    }
+}
+
+struct StripRestoreDecisionTests {
+    @Test func `A strip is put back only on a display the change touched`() throws {
+        let snapshot = try pinned(strip(4, width: 0.3), 1, .left)
+        var lost = snapshot
+        lost.unpin(.left)
+        #expect(!lost.needsRestore(to: snapshot, displayChanged: false, spaceChanged: true, windowsAway: true))
+        #expect(lost.needsRestore(to: snapshot, displayChanged: true, spaceChanged: false, windowsAway: true))
+        #expect(!lost.needsRestore(to: snapshot, displayChanged: true, spaceChanged: false, windowsAway: false),
+                "nothing went away: a change is the user's")
+        #expect(snapshot.needsRestore(to: snapshot, displayChanged: true, spaceChanged: true, windowsAway: false),
+                "on a new Space it goes back whatever it looks like")
+        #expect(!snapshot.needsRestore(to: snapshot, displayChanged: true, spaceChanged: false, windowsAway: true),
+                "it kept its shape")
+    }
+
+    @Test func `A strip whose windows came back as new columns lost its shape`() throws {
+        let snapshot = try pinned(strip(4, width: 0.3), 1, .left)
+        var back = Workspace(bounds: snapshot.bounds, gaps: .zero, algorithm: .scrolling)
+        for id: WindowID in [2, 3, 1, 4] { back.insert(id) }
+        #expect(!back.keepsShape(of: snapshot))
+        var gone = snapshot
+        gone.remove(3)
+        #expect(gone.keepsShape(of: snapshot), "a window gone since leaves the rest as they were")
+    }
+
+    @Test func `A strip keeps its shape only with its pins, its order and its widths`() throws {
+        let snapshot = try pinned(strip(4, width: 0.3), 1, .left)
+        var swapped = snapshot
+        swapped.focus(3)
+        do { let r = swapped.move(.right); #expect(r) }
+        #expect(swapped.pins == snapshot.pins)
+        #expect(!swapped.keepsShape(of: snapshot), "the same pins, two band columns the other way round")
+        let unpinned = strip(3, width: 0.3)
+        #expect(strip(3, width: 0.3).keepsShape(of: unpinned), "the same order, no pins")
+        var wider = unpinned
+        wider.setWidth(ofColumn: 1, 0.5)
+        #expect(!wider.keepsShape(of: unpinned), "a column at another width")
     }
 }

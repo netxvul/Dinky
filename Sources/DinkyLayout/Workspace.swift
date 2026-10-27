@@ -346,8 +346,12 @@ public struct Workspace: Equatable, Sendable {
             root = Container(.horizontal, .tiles, [ends[0]].compactMap { $0 } + band + [ends[1]].compactMap { $0 })
             for id in ids { columnWidths[id] = columnWidths[id] ?? columnWidth }
             settlePins()
-            // Back from another layout, the pins it kept may leave too little room on this display now.
-            if !fromStrip { fitPins() }
+            // Back from another layout, the pins it kept may leave too little room on this display now: the band's own
+            // room first, as a display change fits a strip, then the pins.
+            if !fromStrip {
+                fitBand()
+                fitPins()
+            }
         }
         if let focused { focus(focused) }
     }
@@ -385,8 +389,9 @@ public struct Workspace: Equatable, Sendable {
 
     /// Focus a window and mark it most recent along its path, so accordions show it on top. While a window is
     /// fullscreen, focusing another ends fullscreen, hands it over or adds the window, as `fullscreenFocus` says.
-    /// With `holdingScroll`, as for a click whose button may still be down, a strip that would scroll the window's
-    /// column to the middle stays where it shows till `revealFocus()` (see `canHoldScroll`).
+    /// With `holdingScroll`, as for a click whose button may still be down, a strip stays where it shows till
+    /// `revealFocus()`, whether focusing would centre the column or only bring it into view, unless a window is
+    /// fullscreen (see `canHoldScroll`).
     public mutating func focus(_ id: WindowID, holdingScroll: Bool = false) {
         guard let path = root.path(of: id) else { return }
         // Pinned where the strip shows before focus moves, which can be past `scrollOffset`: the layout scrolls on from

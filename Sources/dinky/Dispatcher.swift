@@ -103,7 +103,7 @@ enum Dispatcher {
             return fills ? .nothing("fullscreen: the window already fills the workspace", ok: true) : reply
         case .grid(let placement, let toggle):
             guard let coordinator = AppState.shared.coordinator else { return .error("tiling is not running") }
-            let id = window ?? coordinator.focusedWindow
+            let id = window ?? coordinator.commandFocusedWindow
             if toggle, coordinator.isFloating(id) == true {
                 // A free workspace would float the window again at once, so the toggle goes back to its frame instead.
                 if coordinator.isOnFreeWorkspace(id) {
@@ -308,7 +308,7 @@ enum Dispatcher {
     private static func floating(_ name: String, window: WindowID?,
                                  _ run: (Coordinator, WindowID) -> String?) -> Reply? {
         guard let coordinator = AppState.shared.coordinator else { return nil }
-        let id = window ?? coordinator.focusedWindow
+        let id = window ?? coordinator.commandFocusedWindow
         guard coordinator.isFloating(id) == true else { return nil }
         if let error = run(coordinator, id) { return .error("\(name): \(error)") }
         return .ok(name)
@@ -318,7 +318,7 @@ enum Dispatcher {
     /// `wholeSpace` commands act on the tree of the focused window's Space even when that window floats.
     private static func tree(_ name: String, wholeSpace: Bool = false, _ change: (inout Workspace) -> Bool) -> Reply {
         guard let coordinator = AppState.shared.coordinator else { return .error("tiling is not running") }
-        let id = coordinator.focusedWindow
+        let id = coordinator.commandFocusedWindow
         // A command can change the layout before finding nothing to do, as move ends fullscreen first: that is no noop.
         var moved = false
         // A pin a move or a join took apart was unpinned by hand: its rule leaves it so.
@@ -332,7 +332,7 @@ enum Dispatcher {
         }
         let result = wholeSpace && coordinator.isFloating(id) == true
             ? coordinator.spaceKey(of: id).flatMap { coordinator.command(onSpace: $0, watched) }
-            : coordinator.command(watched)
+            : coordinator.command(on: id, watched)
         coordinator.unpinnedByHand.formUnion(unpinned)
         switch result {
         case nil: return .error("\(name): the focused window is not tiled")
@@ -351,7 +351,7 @@ enum Dispatcher {
             workspace.minimumSizes = coordinator.minimumSizes(in: workspace)
             return pinning(&workspace)
         }
-        let id = window ?? coordinator.focusedWindow
+        let id = window ?? coordinator.commandFocusedWindow
         let result: PinChange?
         if let window {
             // A rule's window is pinned in its own tree or not at all, and one the user unpinned is left so.
@@ -400,7 +400,7 @@ enum Dispatcher {
     /// scrolling workspace back to its tree. Anything but floating tiles a floating window first.
     private static func layout(_ names: [LayoutName], window: WindowID?) -> Reply {
         guard let coordinator = AppState.shared.coordinator else { return .error("tiling is not running") }
-        let id = window ?? coordinator.focusedWindow
+        let id = window ?? coordinator.commandFocusedWindow
         guard let floating = coordinator.isFloating(id) else { return .error("layout: no window dinky manages is focused") }
         var current: [LayoutName] = floating ? [.floating] : [.tiling]
         if !floating, coordinator.isScrolling(id) {
@@ -474,7 +474,16 @@ enum Dispatcher {
         let from = AppState.shared.displays.display(ofWindow: wid)
         if let error = move(wid, to: space, arriving: destination) { return error }
         if let from { keepOffset(of: wid, from: from, to: to, space: space) }
-        AppState.shared.coordinator?.windowMoved(wid, refocus: !follow)
+        // A tiled window to another display joins the tree there placed at once: a glide would set out from where it was on
+        // the other one.
+        let coordinator = AppState.shared.coordinator
+        let across = from.map { $0.uuid != to.uuid } ?? false
+        let joins = across && coordinator?.isFloating(wid) == false && coordinator?.settings(for: space).isFree == false
+        if joins { coordinator?.placeAtOnce(space) }
+        // A move under way from before, as one across a moment ago, is over: its check would bring the window back.
+        coordinator?.arriving[wid] = nil
+        coordinator?.windowMoved(wid, refocus: !follow)
+        if joins { coordinator?.joined(wid, space) }
         return nil
     }
 

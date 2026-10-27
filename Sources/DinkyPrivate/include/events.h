@@ -27,7 +27,8 @@ typedef NS_ENUM(uint32_t, DinkyEventKind) {
 typedef struct {
     DinkyEventKind kind;
     uint32_t windowID;  // 0 for Space and front app events
-    pid_t pid;          // window owner, or the front app for DinkyEventFrontApp; 0 if gone
+    pid_t pid;          // window owner, or the front app for DinkyEventFrontApp; 0 if gone, and always 0 for
+                        // DinkyEventWindowMove and DinkyEventWindowResize, whose owner is not looked up
     uint64_t spaceID;   // create/destroy and Space created/destroyed only, else 0
 } DinkyEvent;
 
@@ -60,6 +61,10 @@ typedef struct {
 } DinkyWindowInfo;
 
 DinkyWindowInfo dinky_window_info(uint32_t windowID);
+
+// Only the window's frame, as the window server has it: for a window known to be moving where it is, nothing else
+// about it changing. False when it is gone.
+bool dinky_window_bounds(uint32_t windowID, CGRect *frame);
 
 // Every window on every Space, minimized included, filtered like dinky_space_window_ids.
 NSArray<NSNumber *> *dinky_all_window_ids(void);

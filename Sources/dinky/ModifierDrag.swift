@@ -166,6 +166,8 @@ final class ModifierDrag {
         WindowSwitcher.shared.dismiss()
         WorkspaceSwitcher.shared.dismiss()
         print("\(stamp()) drag: grabbed \(window.id) with \(modifiers.name), \(placement.space != nil ? "tiled" : "floating")")
+        // Its steps start a run: the first size the app is asked for is no step it is slow to follow.
+        coordinator.applier.startRun([window.id])
         // Once the press is swallowed: focusing waits on the app.
         DispatchQueue.main.async { [coordinator] in coordinator.focus(window.id) }
         if placement.space != nil { coordinator.startHeldDrag(of: window.id, at: window.frame, pointer: point) }

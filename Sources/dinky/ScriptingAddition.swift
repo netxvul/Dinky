@@ -97,11 +97,34 @@ enum ScriptingAddition {
     /// all in one message. Dock's connection is not clamped as Accessibility is, and no app falls behind the others;
     /// nor are the apps told, so their frames are written through Accessibility once a glide ends, which then finds
     /// the windows where they put them. A no-op with a payload that cannot.
-    static func move(_ frames: [WindowID: CGRect]) {
+    /// Each window's origin as last sent, so a frame of a glide or hold sends only those that moved (`forget`).
+    private static var sent: [WindowID: CGPoint] = [:]
+
+    /// Moves the windows to the origins of `frames`, those that moved half a point or more since last sent, or all with
+    /// `fresh`; nothing when none did.
+    static func move(_ frames: [WindowID: CGRect], fresh: Bool = false) {
         guard cachedMoves, !frames.isEmpty else { return }
-        let wids = Array(frames.keys)
+        let wids = frames.keys.filter { id in
+            fresh || sent[id].map { hypot($0.x - frames[id]!.minX, $0.y - frames[id]!.minY) >= 0.5 } ?? true
+        }
+        guard !wids.isEmpty else { return }
         let points = wids.map { frames[$0]!.origin }
+        for (id, point) in zip(wids, points) { sent[id] = point }
         dinky_sa_move_batch(wids, points, Int32(wids.count))
+    }
+
+    /// Forgets the origins last sent for `ids`, or for every window, so the next move sends them whatever they are:
+    /// a glide or hold setting off or ending, the windows maybe moved by other means meanwhile.
+    static func forget(_ ids: [WindowID]? = nil) {
+        guard let ids else { return sent = [:] }
+        for id in ids { sent[id] = nil }
+    }
+
+    /// Window `id` shows at `origin`, as its move or resize events have it: one moved by other means than the last
+    /// sent, half a point or more, is sent again by the next move, even mid-glide or held.
+    static func noteShown(_ id: WindowID, at origin: CGPoint) {
+        guard let last = sent[id], hypot(last.x - origin.x, last.y - origin.y) >= 0.5 else { return }
+        sent[id] = nil
     }
 
     /// Whether the payload Dock has can order windows (see `order`), as of `available`; one installed before 0.4.0
@@ -111,6 +134,7 @@ enum ScriptingAddition {
     /// Clear the transforms, returning the windows to their real Accessibility positions.
     static func reset(_ ids: [WindowID]) {
         guard !ids.isEmpty else { return }
+        forget(ids)
         var wids = ids
         dinky_sa_reset_batch(&wids, Int32(wids.count))
     }

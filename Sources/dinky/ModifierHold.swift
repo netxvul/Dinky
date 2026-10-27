@@ -43,6 +43,9 @@ final class ModifierHold {
         case spoiled
     }
 
+    /// An event older than this as the swallowing tap gets it was held up past the tap's timeout: the app has had it.
+    private static let timedOut: CFTimeInterval = 1
+
     /// What the swallowing tap takes; everything else is only ever listened to.
     private static let swallowable: [CGEventType] = [.keyDown, .leftMouseDown, .leftMouseUp, .rightMouseDown,
                                                      .rightMouseUp, .scrollWheel]
@@ -131,9 +134,13 @@ final class ModifierHold {
     /// Takes `swallowable` events, ahead of `listener`; on only while `swallowing`.
     private var swallower: MainEventTap?
     private var swallowing = false
-    /// The events `swallower` let through, by type and timestamp, oldest first: `listener` hears them after it and
-    /// leaves them be. One it hears that is not here went by while `swallower` was off.
+    /// The events `swallower` handled, let through or swallowed, by type and timestamp, oldest first: `listener` hears
+    /// those it let through after it, and one it swallowed the window server may deliver all the same after a timeout,
+    /// and leaves them be. One it hears that is not here went by while `swallower` was off, or held up.
     private var passedOn: [(type: CGEventType, time: CGEventTimestamp)] = []
+    /// The swallowable events `listener` handled while `swallower` was on but had not had them, held up on the way:
+    /// gone to the app already, they go through untouched once `swallower` gets them.
+    private var heardFirst: [(type: CGEventType, time: CGEventTimestamp)] = []
     private let name: String
 
     /// `name` is the command that shows it from the keyboard, such as `window-switcher`.
@@ -338,6 +345,7 @@ final class ModifierHold {
         swallower?.remove()
         (listener, swallower, swallowing) = (nil, nil, false)
         passedOn = []
+        heardFirst = []
     }
 
     /// Turns the swallowing tap on while it shows or the release of a click it took is still to come, and off
@@ -362,9 +370,14 @@ final class ModifierHold {
         }
         if Self.swallowable.contains(type),
            let index = passedOn.firstIndex(where: { $0.type == type && $0.time == event.timestamp }) {
-            // The swallower had it already. Those before it, it swallowed, so they never come here.
-            passedOn.removeSubrange(...index)
+            // The swallower had it already. Those it swallowed stay till newer push them out: the window server may
+            // still deliver one late.
+            passedOn.remove(at: index)
             return
+        }
+        if swallowing, Self.swallowable.contains(type) {
+            if heardFirst.count >= 16 { heardFirst.removeFirst() }
+            heardFirst.append((type, event.timestamp))
         }
         _ = handle(type, event, canSwallow: false)
     }
@@ -379,11 +392,18 @@ final class ModifierHold {
         default:
             break
         }
-        let passes = handle(type, event, canSwallow: true)
-        if passes {
-            if passedOn.count >= 16 { passedOn.removeFirst() }
-            passedOn.append((type, event.timestamp))
+        // Held up past the tap's timeout, the listener has had it already: handled twice, a key would move the pick
+        // twice.
+        if let index = heardFirst.firstIndex(where: { $0.type == type && $0.time == event.timestamp }) {
+            heardFirst.remove(at: index)
+            return true
         }
+        // Held up past the tap's timeout, the window server gave it to the app already, unheard by the listener:
+        // handled as one gone to the app, and let through, so a click held so long gets its release.
+        let canSwallow = eventAge(event) <= Self.timedOut
+        let passes = handle(type, event, canSwallow: canSwallow) || !canSwallow
+        if passedOn.count >= 32 { passedOn.removeFirst() }
+        passedOn.append((type, event.timestamp))
         return passes
     }
 
@@ -411,6 +431,9 @@ final class ModifierHold {
         case .scrollWheel where byFingers:
             // The swiping fingers scroll too, and their momentum goes on after they lift: none of it is for the app.
             return false
+        case .scrollWheel where event.getIntegerValueField(.scrollWheelEventMomentumPhase) != 0:
+            // Momentum of a stroke before, as a strip's flick: no use of the modifier.
+            break
         case .rightMouseDown where byFingers && Self.fingersOnMouse:
             // A right click on the mouse the fingers drive it on closes it, as Esc does.
             guard canSwallow else {
@@ -428,7 +451,7 @@ final class ModifierHold {
             guard swallowRightUp else { return true }
             rightReleased()
             return false
-        case .rightMouseDown, .otherMouseDown where byFingers:
+        case .rightMouseDown where byFingers, .otherMouseDown where byFingers:
             // A tap or press of the fingers that drive it, which only lifting them, or the left button, ends.
             break
         case .leftMouseDown where byFingers || pointerPicks(at: event.location):

@@ -613,8 +613,11 @@ struct FrameSchedulerStepTests {
 struct SlowStepTests {
     @Test func `An app slower than a step's allowance counts as slow until cleared`() {
         let windows = FakeWindows([10: .zero, 20: .zero])
-        windows.holds[10] = DispatchSemaphore(value: 0)
         let scheduler = windows.scheduler()
+        // Steps at their size first, so the next are moves.
+        scheduler.step([job(1, 10, 40), job(2, 20, 40)])
+        Thread.sleep(forTimeInterval: 0.05)
+        windows.holds[10] = DispatchSemaphore(value: 0)
         // Window 10's app is stuck past the allowance; window 20's moves at once.
         scheduler.step([job(1, 10, 50), job(2, 20, 50)])
         Thread.sleep(forTimeInterval: FrameScheduler.slowStep + 0.03)
@@ -624,6 +627,85 @@ struct SlowStepTests {
         #expect(!scheduler.isSlow(2))
         scheduler.clearSlow()
         #expect(!scheduler.isSlow(1))
+    }
+}
+
+extension SlowStepTests {
+    @Test func `An app slow only laying a window out at a new size is not slow`() {
+        let windows = FakeWindows([10: .zero])
+        windows.holds[10] = DispatchSemaphore(value: 0)
+        let scheduler = windows.scheduler()
+        // Its first step writes a new size, which the app takes its time over.
+        scheduler.step([job(1, 10, 50)])
+        Thread.sleep(forTimeInterval: FrameScheduler.slowStep + 0.03)
+        windows.holds[10]!.signal()
+        Thread.sleep(forTimeInterval: 0.05)
+        #expect(!scheduler.isSlow(1))
+    }
+
+    @Test func `A slow app that keeps up again for a run of steps is slow no longer`() {
+        let windows = FakeWindows([10: .zero])
+        let scheduler = windows.scheduler()
+        scheduler.step([job(1, 10, 40)])
+        Thread.sleep(forTimeInterval: 0.05)
+        windows.holds[10] = DispatchSemaphore(value: 0)
+        scheduler.step([job(1, 10, 50)])
+        Thread.sleep(forTimeInterval: FrameScheduler.slowStep + 0.03)
+        windows.holds[10]!.signal()
+        Thread.sleep(forTimeInterval: 0.05)
+        windows.holds[10] = nil
+        #expect(scheduler.isSlow(1))
+        for step in 1..<FrameScheduler.recoveredAfter {
+            scheduler.step([job(1, 10, 50 + CGFloat(step))])
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        #expect(scheduler.isSlow(1), "not yet")
+        #expect(scheduler.takeRecovered().isEmpty)
+        scheduler.step([job(1, 10, 80)])
+        Thread.sleep(forTimeInterval: 0.02)
+        #expect(!scheduler.isSlow(1))
+        #expect(scheduler.takeRecovered() == [1])
+        #expect(scheduler.takeRecovered().isEmpty, "handed on once")
+    }
+
+    @Test func `A slow app keeping up again after a new glide cleared it is handed on as recovered`() {
+        let windows = FakeWindows([10: .zero])
+        let scheduler = windows.scheduler()
+        scheduler.step([job(1, 10, 40)])
+        Thread.sleep(forTimeInterval: 0.05)
+        windows.holds[10] = DispatchSemaphore(value: 0)
+        scheduler.step([job(1, 10, 50)])
+        Thread.sleep(forTimeInterval: FrameScheduler.slowStep + 0.03)
+        windows.holds[10]!.signal()
+        Thread.sleep(forTimeInterval: 0.05)
+        windows.holds[10] = nil
+        #expect(scheduler.isSlow(1))
+        // A new glide: the measure starts over, but whoever holds to the app's windows still has it slow.
+        scheduler.clearSlow()
+        for step in 1...FrameScheduler.recoveredAfter {
+            scheduler.step([job(1, 10, 50 + CGFloat(step))])
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        #expect(scheduler.takeRecovered() == [1])
+    }
+
+    @Test func `An app slow to follow a size changing step after step is slow`() {
+        let windows = FakeWindows([10: .zero])
+        let scheduler = windows.scheduler()
+        func sized(_ width: CGFloat) -> FrameJob { FrameJob(pid: 1, id: 10, frame: CGRect(x: 0, y: 0, width: width, height: 100)) }
+        // The run's first size, the app laying the window out, is left out of the measure; the next is a step.
+        windows.holds[10] = DispatchSemaphore(value: 0)
+        scheduler.step([sized(100)])
+        Thread.sleep(forTimeInterval: FrameScheduler.slowStep + 0.03)
+        windows.holds[10]!.signal()
+        Thread.sleep(forTimeInterval: 0.05)
+        #expect(!scheduler.isSlow(1))
+        windows.holds[10] = DispatchSemaphore(value: 0)
+        scheduler.step([sized(110)])
+        Thread.sleep(forTimeInterval: FrameScheduler.slowStep + 0.03)
+        windows.holds[10]!.signal()
+        Thread.sleep(forTimeInterval: 0.05)
+        #expect(scheduler.isSlow(1))
     }
 }
 

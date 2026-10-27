@@ -50,6 +50,8 @@ final class WindowModel {
     /// When the table was seeded. Windows first seen after it were created while dinky ran.
     private(set) var seededAt = Date.distantFuture
     private var observers: [(WindowEvent) -> Void] = []
+    /// Whether dinky is gliding the window, so a move or resize of it is read for its frame alone (`refresh`).
+    var isGliding: (UInt32) -> Bool = { _ in false }
 
     private let ownPID = getpid()
 
@@ -102,8 +104,20 @@ final class WindowModel {
                 refresh(id, kind: event.kind)
             }
         case .windowDestroy:
-            // JankyBorders treats 1326 as "left this Space"; the window may still exist elsewhere.
-            if dinky_window_info(id).exists { refresh(id, kind: event.kind) } else { remove(id, kind: event.kind, pid: event.pid) }
+            // JankyBorders treats 1326 as "left this Space"; the window may still exist elsewhere. Or it is still being
+            // torn down, its close unheard, as a window closed behind a sheet on a Space not shown: looked at again a
+            // moment later, and gone then, removed.
+            if dinky_window_info(id).exists {
+                refresh(id, kind: event.kind)
+                for delay in [0.2, 1.0] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                        guard let self, windows[id] != nil, !dinky_window_info(id).exists else { return }
+                        remove(id, kind: .windowDestroy)
+                    }
+                }
+            } else {
+                remove(id, kind: event.kind, pid: event.pid)
+            }
         case .windowClose:
             remove(id, kind: event.kind, pid: event.pid)
         case .spaceChange, .spaceCreated, .spaceDestroyed, .frontApp:
@@ -142,6 +156,16 @@ final class WindowModel {
     /// Does nothing for a window the model does not know.
     func refresh(_ id: UInt32, kind: DinkyEventKind = .windowUpdate) {
         guard var window = windows[id] else { return }
+        // A window dinky is gliding tells of every step: only where it is now, nothing else about it can have changed by
+        // the move, nor its Space.
+        if kind == .windowMove || kind == .windowResize, isGliding(id) {
+            var frame = CGRect.zero
+            guard dinky_window_bounds(id, &frame) else { return remove(id, kind: kind) }
+            let before = window.frame
+            window.frame = frame
+            windows[id] = window
+            return publish(kind, .updated, window, pid: window.pid, frameBefore: before)
+        }
         let info = dinky_window_info(id)
         guard info.exists else { return remove(id, kind: kind) }
         let before = window.frame

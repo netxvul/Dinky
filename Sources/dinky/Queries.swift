@@ -36,8 +36,10 @@ func windowList() -> [WindowInfo] {
 
 /// The window a command acts on: the coordinator's focused window (the front app's frontmost document window
 /// on a visible Space), falling back to the front app's AX key window, which can still be one on another Space.
-func focusedWindowID() -> WindowID {
-    if let id = AppState.shared.coordinator?.focusedWindow, id != 0 { return id }
+/// For a query (`command: false`), the read that asks no app while a strip moves.
+func focusedWindowID(command: Bool = true) -> WindowID {
+    let coordinator = AppState.shared.coordinator
+    if let id = command ? coordinator?.commandFocusedWindow : coordinator?.focusedWindow, id != 0 { return id }
     return frontWindowID()
 }
 
@@ -60,7 +62,7 @@ func listWorkspaces(_ query: WorkspaceQuery) -> String {
 func listWindows(_ query: WindowQuery) -> Reply {
     let now = QueryState()
     let coordinator = AppState.shared.coordinator
-    let focused = query.focused ? focusedWindowID() : nil
+    let focused = query.focused ? focusedWindowID(command: false) : nil
     var rows: [(display: Int, workspace: Int, id: UInt32, values: [String: String])] = []
     for (window, sid) in now.windows {
         guard let i = now.displays.firstIndex(where: { $0.spaces.contains(sid) }) else { continue }

@@ -580,17 +580,26 @@ extension Workspace {
             focus(focused)
             return true
         }
-        return path.count > 1 && moveInTree(direction)
+        // Up or down within a column; in a pin, not where its new shape needs more room than the band can give.
+        guard path.count > 1 else { return false }
+        var moving = self
+        guard moving.moveInTree(direction) else { return false }
+        if moving.pinSide(of: focused) != nil, lacksRoom(after: moving) { return false }
+        self = moving
+        return true
     }
 
     /// `join-with` in the strip: left and right put the window into the neighbouring column, at that column's
-    /// width; up and down work as in any tree, within the column.
+    /// width; up and down work as in any tree, within the column, refused where they would make or merge columns, move
+    /// a window into or out of a pin, or leave the band short of room beside one.
     mutating func joinInStrip(_ direction: Direction) -> Bool {
         guard direction.orientation == .horizontal, let focused, let column = root.path(of: focused)?.first else {
             // Up or down, within a column: never into columns of their own, nor out of a pin or into one.
             var joining = self
             guard joining.joinInTree(direction), joining.root.children.count == root.children.count,
                   joining.pins == pins, Set(joining.pinnedWindows) == Set(pinnedWindows) else { return false }
+            // In a pin, not where its new shape needs more room than the band can give.
+            if let focused, joining.pinSide(of: focused) != nil, lacksRoom(after: joining) { return false }
             self = joining
             return true
         }

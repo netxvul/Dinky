@@ -73,6 +73,13 @@ public final class FrameScheduler: @unchecked Sendable {
     private let lock = NSLock()
     /// Processes that took longer than `slowStep` over an animation step since `clearSlow`.
     private var slow: Set<Int32> = []
+    /// Processes found slow that have since moved their windows in time for `recoveredAfter` steps running, till
+    /// `takeRecovered` hands them on.
+    private var quickAgain: Set<Int32> = []
+    /// How many animation steps in a row a slow process must keep up with to count as slow no longer.
+    public static let recoveredAfter = 6
+    /// Windows whose glide or held drag just set off (`startRun`): their next size is the app laying them out again.
+    private var runStarts: Set<WindowID> = []
     private var apps: [Int32: App] = [:]
     private var minimums: [WindowID: CGSize] = [:]
     /// Refusals seen once, by window, with the window's process: a minimum only when a later pass sees the same one.
@@ -170,8 +177,20 @@ public final class FrameScheduler: @unchecked Sendable {
     /// following it frame by frame would only show it stalling and jumping.
     public func isSlow(_ pid: Int32) -> Bool { lock.withLock { slow.contains(pid) } }
 
+    /// The processes no longer slow since this was last asked (see `recoveredAfter`), forgetting them.
+    public func takeRecovered() -> Set<Int32> {
+        lock.withLock {
+            defer { quickAgain = [] }
+            return quickAgain
+        }
+    }
+
     /// Forgets which processes were slow, as a new glide starts.
     public func clearSlow() { lock.withLock { slow = [] } }
+
+    /// The glides or held drags of `ids` set off: the first size each is stepped to is left out of the slow measure,
+    /// whatever sizes earlier steps left behind.
+    public func startRun(_ ids: [WindowID]) { lock.withLock { runStarts.formUnion(ids) } }
 
     /// Whether the process stopped answering and is being left alone: steps for it are dropped, and its frames wait,
     /// newest per window, until a read gets an answer. That read comes after one backoff, then two, four, and eight
@@ -268,7 +287,20 @@ public final class FrameScheduler: @unchecked Sendable {
             }
             if job.leadEdge == nil { app.ledIn[job.id] = nil; app.slack[job.id] = nil; app.probes[job.id] = nil }
             if let edge = job.leadEdge, job.frame.maxX > edge { job.frame.size.width += app.slack[job.id] ?? 0 }
-            if answered { answered = app.written[job.id] == job.frame.size ? move(job) : write(job) }
+            let runStart = lock.withLock { runStarts.remove(job.id) != nil }
+            if answered {
+                if app.written[job.id] == job.frame.size {
+                    answered = move(job)
+                } else {
+                    // The first size of a run is the app laying the window out again, not keeping up with the steps:
+                    // its time is left out of theirs. Sizes changing step after step are the steps, an app slow to
+                    // follow them slow.
+                    let first = runStart || (app.stepSizes[job.id]?.isEmpty ?? true)
+                    let resizing = Date()
+                    answered = write(job)
+                    if first { began += Date().timeIntervalSince(resizing) }
+                }
+            }
             app.written[job.id] = job.frame.size
             app.stepSizes[job.id, default: []].insert(job.frame.size)
             if answered, let edge = job.leadEdge, job.frame.maxX > edge, app.probes[job.id, default: 0] > 0 {
@@ -279,7 +311,19 @@ public final class FrameScheduler: @unchecked Sendable {
             if job.leadEdge != nil { lock.withLock { leadStep }?(job.id) }
             if !answered { stalled = job; break }
         }
-        if !steps.isEmpty, Date().timeIntervalSince(began) > Self.slowStep { lock.withLock { _ = slow.insert(app.pid) } }
+        if !steps.isEmpty {
+            if Date().timeIntervalSince(began) > Self.slowStep {
+                app.fastDrains = 0
+                lock.withLock { _ = slow.insert(app.pid) }
+            } else {
+                app.fastDrains += 1
+                // Quick again for a run of steps: no longer slow, whatever it was once, and once a run, a glide since
+                // `clearSlow` having maybe found it slow before.
+                if app.fastDrains == Self.recoveredAfter {
+                    lock.withLock { slow.remove(app.pid); quickAgain.insert(app.pid) }
+                }
+            }
+        }
         if let stalled {
             noteBusy(app, probe: stalled)
             return hold(jobs, of: app, reporting: batches)
@@ -484,6 +528,8 @@ public final class FrameScheduler: @unchecked Sendable {
         var steps: [FrameJob] = []
         /// While busy, how long until the next read to see if the process answers; 0 while it answers.
         var backoff: TimeInterval = 0
+        /// Drains of animation steps in a row done within `slowStep`. Queue only.
+        var fastDrains = 0
         /// The window read to see if a busy process answers again.
         var probe: FrameJob?
         /// The newest frame per window that a busy process has not been sent.

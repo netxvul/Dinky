@@ -498,3 +498,61 @@ public func pinRaiseOrder(ownPins: [WindowID], fronts: [WindowID], front: Window
     return ((ownPins + fronts).filter { $0 != front } + (keepsFront ? [front] : []) + otherPins + restore)
         .filter { seen.insert($0).inserted }
 }
+
+extension Workspace {
+    /// The strip as this snapshot had it before a display change took its windows away, its order, column widths and
+    /// pins: without the windows not in `present` (gone since, or taken elsewhere by hand), and with `newcomers`, windows
+    /// its Space has that the snapshot did not, after the others as new windows come in. Nothing held as it was taken:
+    /// no fingers' free scroll, no click's or drop's hold on the scroll, the strip where it showed.
+    public func restored(keeping present: Set<WindowID>, adding newcomers: [WindowID]) -> Workspace {
+        var workspace = self
+        let shown = workspace.shownOffset
+        workspace.freeScrollFrom = nil
+        workspace.holdsScroll = false
+        workspace.keepsScroll = false
+        workspace.scrollOffset = shown
+        for id in workspace.windows where !present.contains(id) { workspace.remove(id) }
+        for id in newcomers where !workspace.contains(id) { workspace.insert(id) }
+        return workspace
+    }
+}
+
+extension Workspace {
+    /// Whether this strip, as a display change left it, is to be put back as `snapshot` had it before: only where that
+    /// change touched its display (`displayChanged`), and then where its Space is another one now (`spaceChanged`), or
+    /// some of its windows went from it meanwhile (`windowsAway`) and it no longer has the snapshot's pins or column
+    /// order, as when macOS put them back and they came in as new columns.
+    public func needsRestore(to snapshot: Workspace, displayChanged: Bool, spaceChanged: Bool, windowsAway: Bool) -> Bool {
+        guard displayChanged else { return false }
+        if spaceChanged { return true }
+        guard windowsAway else { return false }
+        return !keepsShape(of: snapshot)
+    }
+
+    /// Whether this strip has `snapshot`'s pins and its columns in its order, at their widths, within a hundredth, and
+    /// in their modes: windows of either alone left out.
+    public func keepsShape(of snapshot: Workspace) -> Bool {
+        let shared = Set(windows).intersection(snapshot.windows)
+        struct Column {
+            let ids: [WindowID]
+            let width: Double
+            let mode: LayoutMode?
+        }
+        func columns(_ ws: Workspace) -> [Column] {
+            guard ws.isScrolling else { return [] }
+            return ws.root.children.indices.compactMap { i -> Column? in
+                let node = ws.root.children[i]
+                let ids = node.windows.filter(shared.contains)
+                guard !ids.isEmpty else { return nil }
+                var mode: LayoutMode?
+                if case .container(let c) = node { mode = c.mode }
+                return Column(ids: ids, width: ws.width(ofColumn: i), mode: mode)
+            }
+        }
+        let here = columns(self), there = columns(snapshot)
+        let pinsHere = pins.filter { shared.contains($0.value) }
+        let pinsThere = snapshot.pins.filter { shared.contains($0.value) }
+        guard pinsHere == pinsThere, here.count == there.count else { return false }
+        return zip(here, there).allSatisfy { a, b in a.ids == b.ids && abs(a.width - b.width) <= 0.01 && a.mode == b.mode }
+    }
+}
