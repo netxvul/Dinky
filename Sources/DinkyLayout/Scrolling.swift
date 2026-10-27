@@ -318,12 +318,23 @@ extension Workspace {
                 return span.minX < edge - slack && span.maxX > edge + slack
             }
         }
+        // Past an end of the strip, as when the column at it reaches into the gutter there, a candidate goes no further
+        // than the end: taken all the same where what it leaves of the straddler on screen is room the column in view
+        // nearest the wall reaches over (`reachesOver`).
+        func taken(_ c: CGFloat, straddling j: Int, at wall: Direction) -> CGFloat? {
+            if valid(c) { return c }
+            let clamped = min(max(c, limits.lowerBound), limits.upperBound)
+            guard clamped != c, valid(clamped) else { return nil }
+            let span = onScreen(j, at: clamped)
+            let left = wall == .right ? area.maxX - span.minX : span.maxX - area.minX
+            return reachesOver(left, in: area) ? clamped : nil
+        }
         func aligned(_ wall: Direction, from c: CGFloat) -> CGFloat {
             guard let j = straddler(wall, at: c) else { return c }
             let (start, width) = spans[j]
             let show = wall == .right ? start + width - area.width : start
             let past = wall == .right ? start - area.width : start + width
-            return valid(show) ? show : valid(past) ? past : c
+            return taken(show, straddling: j, at: wall) ?? taken(past, straddling: j, at: wall) ?? c
         }
         // The room bare between each wall and the nearest edge of a column shown whole on its half of the area.
         func bare(at c: CGFloat) -> CGFloat {
@@ -454,6 +465,13 @@ extension Workspace {
         return pinned + band.sorted { (abs($0 - active), $0) < (abs($1 - active), $1) }
     }
 
+    /// Whether the column in view nearest a wall reaches out over `span`, the part of the strip between that column's
+    /// span and the outer gap there, as a column's span is measured, half a gap of each neighbour in it: less than the
+    /// narrowest column takes in `area`. More is a column's worth, as columns of other widths can leave.
+    func reachesOver(_ span: CGFloat, in area: CGRect) -> Bool {
+        span < area.width * CGFloat(Self.minimumColumnWidth)
+    }
+
     /// The column in view nearest each wall that reaches out to the outer gap there, if any. A column scrolled out past
     /// a wall hides behind the column in view nearest it (see `parked`) and leaves the room it had: half an inner gap,
     /// and at the far end of the strip the gutter there too, which the end column reaches into instead of a column
@@ -462,9 +480,10 @@ extension Workspace {
     /// leave, and the column keeps its width. Not on a pinned side: the pin is there, a gap from the band.
     /// `edges` are each column's window edges where the strip has it.
     func reachingWalls(_ edges: [(left: CGFloat, right: CGFloat)], in area: CGRect) -> (left: Int?, right: Int?) {
-        let inset = stripInset, band = bandRange, most = area.width * CGFloat(Self.minimumColumnWidth)
+        let inset = stripInset, band = bandRange
         let inView = band.filter { edges[$0].left >= bounds.minX - 1 && edges[$0].right <= bounds.maxX + 1 }
-        let reaches = { (room: CGFloat) in room > 0 && room < most }
+        // The room from the column's window to the outer gap holds the column's own half gap too.
+        let reaches = { (room: CGFloat) in room > 0 && reachesOver(room - gaps.horizontal / 2, in: area) }
         let left = inView.first.flatMap { i in
             i > band.lowerBound && walls.contains(.left) && pinnedIndex(.left) == nil && reaches(edges[i].left - inset.minX)
                 ? i : nil
@@ -487,8 +506,11 @@ extension Workspace {
     public var stripColumns: [[WindowID]] { isScrolling ? root.children.map(\.windows) : [] }
 
     /// Where strip frames, such as `stripFrames` part way through a glide, go on screen: parked as `layout()` parks
-    /// them.
-    public func placeStrip(_ frames: [WindowID: CGRect]) -> [WindowID: CGRect] { parked(frames) }
+    /// them. With `resting`, the strip frames the glide ends at, a window hiding at a wall is sized by where the column
+    /// it hides behind rests, so it changes size once on the way rather than with every step of that column's.
+    public func placeStrip(_ frames: [WindowID: CGRect], resting: [WindowID: CGRect]? = nil) -> [WindowID: CGRect] {
+        parked(frames, resting: resting)
+    }
 
     /// `frame` moved back to a wall it would hang past, for one placed where the strip has it rather than parked: past
     /// the wall it would be on the other display, and macOS would take it to that display's Space. One wider than the
@@ -523,15 +545,17 @@ extension Workspace {
     /// its shadow shows in the outer gap, between the columns, or between the windows of a column of several. With
     /// no column in view it stays flush at the wall. While fullscreen pushes, the column in view is the fullscreen
     /// window's, so a window hiding behind it grows no bigger than it is rather than to the whole screen's size.
-    func parked(_ frames: [WindowID: CGRect]) -> [WindowID: CGRect] {
+    /// `resting`, the strip frames where a glide ends, sizes a window hiding at a wall (see `hiddenAtWall`).
+    func parked(_ frames: [WindowID: CGRect], resting: [WindowID: CGRect]? = nil) -> [WindowID: CGRect] {
         let keepsSize = !pushedColumns.isEmpty
         let columns = root.children.map { $0.windows.filter { frames[$0] != nil } }
-        let covers = columns.compactMap { ids -> CGRect? in
-            let rects = ids.map { frames[$0]! }
-            guard !rects.isEmpty, rects.allSatisfy({ $0.minX >= bounds.minX - 1 && $0.maxX <= bounds.maxX + 1 }) else { return nil }
-            return rects.max { $0.width * $0.height < $1.width * $1.height }
+        let covers = columns.compactMap { ids -> (id: WindowID, frame: CGRect)? in
+            let rects = ids.map { (id: $0, frame: frames[$0]!) }
+            let shown = rects.allSatisfy { $0.frame.minX >= bounds.minX - 1 && $0.frame.maxX <= bounds.maxX + 1 }
+            guard !rects.isEmpty, shown else { return nil }
+            return rects.max { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
         }
-        let left = covers.min { $0.minX < $1.minX }, right = covers.max { $0.maxX < $1.maxX }
+        let left = covers.min { $0.frame.minX < $1.frame.minX }, right = covers.max { $0.frame.maxX < $1.frame.maxX }
         // How much of each window must stay on screen at each edge, column by column from the screen outwards,
         // following how much the column in front shows. Rounded towards more of the window on screen, since part of
         // a point counts as none. A column stacked above the one in front of it (as on the far side of a long glide,
@@ -594,7 +618,10 @@ extension Workspace {
             let offLeft = frame.minX < bounds.minX - 1, offRight = frame.maxX > bounds.maxX + 1
             if offLeft != offRight, walls.contains(offLeft ? .left : .right), let cover = offLeft ? left : right,
                !hanging.contains(id) {
-                return (id, hiddenAtWall(id, frame, behind: cover, wall: offLeft ? .left : .right, keepsSize: keepsSize))
+                let wall: Direction = offLeft ? .left : .right
+                if let curtain = curtain(frame, at: wall, under: cover.frame), !keepsSize { return (id, curtain) }
+                return (id, hiddenAtWall(id, frame, behind: cover.frame, sizedBy: resting?[cover.id], wall: wall,
+                                         keepsSize: keepsSize))
             }
             var x = frame.minX
             x = min(x, walls.contains(.right) ? bounds.maxX - frame.width : rightLimit[id] ?? bounds.maxX - Self.peek)
@@ -603,16 +630,38 @@ extension Workspace {
         })
     }
 
+    /// Where a window part past `wall` stays as a curtain: at its size, held at the wall where the strip holds a
+    /// window that reaches it, under `cover`, the biggest window of the column in view nearest the wall, so the room
+    /// between that column and the wall shows the window rather than nothing. Only while the cover leaves room at the
+    /// wall, and the window's edge away from the wall, and its shadow, stay `shadowReach` inside the cover's far edge,
+    /// short of the column beyond; nil otherwise, and for a window wholly past the wall, inside the outer gap or
+    /// beyond, which hide behind the cover.
+    func curtain(_ frame: CGRect, at wall: Direction, under cover: CGRect) -> CGRect? {
+        let inset = stripInset, reach = Self.shadowReach
+        // Only where the cover leaves room at the wall: one reaching out to the outer gap covers it all.
+        let partly = wall == .right ? frame.minX < inset.maxX - 1 : frame.maxX > inset.minX + 1
+        let room = wall == .right ? cover.maxX < inset.maxX - 1 : cover.minX > inset.minX + 1
+        guard partly, room else { return nil }
+        let held = keptOffWalls(frame)
+        return wall == .right ? held.minX >= cover.minX + reach ? held : nil
+            : held.maxX <= cover.maxX - reach ? held : nil
+    }
+
     /// Where a window scrolled out past `wall` hides behind `cover`, the biggest window of the column in view nearest
     /// the wall: `shadowReach` inside it all round, so its shadow hides there too and the column shows one window's
     /// shadow, not one more for each window behind it. Grown to its minimum size, it stays inside the cover as far as
     /// it fits, and past that hangs out away from the wall and downwards. While fullscreen pushes (`keepsSize`), the
     /// cover is the fullscreen window, and it grows no bigger than it is, but still keeps `shadowReach` inside: as tall
     /// as the fullscreen window, it would show its shadow above and below it, one more for each window behind.
-    func hiddenAtWall(_ id: WindowID, _ frame: CGRect, behind cover: CGRect, wall: Direction, keepsSize: Bool) -> CGRect {
+    /// Sized by `rest`, where the cover rests at the end of a glide, it keeps that size as the cover changes its own on
+    /// the way, only made smaller where the cover is smaller than that now, so it never shows past it.
+    func hiddenAtWall(_ id: WindowID, _ frame: CGRect, behind cover: CGRect, sizedBy rest: CGRect? = nil,
+                      wall: Direction, keepsSize: Bool) -> CGRect {
         let minimum = minimumSizes[id] ?? .zero, margins = Self.shadowReach * 2
-        let width = max(min(keepsSize ? frame.width : .infinity, cover.width - margins), minimum.width, 1)
-        let height = max(min(keepsSize ? frame.height : .infinity, cover.height - margins), minimum.height, 1)
+        let room = CGSize(width: min(rest?.width ?? cover.width, cover.width),
+                          height: min(rest?.height ?? cover.height, cover.height))
+        let width = max(min(keepsSize ? frame.width : .infinity, room.width - margins), minimum.width, 1)
+        let height = max(min(keepsSize ? frame.height : .infinity, room.height - margins), minimum.height, 1)
         let x = (cover.midX - width / 2).rounded(), y = (cover.midY - height / 2).rounded()
         let inside = wall == .left ? max(min(x, cover.maxX - width), cover.minX)
             : min(max(x, cover.minX), cover.maxX - width)

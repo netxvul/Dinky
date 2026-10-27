@@ -1094,9 +1094,18 @@ final class Coordinator {
             forgetFrontRead()
             if activated {
                 focusing = (id, Date() + 0.5, true)
+                guard let key = placements[id]?.space, let workspace = workspaces[key] else { return }
+                // The passes before this one could not raise its app's other windows into order while another of them
+                // had focus (see `FrameApplier.raisingKeepsFocus`), as after a let-go of a strip of one app's windows,
+                // where the column coming into view stays under those hiding behind it: they go into order now.
+                let layout = workspace.layout()
+                let pids = Dictionary(uniqueKeysWithValues: layout.order.compactMap { id in
+                    id == self.dragging ? nil : self.model.windows[id].map { (id, $0.pid) }
+                })
+                applier.raiseIntoOrder(layout, pids: pids, front: id)
                 // Activated, its app brought it to the front: over a pin, as one wider than the band hangs, the pin goes
                 // back over it now, not only once the window events come.
-                if let key = placements[id]?.space, workspaces[key]?.pinnedWindows.isEmpty == false { raiseCoveredPins(in: key) }
+                if !workspace.pinnedWindows.isEmpty { raiseCoveredPins(in: key) }
             } else {
                 // Something else came to the front first: it has focus, and the trees follow it.
                 focusing = nil
@@ -1549,7 +1558,9 @@ final class Coordinator {
         let pids = Dictionary(uniqueKeysWithValues: strip.keys.compactMap { id in windows[id].map { (id, $0.pid) } })
         let targets = strip.filter { pids[$0.key] != nil }
         let starts = Dictionary(uniqueKeysWithValues: targets.map { id, target in (id, previous[id] ?? target) })
-        let place = { (frames: [WindowID: CGRect]) in workspace.placeStrip(strip.merging(frames) { $1 }) }
+        let place = { (frames: [WindowID: CGRect]) in
+            workspace.placeStrip(strip.merging(frames) { $1 }, resting: strip)
+        }
         if scroll.throughDock {
             animator.follow(scroll.key, from: starts, to: targets, pids: pids, sink: { ScriptingAddition.move(place($0)) })
         } else {
@@ -2266,7 +2277,7 @@ final class Coordinator {
                     input = ResizeOnce.guarded(input, lead: lead, left: beside.left, right: beside.right, gap: guardGap,
                                                shown: { $0 == lead ? frame : shown($0) })
                 }
-                var placed = workspace.placeStrip(input)
+                var placed = workspace.placeStrip(input, resting: strip)
                 // Placed as the guard has it: hanging past the screen edge at its size, such a window is no window
                 // scrolled out to be parked. Not past a wall, though: one coming back into view from behind the column
                 // at a wall starts where the strip had it, off the screen, which there is on the other display, and
