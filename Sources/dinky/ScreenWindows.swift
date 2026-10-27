@@ -17,9 +17,11 @@ func frontmostWindow(at point: CGPoint, in info: [[String: Any]]) -> ScreenWindo
     let screenSaver = Int(CGWindowLevelForKey(.screenSaverWindow)), floating = Int(CGWindowLevelForKey(.floatingWindow))
     let displays = NSScreen.screens.compactMap { $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID }
         .map(CGDisplayBounds)
-    // Near an edge only, where a Dock can be: its bar is the last read of it (`dockBarFrame`), which never waits.
-    let onDockBar = displays.contains { $0.contains(point) && $0.insetBy(dx: 200, dy: 200).contains(point) == false }
-        && dockBarFrame()?.contains(point) == true
+    // Near the bottom, left or right edge only, where a Dock can be, never the top: its bar is the last read of it
+    // (`dockBarFrame`), which never waits.
+    let onDockBar = displays.contains {
+        $0.contains(point) && (point.x < $0.minX + 200 || point.x > $0.maxX - 200 || point.y > $0.maxY - 200)
+    } && dockBarFrame()?.contains(point) == true
     for w in info {
         guard let layer = w[kCGWindowLayer as String] as? Int, layer < screenSaver,
               (w[kCGWindowAlpha as String] as? Double ?? 0) > 0, let owner = w[kCGWindowOwnerPID as String] as? pid_t,

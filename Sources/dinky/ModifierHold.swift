@@ -381,12 +381,13 @@ final class ModifierHold {
            let index = passedOn.firstIndex(where: { $0.type == type && $0.time == event.timestamp }) {
             // The swallower had it already. Where that was the press now waiting for its release, the window server
             // delivered it after the swallower took it, timed out: the app had the press, and its release goes to the
-            // app too, whether or not the timeout notice came first.
+            // app too, whether or not the timeout notice came first. Taken off first: letting go may remove the taps
+            // (`settle`), and `passedOn` with them.
+            passedOn.remove(at: index)
             if let press = swallowedPress, press.type == type, press.time == event.timestamp {
                 if type == .leftMouseDown, swallowUp { released() }
                 if type == .rightMouseDown, swallowRightUp { rightReleased() }
             }
-            passedOn.remove(at: index)
             return
         }
         if swallowing, Self.swallowable.contains(type) {
@@ -411,7 +412,7 @@ final class ModifierHold {
                     if press.type == .rightMouseDown, swallowRightUp { rightReleased() }
                 }
             }
-            // What went by meanwhile, the listener heard.
+            // What went by meanwhile, the listener heard. Not if the release above removed the taps (`settle`).
             if swallowing { swallower?.enable(true) }
             return true
         default:
@@ -429,6 +430,8 @@ final class ModifierHold {
         // its release. Old only from waiting before this tap, it is this tap's still.
         let canSwallow = eventAge(event) <= Self.timedOut || swallowerTimedOutAt < eventTime(event)
         let passes = handle(type, event, canSwallow: canSwallow) || !canSwallow
+        // Unless handling it removed the taps (`settle`): what they had goes with them.
+        guard swallower != nil else { return passes }
         if passedOn.count >= 32 { passedOn.removeFirst() }
         passedOn.append((type, event.timestamp))
         return passes
