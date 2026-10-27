@@ -196,6 +196,31 @@ struct SpanTests {
         }
     }
 
+    @Test(arguments: [PinSide.left, .right]) func `Beside a pin the band fills the rest of its display`(_ side: PinSide) {
+        let seam = Seam(left: rect(-1920, 30, 1920, 1170), right: rect(0, 39, 1800, 1066))
+        var ws = spanning(8, gaps: Gaps(all: 8), seam: seam, centring: .alwaysFill)
+        ws.walls = [.left, .right]
+        ws.focus(side == .left ? 1 : 8)
+        _ = ws.pin(side)
+        #expect(ws.pins[side] != nil)
+        for direction in Array(repeating: side == .left ? Direction.right : .left, count: 4) {
+            _ = ws.focus(direction)
+            let frames = ws.layout().frames
+            #expect(straddling(ws).isEmpty)
+            for (from, to) in [(CGFloat(-1912), CGFloat(-4)), (4, 1792)] {
+                // As a window hides behind others: the room the windows cover, gaps counted, none showing a sliver.
+                let shown = ws.windows.map { frames[$0]! }.filter { $0.minX >= from - 1 && $0.maxX <= to + 1 }
+                    .sorted { $0.minX < $1.minX }
+                var reach = from, covered: CGFloat = 0
+                for frame in shown where frame.maxX > reach {
+                    covered += frame.maxX - max(frame.minX - 8, reach)
+                    reach = frame.maxX
+                }
+                #expect(covered >= to - from - 1, "\(side) \(direction) to \(ws.focused!): \(from)...\(to) shows \(shown)")
+            }
+        }
+    }
+
     @Test func `Two strips coming together meet at the seam`() {
         var left = Workspace(bounds: rect(0, 0, 1000, 600), algorithm: .scrolling)
         left.insert(1)

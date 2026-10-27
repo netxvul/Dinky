@@ -465,8 +465,9 @@ extension Workspace {
         for i in stripStackingOrder {
             let trail = i < last || beside.right ? gap / 2 : 0
             let x = area.minX + spans[i].start - offset
-            let a = i == reaching.left ? reach.minX : edges[i].left
-            let b = i == reaching.right ? reach.maxX : edges[i].right
+            // Beside a pin, still half a gap from its own half (only across a seam does a column reach towards a pin).
+            let a = i != reaching.left ? edges[i].left : beside.left ? (reach.minX + gap / 2).rounded() : reach.minX
+            let b = i != reaching.right ? edges[i].right : beside.right ? (reach.maxX - gap / 2).rounded() : reach.maxX
             // A pinned column stays at its side whatever the scroll. Across a seam, as tall as the display it is on.
             let rect = onDisplay(band.contains(i) ? CGRect(x: a, y: area.minY, width: b - a, height: area.height)
                 : pinRect(i))
@@ -519,18 +520,26 @@ extension Workspace {
     /// or bare room past the strip's end, which the seam keeps it from scrolling into.
     /// `edges` are each column's window edges where the strip has it.
     func reachingWalls(_ edges: [(left: CGFloat, right: CGFloat)], in area: CGRect) -> (left: Int?, right: Int?) {
-        let inset = stripInset, band = bandRange
-        let inView = band.filter { edges[$0].left >= bounds.minX - 1 && edges[$0].right <= bounds.maxX + 1 }
-        // The room from the column's window to the outer gap holds the column's own half gap too.
-        let reaches = { (room: CGFloat) in room > 0 && reachesOver(room - gaps.horizontal / 2, in: area) }
+        let inset = stripInset, band = bandRange, half = gaps.horizontal / 2, beside = bandNeighbours
+        // Across a seam, in view beside a pin is clear of it: a column under it does not count.
+        let view = spansDisplays ? CGRect(x: inset.minX - (beside.left ? half : 0), y: bounds.minY,
+                                          width: inset.width + (beside.left ? half : 0) + (beside.right ? half : 0),
+                                          height: bounds.height) : bounds
+        let inView = band.filter { edges[$0].left >= view.minX - 1 && edges[$0].right <= view.maxX + 1 }
+        // The room from the column's window to the outer gap holds the column's own half gap too; beside a pin, the
+        // half gap the column keeps from it as well.
+        let reaches = { (room: CGFloat) in room > 0 && reachesOver(room - half, in: area) }
+        // Across a seam, beside a pin too: the band there has the room left that columns of the narrower display's
+        // shares leave, like any other edge.
         let left = inView.first.flatMap { i in
-            (i > band.lowerBound || spansDisplays) && (walls.contains(.left) || spansDisplays) && pinnedIndex(.left) == nil
-                && reaches(edges[i].left - inset.minX) ? i : nil
+            (i > band.lowerBound || spansDisplays) && (walls.contains(.left) || spansDisplays)
+                && (pinnedIndex(.left) == nil || spansDisplays)
+                && reaches(edges[i].left - inset.minX - (beside.left ? half : 0)) ? i : nil
         }
         let right = inView.last.flatMap { i in
             (i < band.upperBound - 1 || spansDisplays) && (walls.contains(.right) || spansDisplays)
-                && pinnedIndex(.right) == nil
-                && reaches(inset.maxX - edges[i].right) ? i : nil
+                && (pinnedIndex(.right) == nil || spansDisplays)
+                && reaches(inset.maxX - edges[i].right - (beside.right ? half : 0)) ? i : nil
         }
         return (left, right)
     }
