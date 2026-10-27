@@ -39,7 +39,8 @@ final class FrameApplier {
     private var raising = RaiseEchoes()
     /// Apps that did not answer a raise, till when they are left out of raises: on raiseQueue only.
     private var unansweredRaises: [pid_t: CFTimeInterval] = [:]
-    /// Counts the calls of `raiseIntoOrder(afterActivating:)`, so a newer one takes over: on raiseQueue only.
+    /// Counts the calls of `raiseIntoOrder(afterActivating:)` and `cancelActivationRaise`, so a newer one calls off
+    /// one still trying. Under `lock`.
     private var activationRaises = 0
     private static let minimumsURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("dinky/minimum-sizes.json")
@@ -206,25 +207,36 @@ final class FrameApplier {
     }
 
     /// Raise overlapping windows into the layout's order around `front`, a window dinky has just activated, once
-    /// raising keeps focus on it and their apps are free, trying again till then (see `RaiseAfterActivating`). A newer
-    /// call takes over from one still trying. Logged where anything was out of order, with whether it is after.
-    func raiseIntoOrder(afterActivating front: WindowID, _ layout: Layout, pids: [WindowID: pid_t]) {
+    /// raising keeps focus on it, trying again till then, an app not answering left out (see `RaiseAfterActivating`).
+    /// `pinned` is the strip's pins. A newer call, or `cancelActivationRaise`, calls off one still trying. Logged where
+    /// anything was out of order, with whether it is after.
+    func raiseIntoOrder(afterActivating front: WindowID, _ layout: Layout, pids: [WindowID: pid_t],
+                        pinned: Set<WindowID>) {
         let began = CACurrentMediaTime()
+        let generation = lock.withLock { activationRaises += 1; return activationRaises }
         raiseQueue.async { [unowned self] in
-            activationRaises += 1
-            attemptRaise(ActivationRaise(front: front, layout: layout, pids: pids, began: began,
-                                         generation: activationRaises), first: true)
+            attemptRaise(ActivationRaise(front: front, layout: layout, pids: pids, pinned: pinned, began: began,
+                                         generation: generation), first: true)
         }
+    }
+
+    /// Calls off an activation raise still trying (`raiseIntoOrder(afterActivating:)`), as what it was for has moved
+    /// on: another activation, fingers or the mouse taking hold of a strip or letting go, a drag or a click held.
+    func cancelActivationRaise() {
+        lock.withLock { activationRaises += 1 }
     }
 
     /// A call of `raiseIntoOrder(afterActivating:)` still trying: on raiseQueue only.
     private final class ActivationRaise {
-        let front: WindowID, layout: Layout, pids: [WindowID: pid_t], began: CFTimeInterval, generation: Int
+        let front: WindowID, layout: Layout, pids: [WindowID: pid_t], pinned: Set<WindowID>, began: CFTimeInterval
+        let generation: Int
         /// Why each try so far was not ready.
         var waits: [String] = []
 
-        init(front: WindowID, layout: Layout, pids: [WindowID: pid_t], began: CFTimeInterval, generation: Int) {
-            (self.front, self.layout, self.pids, self.began, self.generation) = (front, layout, pids, began, generation)
+        init(front: WindowID, layout: Layout, pids: [WindowID: pid_t], pinned: Set<WindowID>, began: CFTimeInterval,
+             generation: Int) {
+            (self.front, self.layout, self.pids, self.pinned) = (front, layout, pids, pinned)
+            (self.began, self.generation) = (began, generation)
         }
 
         func log(_ outcome: String) {
@@ -236,25 +248,28 @@ final class FrameApplier {
 
     /// One try of `raise`, on raiseQueue.
     private func attemptRaise(_ raise: ActivationRaise, first: Bool) {
-        guard raise.generation == activationRaises else { return raise.waits.isEmpty ? () : raise.log("superseded") }
+        guard raise.generation == lock.withLock({ activationRaises }) else {
+            return raise.waits.isEmpty ? () : raise.log("superseded")
+        }
         let focused = dinky_border_focused_window(), now = CACurrentMediaTime()
         unansweredRaises = unansweredRaises.filter { $0.value > now }
         let busy = Set(raise.pids.values.filter { scheduler.isBusy($0) || unansweredRaises[$0] != nil })
         let step = RaiseAfterActivating.step(
             raises: raise.layout.raises(current: onScreenOrder()), front: raise.front, owners: raise.pids,
-            focused: focused, focusedOwner: focused != 0 ? dinky_window_info(focused).pid : 0,
-            busy: { busy.contains($0) }, elapsed: now - raise.began)
+            focused: focused, focusedOwner: focused != 0 ? dinky_window_info(focused).pid : 0, pinned: raise.pinned,
+            busy: { busy.contains($0) }, elapsed: now - raise.began, retry: !first)
         let list = { (ids: [WindowID]) in ids.map(String.init).joined(separator: " ") }
         switch step {
         case .done:
             if !first { raise.log("in order meanwhile") }
-        case .raise(let ids):
+        case .raise(let ids, let busy):
             self.raise(ids, pids: raise.pids, front: raise.front)
+            let left = busy.isEmpty ? "" : " (busy \(busy.map(String.init).joined(separator: " ")) left out)"
             // Read again once the raise has settled, to tell whether it took.
             raiseQueue.asyncAfter(deadline: .now() + RaiseEchoes.settle) {
                 let after = raise.layout.raises(current: onScreenOrder())
                 let state = after.isEmpty ? "in order" : "still out of order: \(list(after))"
-                raise.log("raised \(list(ids)), \(state)")
+                raise.log("raised \(list(ids))\(left), \(state)")
             }
         case .wait(let wait):
             raise.waits.append(wait.description)
@@ -268,30 +283,32 @@ final class FrameApplier {
     }
 
     /// Order `covers`, the columns in view at a strip's walls, in front through Dock, which moves no focus and makes no
-    /// window key (see `Coordinator.orderWallCovers`), leaving out a cover of the app in front, which in front of its
-    /// focused window would read as focused, and one a window outside `strip`, at its level or below, overlaps in
-    /// front, as one floating over the strip, which stays in front. `told` hears, on the main thread, each cover's
+    /// window key (see `Coordinator.orderWallCovers`). That puts a cover in front of every window of its level, and
+    /// there it stays as the strip moves on, so a window of another app over the workspace, as one floating, would
+    /// end up under it: while any window of another process than dinky's at a cover's level shows over `bounds`, the
+    /// workspace's, covers are left out, which leaves ordering off on a Space that shows a floating window. dinky's
+    /// own windows, its borders, the hand and the edge glow, do not count. Also left out, a cover of the app in front,
+    /// which in front of its focused window would read as focused. `told` hears, on the main thread, each cover's
     /// outcome: ordered, or left out and why.
-    func orderWallCovers(_ covers: [WindowID], pids: [WindowID: pid_t], strip: Set<WindowID>,
+    func orderWallCovers(_ covers: [WindowID], pids: [WindowID: pid_t], strip: Set<WindowID>, bounds: CGRect,
                          told: @escaping (WindowID, String) -> Void) {
         raiseQueue.async {
             let focused = dinky_border_focused_window()
             let owner = focused != 0 ? dinky_window_info(focused).pid : 0
-            let stack = onScreenStack()
+            let stack = othersOnScreen()
             var ordered: [WindowID] = [], outcomes: [(WindowID, String)] = []
             for id in covers {
-                guard let at = stack.firstIndex(where: { $0.id == id }), let frame = stack[at].frame else {
+                guard let cover = stack.first(where: { $0.id == id }) else {
                     outcomes.append((id, "left out, not on screen"))
                     continue
                 }
-                let level = stack[at].layer
-                let over = stack[..<at].first { other in
-                    !strip.contains(other.id) && other.layer <= level && other.frame?.intersects(frame) == true
+                let over = stack.first { other in
+                    !strip.contains(other.id) && other.layer == cover.layer && other.frame?.intersects(bounds) == true
                 }
                 if owner != 0, pids[id] == owner {
                     outcomes.append((id, "left out, of the app in front"))
                 } else if let over {
-                    outcomes.append((id, "left out, under \(over.id), outside the strip"))
+                    outcomes.append((id, "left out, \(over.id) of another app shows over the workspace"))
                 } else {
                     ordered.append(id)
                     outcomes.append((id, "ordered in front"))
@@ -554,6 +571,19 @@ func onScreenStack() -> [(id: WindowID, layer: Int, frame: CGRect?)] {
     return info.compactMap { window in
         let frame = (window[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0) }
         return (window[kCGWindowNumber as String] as? WindowID).map { ($0, window[kCGWindowLayer as String] as? Int ?? 0, frame) }
+    }
+}
+
+/// `onScreenStack` without dinky's own windows, its borders, panels and glows, which no ordering need make way for.
+func othersOnScreen() -> [(id: WindowID, layer: Int, frame: CGRect?)] {
+    let own = getpid()
+    let info = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
+    return info.compactMap { window in
+        guard (window[kCGWindowOwnerPID as String] as? pid_t) != own else { return nil }
+        let bounds = window[kCGWindowBounds as String] as? NSDictionary
+        let frame = bounds.flatMap { CGRect(dictionaryRepresentation: $0) }
+        let layer = window[kCGWindowLayer as String] as? Int ?? 0
+        return (window[kCGWindowNumber as String] as? WindowID).map { ($0, layer, frame) }
     }
 }
 

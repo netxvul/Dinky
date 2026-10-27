@@ -201,6 +201,7 @@ extension Coordinator {
         guard dragging == nil, let home = placements[id]?.space, !isAnimating(id), mouseButtonDown,
               !MissionControl.shared.active else { return }
         windowPress = nil
+        applier.cancelActivationRaise()
         drag = DragSession(id: id, home: home, drops: config.drag.mouseModifier.isEmpty, grabbed: grabbed)
         // From where it was pressed to where it is, so a bug report shows how far a press went before it was a drag.
         let from = grabbed.flatMap { start in model.windows[id].map { ", from \(start) to \($0.frame)" } } ?? ""
@@ -230,6 +231,7 @@ extension Coordinator {
     /// Drags a tiled window grabbed with `[drag] mouse-modifier` at `frame` by `pointer`, until `endHeldDrag`.
     func startHeldDrag(of id: WindowID, at frame: CGRect, pointer: CGPoint) {
         guard dragging == nil, let home = placements[id]?.space else { return }
+        applier.cancelActivationRaise()
         drag = DragSession(id: id, home: home, drops: true, held: (frame, pointer), grabbed: frame)
         showDrag()
         watchDragEnd()
