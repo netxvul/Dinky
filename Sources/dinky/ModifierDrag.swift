@@ -28,6 +28,9 @@ final class ModifierDrag {
         let press: CGEventTimestamp
     }
 
+    /// A press older than this as it gets here was held up on the way: the app may have had it already.
+    private static let stalePress: CFTimeInterval = 0.25
+
     private unowned let coordinator: Coordinator
     private var modifiers: KeyCombo.Modifiers = []
     private var sides = ModifierSides()
@@ -103,9 +106,14 @@ final class ModifierDrag {
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             if armed { pressTap?.enable(true) }
+            // Off by a timeout, the app may have had the press meanwhile: its drag and release go on to it. Turned off
+            // as the modifiers were let go of, a window still held goes on.
+            if type == .tapDisabledByTimeout { release() }
         case .leftMouseDown:
             // A window still held lost its release.
             release()
+            // Held up on the way, the press may have reached the app already.
+            guard eventAge(event) <= Self.stalePress else { return true }
             return !take(at: event.location, flags: event.flags, press: event.timestamp)
         default:
             break
@@ -144,7 +152,7 @@ final class ModifierDrag {
     /// Grabs the window a press at `point` lands in, if exactly the modifiers are held and dinky places it, tiled
     /// or floating. Whether it did.
     private func take(at point: CGPoint, flags: CGEventFlags, press: CGEventTimestamp) -> Bool {
-        guard held(in: flags), coordinator.enabled, coordinator.dragging == nil, let window = window(at: point),
+        guard held(in: flags), coordinator.enabled, coordinator.dragging == nil, let window = pressedWindow(at: point),
               coordinator.model.windows[window.id]?.pid == window.pid, let placement = coordinator.placements[window.id],
               placement.floating || placement.space != nil, !coordinator.isAnimating(window.id) else { return false }
         grab = Grab(id: window.id, pid: window.pid,
@@ -187,28 +195,33 @@ final class ModifierDrag {
 
     /// Whether exactly the modifiers are held, each from a key its side allows.
     private func held(in flags: CGEventFlags) -> Bool {
-        modifierFlags.allSatisfy { flag in
-            modifiers.contains(flag.modifier)
-                ? flags.contains(flag.mask) && flag.isHeld(by: sides, in: flags)
-                : !flags.contains(flag.mask)
-        }
+        exactlyHeld(modifiers, sides: sides, in: flags)
     }
+}
 
-    /// The window a press at `point` lands in: the frontmost at the normal and floating levels, dinky's own
-    /// windows looked through, as the placeholders and the borders are clicked through.
-    private func window(at point: CGPoint) -> ScreenWindow? {
-        let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
-        let levels = 0...Int(CGWindowLevelForKey(.floatingWindow)), own = getpid()
-        let windows = info.compactMap { w -> ScreenWindow? in
-            guard let layer = w[kCGWindowLayer as String] as? Int, levels.contains(layer),
-                  (w[kCGWindowAlpha as String] as? Double ?? 0) > 0, let owner = w[kCGWindowOwnerPID as String] as? pid_t,
-                  owner != own, let id = w[kCGWindowNumber as String] as? UInt32,
-                  let bounds = w[kCGWindowBounds as String] as? NSDictionary,
-                  let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return nil }
-            return ScreenWindow(id: id, pid: owner, layer: layer, frame: frame)
-        }
-        return windowAt(point, in: windows)
+/// Whether exactly `modifiers` are held in `flags`, each from a key its side allows.
+func exactlyHeld(_ modifiers: KeyCombo.Modifiers, sides: ModifierSides, in flags: CGEventFlags) -> Bool {
+    modifierFlags.allSatisfy { flag in
+        modifiers.contains(flag.modifier)
+            ? flags.contains(flag.mask) && flag.isHeld(by: sides, in: flags)
+            : !flags.contains(flag.mask)
     }
+}
+
+/// The window a press at `point` lands in: the frontmost at the normal and floating levels, dinky's own windows looked
+/// through, as the placeholders and the borders are clicked through. `info`, a read of `onScreenWindowInfo` to share.
+func pressedWindow(at point: CGPoint, in info: [[String: Any]]? = nil) -> ScreenWindow? {
+    let info = info ?? onScreenWindowInfo()
+    let levels = 0...Int(CGWindowLevelForKey(.floatingWindow)), own = getpid()
+    let windows = info.compactMap { w -> ScreenWindow? in
+        guard let layer = w[kCGWindowLayer as String] as? Int, levels.contains(layer),
+              (w[kCGWindowAlpha as String] as? Double ?? 0) > 0, let owner = w[kCGWindowOwnerPID as String] as? pid_t,
+              owner != own, let id = w[kCGWindowNumber as String] as? UInt32,
+              let bounds = w[kCGWindowBounds as String] as? NSDictionary,
+              let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return nil }
+        return ScreenWindow(id: id, pid: owner, layer: layer, frame: frame)
+    }
+    return windowAt(point, in: windows)
 }
 
 private func dragModifierCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,

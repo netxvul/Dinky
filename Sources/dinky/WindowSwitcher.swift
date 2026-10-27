@@ -119,6 +119,12 @@ final class WindowSwitcher {
     }
 
     var isShowing: Bool { hold.isShowing }
+    /// Its modifier, down now, was put to another use, as the mouse scrolling a strip with it: no tap (`ModifierHold`).
+    func spoilTap() { hold.spoilTap() }
+    /// Whether the capsule, shown from the keyboard, is under `point`: a click there picks. A glance never is.
+    func covers(_ point: CGPoint) -> Bool { hold.covers(point) }
+    /// While a glance is being shown.
+    private var glancing = false
     /// Shown, held, from a binding or as a glance: thumbnails and titles landing late still go in.
     private var isUp: Bool { isShowing || glanceEnd != nil }
     /// Whether the capsule, shown from the keyboard, takes this key.
@@ -143,8 +149,7 @@ final class WindowSwitcher {
         self.config = config.windowSwitcher
         let modifier = self.config.enabled ? self.config.modifier : .none
         let byHand = modifier != .none || config.binds("window-switcher")
-        let glances = config.gestures.scroll.enabled && config.gestures.scroll.showSwitcher
-            && self.config.layouts.contains(.scrolling)
+        let glances = config.gestures.stripGlances && self.config.layouts.contains(.scrolling)
         enabled = self.config.enabled && (byHand || glances)
         glancesOnly = !byHand
         hold.update(modifier: modifier, sides: config.modifiers, delayMs: self.config.delayMs,
@@ -182,7 +187,8 @@ final class WindowSwitcher {
         let pointer = (CGEvent(source: nil)?.location).flatMap { display.frame.contains($0) ? $0 : nil }
             ?? CGPoint(x: visible.midX, y: visible.midY)
         showing = true
-        defer { showing = false }
+        glancing = true
+        defer { (showing, glancing) = (false, false) }
         // The pictures kept as each window last lost focus: capturing them all now would load the window server just
         // as the strip glides and its window takes focus.
         guard fill(display, pointer: pointer, pick: pick, fresh: false, coordinator) else {
@@ -474,6 +480,8 @@ final class WindowSwitcher {
 
     /// Fades the capsule in, rising a few points, where `origin` says.
     private func present() {
+        // No hand of the mouse's over the capsule; a glance after a let-go covers nothing a press takes.
+        if !glancing { AppState.shared.coordinator?.mouseCursorInterrupted() }
         let panel = glass.panel
         generation += 1
         let primary = NSScreen.screens.first?.frame.maxY ?? 0

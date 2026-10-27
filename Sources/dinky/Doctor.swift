@@ -68,6 +68,16 @@ func runDoctor(_ args: [String]) -> Int32 {
                         : warn("\(fingers)-finger strip scrolls also \(clashes.joined(separator: " and ")) in macOS; "
                                + "turn that off in System Settings > Trackpad > More Gestures, or change [gestures.scroll] fingers")
     }
+    let mouseScroll = config.gestures.mouseScroll
+    if mouseScroll.enabled, mouseScroll.wheel {
+        let name = mouseScroll.modifier.name
+        if let zoom = zoomScrollModifiers(), !zoom.isEmpty, mouseScroll.modifier.isSuperset(of: zoom) {
+            warn("Zoom's \"Use scroll gesture with modifier keys to zoom\" uses \(zoom.name), held for [gestures.mouse-scroll] too ('\(name)'), "
+                 + "so a scroll with it zooms the screen; turn it off or change its modifier in System Settings > Accessibility > Zoom > Advanced")
+        } else {
+            ok("scrolling strips with \(name) and the mouse wheel clashes with nothing macOS does")
+        }
+    }
 
     // macOS's own tiling by dragging a window to a screen edge, or the top, fights a drag dinky drops.
     let edgeTiling = ["EnableTilingByEdgeDrag": "to a screen edge", "EnableTopTilingByEdgeDrag": "to the top of the screen"]
@@ -107,6 +117,22 @@ func runDoctor(_ args: [String]) -> Int32 {
 
     print("\(errors) errors, \(warnings) warnings")
     return errors == 0 ? 0 : 1
+}
+
+/// The modifiers Accessibility's Zoom scrolls to zoom with, when "Use scroll gesture with modifier keys to zoom" is on;
+/// nil when it is off. Control unless changed.
+func zoomScrollModifiers() -> KeyCombo.Modifiers? {
+    let domain = "com.apple.universalaccess" as CFString
+    guard CFPreferencesCopyAppValue("closeViewScrollWheelToggle" as CFString, domain) as? Bool == true else { return nil }
+    let mask = CFPreferencesCopyAppValue("closeViewScrollWheelModifiersInt" as CFString, domain) as? Int
+        ?? Int(CGEventFlags.maskControl.rawValue)
+    let flags = CGEventFlags(rawValue: UInt64(mask))
+    var modifiers: KeyCombo.Modifiers = []
+    if flags.contains(.maskAlternate) { modifiers.insert(.alt) }
+    if flags.contains(.maskControl) { modifiers.insert(.ctrl) }
+    if flags.contains(.maskCommand) { modifiers.insert(.cmd) }
+    if flags.contains(.maskShift) { modifiers.insert(.shift) }
+    return modifiers
 }
 
 /// A boolean setting of macOS's window tiling (com.apple.WindowManager), nil when unset, which is on.

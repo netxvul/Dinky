@@ -137,7 +137,7 @@ extension Coordinator {
         // tells of each frame dinky sent it.
         if dragging == id { return drag?.held == nil ? showDrag() : () }
         // Only tiled windows have a Space.
-        guard dragging == nil, let home = placements[id]?.space, !isAnimating(id), mouseButtonDown,
+        guard dragging == nil, !mouseDragsStrip, let home = placements[id]?.space, !isAnimating(id), mouseButtonDown,
               !MissionControl.shared.active, let window = model.windows[id], let pointer = CGEvent(source: nil)?.location
         else { return }
         let away = window.spaceID != home

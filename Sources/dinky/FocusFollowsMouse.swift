@@ -202,7 +202,8 @@ private struct OnScreenWindows {
             if w[kCGWindowOwnerPID as String] as? pid_t == own {
                 // dinky is an accessory app, so a dialog of its own never makes it the front app: the front
                 // app's focused window stays a tile, and only the window list shows the dialog.
-                if AppState.shared.coordinator?.isBorderWindow(id ?? 0) != true { blocked = true }
+                // The mouse's hand over a strip window is looked through too.
+                if AppState.shared.coordinator?.isBorderWindow(id ?? 0) != true, !GrabCursor.isPanel(id ?? 0) { blocked = true }
                 continue
             }
             guard let id, (w[kCGWindowAlpha as String] as? Double ?? 0) > 0,

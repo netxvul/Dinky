@@ -250,6 +250,17 @@ struct SchemaTests {
         haptic = false
         haptic-strength = 'strong'
 
+        [gestures.mouse-scroll]
+        enabled = true
+        modifier = 'ctrl-shift'
+        drag = true
+        wheel = false
+        cursor = false
+        speed = 1.5
+        show-switcher = true
+        switcher-ms = 500
+        edge-flash = true
+
         [floating]
         move-step = 20
         resize-anchor = 'top-left'

@@ -173,6 +173,20 @@ public struct Config: Equatable {
             throw ConfigError(path: "drag.mouse-modifier", "[\(table)] already uses '\(modifier.rawValue)'")
         }
         gestures = try t.table("gestures").map(Gestures.init) ?? gestures
+        // One press with the same modifiers cannot both drag a window and scroll the strip; nor can a switcher's
+        // modifier, held alone, show its capsule ahead of them. A switcher's double-tapped can serve both: held to
+        // scroll, it is no tap.
+        let scrollModifier = gestures.mouseScroll.modifier
+        if gestures.mouseScroll.enabled {
+            if gestures.mouseScroll.drag, scrollModifier == drag.mouseModifier {
+                throw ConfigError(path: "gestures.mouse-scroll.modifier", "[drag] mouse-modifier already uses '\(scrollModifier.name)'")
+            }
+            for (table, modifier, trigger) in [("window-switcher", windowSwitcher.modifier, windowSwitcher.trigger),
+                                               ("workspace-switcher", workspaceSwitcher.modifier, workspaceSwitcher.trigger)]
+            where modifier != .none && trigger == .hold && modifier.modifiers(hyper: modifiers.hyper) == scrollModifier {
+                throw ConfigError(path: "gestures.mouse-scroll.modifier", "[\(table)] already uses '\(modifier.rawValue)'")
+            }
+        }
         // Each haptic left unset takes the top-level one.
         gestures.scroll.haptic = gestures.scroll.ownHaptic ?? haptic
         gestures.scroll.hapticStrength = gestures.scroll.ownHapticStrength ?? hapticStrength
@@ -297,6 +311,11 @@ public struct Scrolling: Equatable {
 /// `[modifiers] hyper`'s modifiers held together, from either side.
 public enum SwitcherModifier: String, CaseIterable {
     case none, alt, ctrl, cmd, shift, hyper
+
+    /// The modifiers held for it, `hyper` its `[modifiers] hyper` ones; none for `none`.
+    public func modifiers(hyper: KeyCombo.Modifiers) -> KeyCombo.Modifiers {
+        self == .hyper ? hyper : KeyCombo.Modifiers(names: rawValue) ?? []
+    }
 }
 
 /// A layout the switcher shows for: `tiles` is dwindle, `accordion` a dwindle accordion root, `free` a workspace dinky
@@ -476,31 +495,45 @@ public enum GestureSwipe: String, CaseIterable {
 }
 
 /// `[gestures]`: swipes on the trackpad in `[gestures.trackpad]` and on a Magic Mouse in `[gestures.mouse]`, each
-/// running commands as a key binding does, and fingers on the trackpad scrolling a strip in `[gestures.scroll]`.
+/// running commands as a key binding does, fingers on the trackpad scrolling a strip in `[gestures.scroll]`, and the
+/// mouse scrolling one with a modifier held in `[gestures.mouse-scroll]`.
 public struct Gestures: Equatable {
     public var trackpad = TrackpadSwipes()
     public var mouse = MouseSwipes()
     public var scroll = ScrollGesture()
+    public var mouseScroll = MouseScroll()
 
     public init() {}
 
     init(_ t: Table) throws {
-        for key in t.keys where !["trackpad", "mouse", "scroll"].contains(key) {
+        for key in t.keys where !["trackpad", "mouse", "scroll", "mouse-scroll"].contains(key) {
             guard key == "fingers" || key == "distance" || key == "step" || GestureSwipe(rawValue: key) != nil else {
-                throw ConfigError(path: t.path(key), "'\(key)' is not one of 'trackpad', 'mouse', 'scroll'")
+                throw ConfigError(path: t.path(key), "'\(key)' is not one of 'trackpad', 'mouse', 'scroll', 'mouse-scroll'")
             }
             throw ConfigError(path: t.path(key), "'\(key)' goes in [gestures.trackpad] now")
         }
         trackpad = try t.table("trackpad").map(TrackpadSwipes.init) ?? trackpad
         mouse = try t.table("mouse").map(MouseSwipes.init) ?? mouse
         scroll = try t.table("scroll").map(ScrollGesture.init) ?? scroll
+        mouseScroll = try t.table("mouse-scroll").map(MouseScroll.init) ?? mouseScroll
         try t.done()
+        // What it leaves unset is the fingers'.
+        mouseScroll.showSwitcher = mouseScroll.ownShowSwitcher ?? scroll.showSwitcher
+        mouseScroll.switcherMs = mouseScroll.ownSwitcherMs ?? scroll.switcherMs
+        mouseScroll.edgeFlash = mouseScroll.ownEdgeFlash ?? scroll.edgeFlash
         // The same fingers across would scroll the strip and swipe at once.
         if scroll.enabled, trackpad.enabled, scroll.fingers == trackpad.fingers,
            let across = [GestureSwipe.swipeLeft, .swipeRight].first(where: { trackpad.swipes[$0] != nil }) {
             throw ConfigError(path: t.path("scroll.fingers"),
                               "[gestures.trackpad] already uses \(trackpad.fingers) fingers for '\(across.rawValue)'; use other fingers, or bind only swipe-up and swipe-down there")
         }
+    }
+
+    /// Whether a strip let go of can show the window switcher at a glance: fingers that scroll it with
+    /// `show-switcher`, or the mouse with its own.
+    public var stripGlances: Bool {
+        (scroll.enabled && scroll.showSwitcher)
+            || (mouseScroll.enabled && (mouseScroll.drag || mouseScroll.wheel) && mouseScroll.showSwitcher)
     }
 
     /// What the trackpad swipes run; none while it is off.
@@ -573,6 +606,55 @@ public struct MouseSwipes: Equatable {
         guard (2...30).contains(step) else { throw ConfigError(path: t.path("step"), "must be 2 to 30") }
         let own = try gestureSwipes(t, besides: ["enabled", "fingers", "distance", "step"])
         swipes = own.isEmpty ? nil : own
+        try t.done()
+    }
+}
+
+/// `[gestures.mouse-scroll]`: with exactly `modifier` held, the mouse scrolls the strip under the pointer as fingers
+/// on the trackpad do in `[gestures.scroll]`: a press dragged across takes hold of it, the strip following the pointer
+/// `speed` times as far, and a stroke that reports scroll phases, a swipe on a Magic Mouse or a trackpad or a smooth
+/// wheel whose driver sends them, scrolls it by its own deltas; let go, it coasts and settles as theirs does. Any other
+/// wheel focuses the column beside for each notch. `show-switcher`, `switcher-ms` and `edge-flash` are `[gestures.scroll]`'s unless set. No haptic: a mouse has
+/// nothing to tap, and the trackpad is not under the hand. Off until `enabled`.
+public struct MouseScroll: Equatable {
+    public var enabled = false
+    /// Held exactly, the mouse scrolls the strip.
+    public var modifier: KeyCombo.Modifiers = [.ctrl, .alt]
+    /// Whether a press dragged across scrolls it, and whether the wheel or a swipe does.
+    public var drag = true
+    public var wheel = true
+    /// Whether the pointer shows a hand over what a press with the modifier would drag, closed while it does.
+    public var cursor = true
+    /// How far the strip goes for each point the pointer or the wheel moves.
+    public var speed = 1.0
+    public var showSwitcher = true
+    public var switcherMs = 1000
+    public var edgeFlash = true
+    var ownShowSwitcher: Bool?
+    var ownSwitcherMs: Int?
+    var ownEdgeFlash: Bool?
+
+    public init() {}
+
+    init(_ t: Table) throws {
+        enabled = try t.bool("enabled") ?? enabled
+        if let names = try t.string("modifier") {
+            guard let modifiers = KeyCombo.Modifiers(names: names), !modifiers.isEmpty else {
+                throw ConfigError(path: t.path("modifier"), "'\(names)' is not modifiers (alt, ctrl, cmd, shift) joined by '-'")
+            }
+            modifier = modifiers
+        }
+        drag = try t.bool("drag") ?? drag
+        wheel = try t.bool("wheel") ?? wheel
+        cursor = try t.bool("cursor") ?? cursor
+        speed = try t.double("speed") ?? speed
+        guard (0.25...5).contains(speed) else { throw ConfigError(path: t.path("speed"), "must be 0.25 to 5") }
+        ownShowSwitcher = try t.bool("show-switcher")
+        ownEdgeFlash = try t.bool("edge-flash")
+        ownSwitcherMs = try t.int("switcher-ms")
+        if let ms = ownSwitcherMs, !(100...5000).contains(ms) {
+            throw ConfigError(path: t.path("switcher-ms"), "must be 100 to 5000")
+        }
         try t.done()
     }
 }

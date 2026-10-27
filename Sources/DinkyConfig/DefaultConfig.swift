@@ -169,6 +169,16 @@ extension Config {
     # edge-flash = true             # pushed on past an end, the display's side there glows
     # haptic = true                 # the trackpad ticks as each column comes to the middle; unset is the top-level haptic
     # haptic-strength = 'medium'     # unset is the top-level haptic-strength
+    # [gestures.mouse-scroll]       # the mouse scrolls a strip with a modifier held, off by default
+    # enabled = true
+    # modifier = 'ctrl-alt'         # held exactly; not [drag] mouse-modifier or a held switcher's modifier (a double-tapped one's can be)
+    # drag = true                   # press over a window and drag across
+    # wheel = true                  # a stroke with scroll phases (Magic Mouse, trackpad) scrolls; other wheels step a column a notch
+    # cursor = true                 # a hand over what a press would drag, closed while it does; nothing without drag
+    # speed = 1                     # how far the strip goes for each point, 0.25 to 5; 1 follows the pointer
+    # show-switcher = true          # unset is [gestures.scroll]'s
+    # switcher-ms = 1000            # unset is [gestures.scroll]'s
+    # edge-flash = true             # unset is [gestures.scroll]'s
 
     # Which key of each pair bindings answer to: both | left | right. With alt = 'left',
     # right Option still types special characters.

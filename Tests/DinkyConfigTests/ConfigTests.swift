@@ -510,6 +510,84 @@ struct ConfigTests {
         }
     }
 
+    @Test func `Mouse scroll`() throws {
+        let defaults = Config().gestures.mouseScroll
+        #expect(!defaults.enabled)
+        #expect(defaults.modifier == [.ctrl, .alt])
+        #expect(defaults.drag && defaults.wheel && defaults.cursor)
+        #expect(defaults.speed == 1)
+        #expect(defaults.showSwitcher && defaults.switcherMs == 1000 && defaults.edgeFlash)
+        let inherits = try Config.parse("""
+            [gestures.scroll]
+            show-switcher = false
+            switcher-ms = 600
+            edge-flash = false
+            [gestures.mouse-scroll]
+            enabled = true
+            modifier = 'cmd-alt'
+            drag = false
+            cursor = false
+            speed = 2
+            """).gestures.mouseScroll
+        #expect(inherits.enabled && !inherits.drag && inherits.wheel && !inherits.cursor, "cursor without drag, no error")
+        #expect(inherits.modifier == [.cmd, .alt])
+        #expect(inherits.speed == 2)
+        #expect(!inherits.showSwitcher && inherits.switcherMs == 600 && !inherits.edgeFlash, "unset, the fingers' own")
+        let own = try Config.parse("""
+            [gestures.scroll]
+            show-switcher = false
+            [gestures.mouse-scroll]
+            show-switcher = true
+            switcher-ms = 300
+            edge-flash = false
+            """).gestures.mouseScroll
+        #expect(own.showSwitcher && own.switcherMs == 300 && !own.edgeFlash)
+        assertError("[gestures.mouse-scroll]\nmodifier = 'none'\n", path: "gestures.mouse-scroll.modifier", line: 2, contains: "is not modifiers")
+        assertError("[gestures.mouse-scroll]\nmodifier = 'ctrl-h'\n", path: "gestures.mouse-scroll.modifier", line: 2, contains: "is not modifiers")
+        assertError("[gestures.mouse-scroll]\nspeed = 9\n", path: "gestures.mouse-scroll.speed", line: 2, contains: "0.25 to 5")
+        assertError("[gestures.mouse-scroll]\nswitcher-ms = 50\n", path: "gestures.mouse-scroll.switcher-ms", line: 2, contains: "100 to 5000")
+        assertError("[gestures.mouse-scroll]\nhaptic = true\n", path: "gestures.mouse-scroll.haptic", line: 2, contains: "unknown key")
+    }
+
+    @Test func `Either scroll can glance at a strip`() throws {
+        #expect(!Config().gestures.stripGlances, "both off")
+        #expect(try Config.parse("[gestures.scroll]\nenabled = true\n").gestures.stripGlances)
+        #expect(try Config.parse("[gestures.mouse-scroll]\nenabled = true\n").gestures.stripGlances)
+        #expect(try !Config.parse("[gestures.mouse-scroll]\nenabled = true\nshow-switcher = false\n").gestures.stripGlances)
+        #expect(try !Config.parse("[gestures.mouse-scroll]\nenabled = true\ndrag = false\nwheel = false\n").gestures.stripGlances)
+        #expect(try !Config.parse("[gestures.scroll]\nshow-switcher = false\n[gestures.mouse-scroll]\nenabled = true\n").gestures.stripGlances,
+                "the mouse's show-switcher is the fingers' unless set")
+    }
+
+    @Test func `Mouse scroll's modifier is its own`() throws {
+        assertError("[drag]\nmouse-modifier = 'ctrl-alt'\n[gestures.mouse-scroll]\nenabled = true\n",
+                    path: "gestures.mouse-scroll.modifier", contains: "[drag] mouse-modifier already uses 'alt-ctrl'")
+        assertError("[window-switcher]\nmodifier = 'cmd'\n[gestures.mouse-scroll]\nenabled = true\nmodifier = 'cmd'\n",
+                    path: "gestures.mouse-scroll.modifier", contains: "[window-switcher] already uses 'cmd'")
+        // A switcher that double-taps it can share it: held to scroll, it is no tap.
+        #expect(throws: Never.self) {
+            try Config.parse("[window-switcher]\nmodifier = 'alt'\ntrigger = 'double-tap'\n[gestures.mouse-scroll]\nenabled = true\nmodifier = 'alt'\n")
+        }
+        #expect(throws: Never.self) {
+            try Config.parse("[workspace-switcher]\nmodifier = 'cmd'\ntrigger = 'double-tap'\n[gestures.mouse-scroll]\nenabled = true\nmodifier = 'cmd'\n")
+        }
+        #expect(throws: Never.self) {
+            try Config.parse("[switcher]\ntrigger = 'double-tap'\n[workspace-switcher]\nmodifier = 'hyper'\n[gestures.mouse-scroll]\nenabled = true\nmodifier = 'alt-ctrl-cmd-shift'\n")
+        }
+        assertError("[window-switcher]\nmodifier = 'alt'\ntrigger = 'hold'\n[gestures.mouse-scroll]\nenabled = true\nmodifier = 'alt'\n",
+                    path: "gestures.mouse-scroll.modifier", contains: "[window-switcher] already uses 'alt'")
+        assertError("[workspace-switcher]\nmodifier = 'ctrl'\n[gestures.mouse-scroll]\nenabled = true\nmodifier = 'ctrl'\n",
+                    path: "gestures.mouse-scroll.modifier", contains: "[workspace-switcher] already uses 'ctrl'")
+        assertError("[workspace-switcher]\nmodifier = 'hyper'\n[gestures.mouse-scroll]\nenabled = true\nmodifier = 'alt-ctrl-cmd-shift'\n",
+                    path: "gestures.mouse-scroll.modifier", contains: "[workspace-switcher] already uses 'hyper'")
+        // Off, or with no drag to share a press with, nothing to clash.
+        #expect(throws: Never.self) { try Config.parse("[drag]\nmouse-modifier = 'ctrl-alt'\n[gestures.mouse-scroll]\nmodifier = 'ctrl-alt'\n") }
+        #expect(throws: Never.self) {
+            try Config.parse("[drag]\nmouse-modifier = 'ctrl-alt'\n[gestures.mouse-scroll]\nenabled = true\ndrag = false\n")
+        }
+        #expect(throws: Never.self) { try Config.parse("[window-switcher]\nmodifier = 'alt'\n[gestures.mouse-scroll]\nenabled = true\n") }
+    }
+
     @Test func `Strip scrolls clash with macOS's own swipes across`() {
         #expect(ScrollGesture.clashes(fingers: 4, three: 0, four: 0, drag: false) == [])
         #expect(ScrollGesture.clashes(fingers: 4, three: 0, four: 2, drag: false) == ["switch Spaces"])

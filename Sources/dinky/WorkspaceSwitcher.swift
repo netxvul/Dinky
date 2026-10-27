@@ -65,6 +65,10 @@ final class WorkspaceSwitcher {
     }
 
     var isShowing: Bool { hold.isShowing }
+    /// Its modifier, down now, was put to another use, as the mouse scrolling a strip with it: no tap (`ModifierHold`).
+    func spoilTap() { hold.spoilTap() }
+    /// Whether the capsule, shown from the keyboard, is under `point`: a click there picks. A glance never is.
+    func covers(_ point: CGPoint) -> Bool { hold.covers(point) }
     /// Whether the capsule, shown from the keyboard, takes this key.
     func takes(_ event: CGEvent) -> Bool { hold.takes(event) }
     /// Whether a modifier or a key binding can show the capsule, so thumbnails are worth keeping.
@@ -285,6 +289,8 @@ final class WorkspaceSwitcher {
 
     /// Fades the capsule in, rising a few points, where `origin` says.
     private func present() {
+        // No hand of the mouse's over the capsule.
+        AppState.shared.coordinator?.mouseCursorInterrupted()
         let panel = glass.panel
         generation += 1
         let primary = NSScreen.screens.first?.frame.maxY ?? 0

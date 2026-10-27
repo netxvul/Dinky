@@ -27,8 +27,13 @@ final class Coordinator {
                 saGlides = [:]
                 PeekClicks.shared.clear()
                 dropStripScroll()
+                mouseStripScroll.stopCursor()
             }
-            if enabled, !oldValue { reconcile() }
+            if enabled, !oldValue {
+                reconcile()
+                // The modifier may be held already: the hand follows it again.
+                mouseStripScroll.rearm()
+            }
         }
     }
 
@@ -73,7 +78,9 @@ final class Coordinator {
     /// New windows on their way to the focused display, kept out of the trees until they arrive.
     var adopting: Set<WindowID> = []
     /// The tiled window being dragged with the mouse, until the button is released. See Drag.swift.
-    var drag: DragSession?
+    var drag: DragSession? {
+        didSet { if drag != nil, oldValue == nil { mouseCursorInterrupted() } }
+    }
     var dragging: WindowID? { drag?.id }
     /// Whether dinky is moving windows now: a glide, a staging or system tiling still settling, a push, a strip held
     /// by fingers or the mouse, or a drag.
@@ -119,6 +126,8 @@ final class Coordinator {
     lazy var placeholders = DragPlaceholders()
     /// Grabs windows pressed anywhere with `[drag] mouse-modifier` held.
     private lazy var modifierDrag = ModifierDrag(coordinator: self)
+    /// Scrolls strips with the mouse and `[gestures.mouse-scroll] modifier` held.
+    private lazy var mouseStripScroll = MouseStripScroll(coordinator: self)
     /// Called when the focused window changes.
     var onFocusChange: (() -> Void)?
     private(set) var lastFocused: WindowID = 0
@@ -178,7 +187,13 @@ final class Coordinator {
     var filledFrom: [WindowID: CGRect] = [:]
     /// Windows of `free` workspaces that `grid --toggle` placed, and the frame each had before. In memory only.
     var griddedFrom: [WindowID: CGRect] = [:]
-    /// Fingers holding a strip to scroll it (`[gestures.scroll]`). See `beginStripScroll()`.
+    /// What holds a strip to scroll it: fingers on the trackpad (`[gestures.scroll]`), or the mouse with `[gestures.mouse-scroll]
+    /// modifier` held, a press dragged or its wheel.
+    enum StripHolder: String {
+        case fingers, drag = "mouse drag", wheel = "mouse wheel"
+    }
+    /// Fingers, or the mouse, holding a strip to scroll it (`[gestures.scroll]`, `[gestures.mouse-scroll]`). See
+    /// `beginStripScroll()`.
     private struct StripScroll {
         /// The strip's tree, by its Space.
         let key: UInt64
@@ -188,12 +203,16 @@ final class Coordinator {
         var heard: CFTimeInterval
         /// Whether its windows follow the fingers through Dock's connection rather than Accessibility.
         let throughDock: Bool
+        /// What holds it.
+        var holder = StripHolder.fingers
         /// When the trackpad ticks as columns pass under the fingers.
         var ticker = StripTicker(target: nil, offset: 0)
         /// Which hold this is, so a tick checked again at its gap's end knows the fingers are still on the same one.
         var hold = 0
         /// A tick is checked again at the end of its gap.
         var tickPending = false
+        /// Since when the button of a press dragging it has read up with no release heard (`watchStripScroll`).
+        var upSince: CFTimeInterval?
     }
     private var stripScroll: StripScroll?
     /// Counts the holds of a strip, numbering each (`StripScroll.hold`).
@@ -210,6 +229,11 @@ final class Coordinator {
     private static let stripScrollCheck: TimeInterval = 0.1
     /// How long fingers holding a strip may go unheard before they count as lifted: a trackpad gone, its frames lost.
     private static let stripScrollQuiet: CFTimeInterval = 1
+    /// How long a stroke of the mouse wheel or a swipe holding a strip may go unheard: its events stop while a finger
+    /// rests on a Magic Mouse, and its end comes as it lifts.
+    private static let strokeQuiet: CFTimeInterval = 10
+    /// How long the button of a press dragging a strip reads up before its release counts as lost.
+    private static let releaseLost: CFTimeInterval = 0.2
     /// How far a strip coasts once the fingers lift: as far as their speed would take it in this many seconds.
     private static let stripScrollFling = 0.15
     /// Bumped as fingers let go of a strip, so only the last let-go's glance waits for its strip to rest.
@@ -304,6 +328,7 @@ final class Coordinator {
                            easing: Easing(rawValue: config.animations.curve.rawValue),
                            damping: config.animations.damping)
         modifierDrag.update(modifiers: config.drag.mouseModifier, sides: config.modifiers)
+        mouseStripScroll.update(config.gestures.mouseScroll, sides: config.modifiers)
         // Pinned windows' rings are drawn by the border manager too, focus borders on or off.
         if config.borders.enabled || config.borders.pinned {
             borders = borders ?? BorderManager(config: config.borders, model: model,
@@ -462,12 +487,14 @@ final class Coordinator {
         if mayShowMissionControl, MissionControl.shared.update(from: model) {
             borders?.missionControlChanged()
             noopGlow.missionControlChanged()
+            mouseCursorInterrupted()
             if !MissionControl.shared.active { missionControlClosed() }
         }
         borders?.handle(event)
         noopGlow.handle(event)
         if event.kind == .spaceChange {
             edgeGlow.dismiss()
+            mouseCursorInterrupted()
             // Peeks of a Space no longer shown would catch clicks on the one shown now.
             for key in workspaces.keys where !isVisible(key) { PeekClicks.shared.update([], space: key) }
         }
@@ -1304,15 +1331,123 @@ final class Coordinator {
     func fingersScrolled(_ scroll: FingerScroll) {
         switch scroll {
         case .began(let dx):
+            // The mouse has it.
+            guard stripScroll.map({ $0.holder == .fingers }) ?? true else { return }
             // Fingers landing again before the last of them were heard to lift: no glance, the stroke goes on.
             if stripScroll != nil { endStripScroll(velocity: 0, glance: false) }
             if beginStripScroll() { scrollStrip(by: dx) }
         case .moved(let dx):
+            guard stripScroll?.holder == .fingers else { return }
             scrollStrip(by: dx)
         case .ended(let velocity):
+            guard stripScroll?.holder == .fingers else { return }
             endStripScroll(velocity: velocity)
         }
     }
+
+    /// The mouse, with `[gestures.mouse-scroll] modifier` held, takes hold of the strip under the pointer as fingers do,
+    /// a press dragged across it or a stroke of its wheel: the number of the hold, nil where it takes nothing, as
+    /// `beginStripScroll()` says. A hold the mouse still has, its release lost, is let go of first; one the fingers have
+    /// is theirs, and so is one a press dragging it has, from a stroke, while its button is down.
+    /// `point`, where the press went down, picks the display; the pointer now without one.
+    func mouseTookHold(_ holder: StripHolder, at point: CGPoint? = nil) -> Int? {
+        if let scroll = stripScroll {
+            guard scroll.holder != .fingers else { return nil }
+            if holder == .wheel, scroll.holder == .drag,
+               CGEventSource.buttonState(.hidSystemState, button: .left)
+                || CGEventSource.buttonState(.combinedSessionState, button: .left) {
+                return nil
+            }
+            endStripScroll(velocity: 0, glance: false)
+        }
+        return beginStripScroll(holder: holder, at: point) ? stripScroll?.hold : nil
+    }
+
+    /// The mouse holding the strip, by hold `hold`, moved `points` across, right positive: the strip's content goes with
+    /// it, `[gestures.mouse-scroll] speed` times as far. Nothing for a hold it no longer has.
+    func mouseScrolled(_ points: Double, hold: Int) {
+        guard let scroll = stripScroll, scroll.holder != .fingers, scroll.hold == hold else { return }
+        scrollStrip(points: -CGFloat(points * config.gestures.mouseScroll.speed))
+    }
+
+    /// The mouse let go of hold `hold` of the strip, moving across at `velocity` points a second, right positive: it
+    /// coasts and settles as it does when fingers let go. Nothing for a hold it no longer has.
+    func mouseLetGo(velocity: Double, hold: Int) {
+        guard let scroll = stripScroll, scroll.holder != .fingers, scroll.hold == hold else { return }
+        endStripScroll(momentum: -CGFloat(velocity * config.gestures.mouseScroll.speed * Self.stripScrollFling))
+    }
+
+    /// Whether the mouse can take hold of a strip at `point`: one that fingers could scroll on the display there, as it
+    /// shows, with nothing holding it, no Space changing or Mission Control; for a press, a window of it under the
+    /// pointer (`mousePressWindow`).
+    func mouseCanHold(at point: CGPoint, press: Bool) -> Bool {
+        press ? mousePressWindow(at: point) != nil : mouseStripDisplay(at: point) != nil
+    }
+
+    /// The window of the strip a press at `point` would take hold of: under the pointer, with no drag under way nor a
+    /// switcher shown from the keyboard over it, and in front there at any level, so not under a menu, a popover, a
+    /// banner or the menu bar. The press and the hand over it ask this alike, so they never disagree.
+    func mousePressWindow(at point: CGPoint) -> ScreenWindow? {
+        guard dragging == nil, let display = mouseStripDisplay(at: point),
+              !WindowSwitcher.shared.covers(point), !WorkspaceSwitcher.shared.covers(point) else { return nil }
+        let info = onScreenWindowInfo()
+        guard let window = pressedWindow(at: point, in: info), placements[window.id]?.space == display.currentSpaceID else {
+            return nil
+        }
+        // Another app's window in front of it, one that lets clicks through too, keeps the press and the hand away.
+        let front = frontmostWindow(at: point, in: info)
+        guard front?.id == window.id else {
+            if let front { noteInFront(front, over: window.id, in: info) }
+            return nil
+        }
+        return window
+    }
+
+    /// The display at `point`, where its strip is one the mouse can take hold of.
+    private func mouseStripDisplay(at point: CGPoint) -> Display? {
+        guard enabled, stripScroll == nil || stripScroll?.holder != .fingers, !MissionControl.shared.active,
+              !SpaceSwitcher.shared.switching, let display = displays.displays.first(where: { $0.frame.contains(point) }),
+              !dinky_display_is_animating(display.uuid as CFString),
+              dinky_current_space_id(display.uuid as CFString) == display.currentSpaceID,
+              let workspace = workspaces[display.currentSpaceID], workspace.canScrollFreely else { return nil }
+        return display
+    }
+
+    /// The frame of the display at `point`, for the closed hand.
+    func displayFrame(at point: CGPoint) -> CGRect? {
+        displays.displays.first { $0.frame.contains(point) }?.frame
+    }
+
+    /// Something the mouse's hand has no place over came, as a Space changing, Mission Control, a switcher or a drag
+    /// showing, or a hold of the strip ending: it goes, and shows again where it belongs once the pointer is looked at.
+    /// `settle` waits as after the modifier goes down before looking again; without, the pointer is looked at at once,
+    /// as when a hold of the strip ends.
+    func mouseCursorInterrupted(settle: Bool = true) {
+        mouseStripScroll.interruptCursor(settle: settle)
+    }
+
+    /// Whether a notch of a wheel without phases at `point` steps a strip: one the mouse could hold, nothing holding it.
+    func mouseCanStep(at point: CGPoint) -> Bool {
+        stripScroll == nil && mouseCanHold(at: point, press: false)
+    }
+
+    /// A notch of the mouse wheel with `[gestures.mouse-scroll] modifier` held, its content going `left` or right:
+    /// focus goes to the column beside the focused one on the strip under the pointer, the other way, as the content
+    /// shows what is beyond it.
+    func mouseStepped(left: Bool) {
+        guard let pointer = CGEvent(source: nil)?.location, mouseCanStep(at: pointer),
+              let display = displays.displays.first(where: { $0.frame.contains(pointer) }) else { return }
+        let key = display.currentSpaceID
+        guard let target = command(onSpace: key, { $0.focus(left ? .right : .left) ? $0.focused : nil }) ?? nil else { return }
+        print("\(stamp()) mouse-scroll: wheel notch focuses \(target)")
+        focus(target)
+    }
+
+    /// Whether a stroke of the mouse wheel or a swipe holds a strip: swipes across bound for the same fingers wait.
+    var mouseWheelHoldsStrip: Bool { stripScroll?.holder == .wheel }
+
+    /// Whether the mouse holds a strip, pressed and dragging it: the windows it moves under the button are no drag.
+    var mouseDragsStrip: Bool { stripScroll?.holder == .drag }
 
     /// Fingers take hold of the strip on the display under the pointer, as SlideScroll's do, where it can scroll freely
     /// and nothing else has it: no click, drag or switcher under way, no Space changing or Mission Control, nothing
@@ -1320,12 +1455,14 @@ final class Coordinator {
     /// where they are, a glide under way carrying on into it at its speed: through Dock's connection, as a scroll
     /// glides, where Dock moves them all as they are, else through Accessibility. Nothing is laid out on its Space till
     /// they let go. False, and nothing changed, when they take nothing: the rest of their stroke does nothing.
-    private func beginStripScroll() -> Bool {
+    /// `point` picks the display, the pointer's without one.
+    private func beginStripScroll(holder: StripHolder = .fingers, at point: CGPoint? = nil) -> Bool {
+        // A press the mouse drags the strip with is down, swallowed: no click the app has.
         guard enabled, !clickHold, drag == nil, windowPress == nil,
-              !CGEventSource.buttonState(.combinedSessionState, button: .left),
+              holder == .drag || !CGEventSource.buttonState(.combinedSessionState, button: .left),
               !MissionControl.shared.active, !SpaceSwitcher.shared.switching,
               !WindowSwitcher.shared.isShowing, !WorkspaceSwitcher.shared.isShowing,
-              let pointer = CGEvent(source: nil)?.location,
+              let pointer = point ?? CGEvent(source: nil)?.location,
               let display = displays.displays.first(where: { $0.frame.contains(pointer) }),
               !dinky_display_is_animating(display.uuid as CFString),
               dinky_current_space_id(display.uuid as CFString) == display.currentSpaceID else { return false }
@@ -1353,7 +1490,8 @@ final class Coordinator {
         workspaces[key] = workspace
         wallCoversShown[key] = nil
         applier.cancelActivationRaise()
-        stripScroll = StripScroll(key: key, display: display.uuid, heard: CACurrentMediaTime(), throughDock: throughDock)
+        stripScroll = StripScroll(key: key, display: display.uuid, heard: CACurrentMediaTime(), throughDock: throughDock,
+                                  holder: holder)
         // The column it would settle on as they take hold is not one they moved to: no tick for it.
         stripHolds += 1
         stripScroll?.hold = stripHolds
@@ -1369,7 +1507,7 @@ final class Coordinator {
         // Dock's moves leave the stacking as it is, so the pins go on top now, before anything slides under them.
         raiseCoveredPins(in: key, takingHold: true)
         if throughDock { ScriptingAddition.forget(Array(strip.keys)) }
-        telemetry.fingers(key, "took hold" + (throughDock ? ", through Dock" : ""))
+        telemetry.fingers(key, "took hold" + (throughDock ? ", through Dock" : ""), by: holder.rawValue)
         stripScrollWatch?.invalidate()
         stripScrollWatch = Timer.scheduledTimer(withTimeInterval: Self.stripScrollCheck, repeats: true) { [weak self] _ in
             self?.watchStripScroll()
@@ -1380,6 +1518,12 @@ final class Coordinator {
     /// Scrolls the strip the fingers hold by `dx` trackpad widths, `[gestures.scroll] speed` screens a width, its
     /// content going with them, and has its windows follow it there.
     private func scrollStrip(by dx: Double) {
+        guard let scroll = stripScroll, let workspace = workspaces[scroll.key] else { return }
+        scrollStrip(points: -CGFloat(dx * config.gestures.scroll.speed) * workspace.bounds.width)
+    }
+
+    /// Scrolls the strip held by `delta` points, positive to show what is right of it, and has its windows follow.
+    private func scrollStrip(points delta: CGFloat) {
         guard let scroll = stripScroll else { return }
         stripScroll?.heard = CACurrentMediaTime()
         // A drag, which is the user's to move, ends the scroll where it is.
@@ -1388,10 +1532,9 @@ final class Coordinator {
             takeOver(scroll.key)
             return flush()
         }
-        let delta = -CGFloat(dx * config.gestures.scroll.speed) * workspace.bounds.width
         let moved = workspace.scrollFreely(by: delta)
         // Pushed on past an end, some or all of the way.
-        if abs(delta - moved) >= 0.5 { flashStripEnd(on: scroll.display, last: delta > 0) }
+        if abs(delta - moved) >= 0.5, settings(of: scroll).edgeFlash { flashStripEnd(on: scroll.display, last: delta > 0) }
         guard moved != 0 else { return }
         workspaces[scroll.key] = workspace
         followStrip(scroll, in: workspace)
@@ -1403,7 +1546,8 @@ final class Coordinator {
     /// for a target flickering at a boundary or an end as resting fingers move a fraction, and not more often than the
     /// ticker's gap: a change inside it is checked again as it ends (`StripTicker`).
     private func tickForColumn() {
-        guard config.gestures.scroll.haptic, let scroll = stripScroll, let workspace = workspaces[scroll.key],
+        guard config.gestures.scroll.haptic, let scroll = stripScroll, scroll.holder == .fingers,
+              let workspace = workspaces[scroll.key],
               workspace.isScrollingFreely else { return }
         let now = CACurrentMediaTime()
         switch stripScroll!.ticker.moved(to: workspace.heldTarget, offset: workspace.shownOffset, at: now,
@@ -1426,9 +1570,9 @@ final class Coordinator {
 
     /// The fingers push the strip on display `uuid` on past an end, its `last` or its first: the display's side there
     /// glows, its right or its left, as a binding that does nothing makes a window glow, held while they push. Unless
-    /// `[gestures.scroll] edge-flash` is off, whatever `[borders] noop-flash` says.
+    /// `edge-flash` is off for what holds it, whatever `[borders] noop-flash` says.
     private func flashStripEnd(on uuid: String, last: Bool) {
-        guard config.gestures.scroll.edgeFlash, let display = displays.displays.first(where: { $0.uuid == uuid }),
+        guard let display = displays.displays.first(where: { $0.uuid == uuid }),
               let screen = screen(of: display.id) else { return }
         edgeGlow.flash(on: screen, right: last, config: config.borders)
     }
@@ -1500,6 +1644,13 @@ final class Coordinator {
     /// show-switcher` and `glance`, the window switcher shows the strip for `switcher-ms`, that column's window picked.
     /// A Space gone from under the fingers puts the strip back instead.
     private func endStripScroll(velocity: Double, glance: Bool = true) {
+        guard let scroll = stripScroll, let workspace = workspaces[scroll.key] else { return endStripScroll(momentum: 0, glance: glance) }
+        endStripScroll(momentum: -CGFloat(velocity * config.gestures.scroll.speed * Self.stripScrollFling) * workspace.bounds.width,
+                       glance: glance)
+    }
+
+    /// What holds the strip let go, the strip to coast on `momentum` points, positive towards what is right of it.
+    private func endStripScroll(momentum: CGFloat, glance: Bool = true) {
         guard let scroll = stripScroll else { return }
         applier.cancelActivationRaise()
         guard stripScrollShows(scroll) else { return abortStripScroll() }
@@ -1509,19 +1660,18 @@ final class Coordinator {
             return flush()
         }
         let before = workspace.focused
-        let momentum = -CGFloat(velocity * config.gestures.scroll.speed * Self.stripScrollFling) * workspace.bounds.width
         let target = edit(key) { $0.endFreeScroll(momentum: momentum) } ?? nil
-        telemetry.fingers(key, "let go" + (target.map { ", \(telemetry.name($0)) takes focus" } ?? ""))
+        telemetry.fingers(key, "let go" + (target.map { ", \(telemetry.name($0)) takes focus" } ?? ""), by: scroll.holder.rawValue)
         handBack(key)
         dirty.insert(key)
         guard let target else { return flush() }
         // A flick the fingers' frames never carried past a column, or one that settles back, lands on another column
         // than the trackpad last ticked for: it ticks now, as the first finger lifts, the others still on it, so a
         // column taking focus is always felt.
-        if config.gestures.scroll.haptic, target != scroll.ticker.felt {
+        if config.gestures.scroll.haptic, scroll.holder == .fingers, target != scroll.ticker.felt {
             tapTrackpad("strip let-go, settles on \(target)", actuation: config.gestures.scroll.hapticStrength.actuation)
         }
-        if glance { glanceOnceStill(target, in: key, display: scroll.display) }
+        if glance { glanceOnceStill(target, in: key, display: scroll.display, settings: settings(of: scroll)) }
         // As SlideScroll does, the window is focused when it is another than before, or focus was on another Space.
         guard target != before || placements[lastFocused]?.space != key else { return flush() }
         focusing = (target, Date() + 3, false)
@@ -1529,12 +1679,27 @@ final class Coordinator {
         focusOnceStill(target, in: key)
     }
 
+    /// What a let-go shows and how a push past an end glows, for what holds the strip: `[gestures.scroll]`'s for the
+    /// fingers, `[gestures.mouse-scroll]`'s for the mouse.
+    struct StripSettings {
+        let showSwitcher: Bool, switcherMs: Int, edgeFlash: Bool
+    }
+
+    private func settings(of scroll: StripScroll) -> StripSettings {
+        if scroll.holder == .fingers {
+            let own = config.gestures.scroll
+            return StripSettings(showSwitcher: own.showSwitcher, switcherMs: own.switcherMs, edgeFlash: own.edgeFlash)
+        }
+        let own = config.gestures.mouseScroll
+        return StripSettings(showSwitcher: own.showSwitcher, switcherMs: own.switcherMs, edgeFlash: own.edgeFlash)
+    }
+
     /// The strip's Space went from under the fingers, or Mission Control opened: it goes back to where it showed as
     /// they took hold, placed at once, as SlideScroll's does, since what shows now is something else; the rest of their
     /// stroke does nothing.
     private func abortStripScroll() {
         guard let key = stripScroll?.key else { return }
-        telemetry.fingers(key, "lost it, the strip no longer showing")
+        telemetry.fingers(key, "lost it, the strip no longer showing", by: stripScroll?.holder.rawValue ?? "fingers")
         edit(key) { $0.cancelFreeScroll() }
         handBack(key)
         animator.stop(key)
@@ -1548,7 +1713,7 @@ final class Coordinator {
     /// nothing to scroll, as fullscreen: it takes the strip over, laid out as ever from where the windows are, and the
     /// rest of the fingers' stroke does nothing.
     private func takeOver(_ key: UInt64) {
-        telemetry.fingers(key, "let go, the strip taken over")
+        telemetry.fingers(key, "let go, the strip taken over", by: stripScroll?.holder.rawValue ?? "fingers")
         // A strip still scrolled freely, as one gone fullscreen, is back where it showed as they took hold.
         workspaces[key]?.cancelFreeScroll()
         handBack(key)
@@ -1561,6 +1726,9 @@ final class Coordinator {
         guard let scroll = stripScroll, scroll.key == key else { return }
         stripScroll = nil
         wallCoversShown[key] = nil
+        // A press of the mouse's that held it moves nothing more, its hand gone till the button comes up.
+        mouseStripScroll.holdEnded(scroll.hold)
+        mouseCursorInterrupted(settle: false)
         if scroll.throughDock { ScriptingAddition.forget(workspaces[key]?.windows) }
         stripScrollWatch?.invalidate()
         stripScrollWatch = nil
@@ -1582,7 +1750,24 @@ final class Coordinator {
         }
         if !stripScrollShows(scroll) {
             abortStripScroll()
-        } else if CACurrentMediaTime() - scroll.heard > Self.stripScrollQuiet {
+        } else if scroll.holder == .drag {
+            // A press held still holds on till its button comes up. Read up twice, 0.2 s apart, both as the hardware and
+            // the session have it, its release is lost rather than on its way, which would let go with its fling.
+            let now = CACurrentMediaTime()
+            let up = !CGEventSource.buttonState(.hidSystemState, button: .left)
+                && !CGEventSource.buttonState(.combinedSessionState, button: .left)
+            if !up {
+                stripScroll?.upSince = nil
+            } else if let since = scroll.upSince {
+                if now - since >= Self.releaseLost, !mouseStripScroll.releaseLost() { endStripScroll(velocity: 0) }
+            } else {
+                stripScroll?.upSince = now
+            }
+            // As for fingers, a window its app brought up meanwhile goes back under the pins, while the press still holds.
+            if stripScroll?.hold == scroll.hold { raiseCoveredPins(in: scroll.key) }
+        } else if CACurrentMediaTime() - scroll.heard > (scroll.holder == .wheel ? Self.strokeQuiet : Self.stripScrollQuiet) {
+            // A finger resting on a Magic Mouse mid-stroke sends nothing, so a stroke goes on till its end comes, or
+            // long after it is lost.
             endStripScroll(velocity: 0)
         } else {
             // A window its app brought up meanwhile, as one activated just as the fingers came down, goes back under
@@ -1601,6 +1786,10 @@ final class Coordinator {
 
     /// dinky turned off: the fingers hold nothing, and the strip they held forgets it was scrolled freely.
     private func dropStripScroll() {
+        if let hold = stripScroll?.hold {
+            mouseStripScroll.holdEnded(hold)
+            mouseCursorInterrupted(settle: false)
+        }
         if let key = stripScroll?.key { workspaces[key]?.cancelFreeScroll() }
         stripScroll = nil
         stripScrollWatch?.invalidate()
@@ -1707,9 +1896,9 @@ final class Coordinator {
     /// window switcher shows it for `switcher-ms`, `id` picked: its glass over the glide would cost the glide frames.
     /// Nothing if, before then, fingers let go again or take hold, a click, a drag or anything that would close a
     /// glance shown comes, focus goes to another window, or the Space no longer shows.
-    private func glanceOnceStill(_ id: WindowID, in key: UInt64, display: String) {
+    private func glanceOnceStill(_ id: WindowID, in key: UInt64, display: String, settings: StripSettings) {
         stripGlance += 1
-        guard config.gestures.scroll.showSwitcher else { return }
+        guard settings.showSwitcher else { return }
         let began = CACurrentMediaTime(), glance = stripGlance, calledOff = WindowSwitcher.shared.calledOff
         // Longer than the release glide can last, the animator's own limit for it, and Dock's frames landing after.
         let longest = max(1.5, 4 * Double(config.animations.durationMs) / 1000 + 0.5)
@@ -1727,7 +1916,7 @@ final class Coordinator {
             }
             guard focusedWindow == id else { return }
             WindowSwitcher.shared.glance(space: key, display: display, pick: id,
-                                         for: Double(config.gestures.scroll.switcherMs) / 1000)
+                                         for: Double(settings.switcherMs) / 1000)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { check() }
     }

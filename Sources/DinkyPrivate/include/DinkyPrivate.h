@@ -8,3 +8,4 @@
 #import "haptics.h"
 #import "touches.h"
 #import "sa.h"
+#import "cursor.h"
