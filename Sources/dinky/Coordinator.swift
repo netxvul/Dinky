@@ -1106,7 +1106,6 @@ final class Coordinator {
     /// report the previous window are ignored, so they do not pull the trees back to it.
     func focus(_ id: WindowID) {
         guard let window = model.windows[id] else { return }
-        spanFocused = span != nil && placements[id]?.space == span?.left ? (id, CACurrentMediaTime()) : nil
         if let space = placements[id]?.space { telemetry.command(space, "dinky focused \(id) \(window.appName ?? "?")") }
         // A pin focused on purpose is the user's choice, not one raised in the background.
         raisedInBackground.remove(id)
@@ -1133,6 +1132,7 @@ final class Coordinator {
     /// Activates `id`'s app on it, now: `focus` without waiting for a glide.
     private func activate(_ id: WindowID) {
         guard let window = model.windows[id] else { return }
+        spanFocused = span != nil && placements[id]?.space == span?.left ? (id, CACurrentMediaTime()) : nil
         applier.cancelActivationRaise()
         forgetFrontRead()
         readWhileMoving = nil
