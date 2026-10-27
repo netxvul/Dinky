@@ -21,9 +21,15 @@ private let stampFormatter: DateFormatter = {
 /// Swipes the display to one of its Spaces, full-screen ones included. False if it is already there.
 /// Returns once the swipe is posted; `SpaceSwitcher` confirms it and coalesces rapid requests. `landed` runs
 /// once the display is on the Space, unless a newer request replaced this one first.
+/// A Space of a pair running one strip across two displays takes the other display to its partner at once
+/// (SpanDisplays.swift).
 @discardableResult
 func switchSpace(toSpaceID target: UInt64, on display: Display, landed: (() -> Void)? = nil) -> Bool {
-    SpaceSwitcher.shared.request(target, on: display.uuid, landed: landed)
+    let switched = SpaceSwitcher.shared.request(target, on: display.uuid, landed: landed)
+    if let (partner, other) = AppState.shared.coordinator?.spanFollower(of: target), targetSpaceID(on: other) != partner {
+        SpaceSwitcher.shared.request(partner, on: other.uuid)
+    }
+    return switched
 }
 
 /// The Space the display is on, or is switching to while a switch is in flight.

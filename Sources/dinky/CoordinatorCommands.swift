@@ -9,7 +9,7 @@ extension Coordinator {
 
     /// The tree of the display's current Space, if dinky has one.
     func workspace(on display: Display) -> Workspace? {
-        workspaces[display.currentSpaceID]
+        workspaces[treeKey(display.currentSpaceID)]
     }
 
     /// The container holding a tiled window.
