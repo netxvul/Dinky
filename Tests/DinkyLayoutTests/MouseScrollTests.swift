@@ -97,9 +97,15 @@ struct LetGoVelocityTests {
 struct GrabCursorRuleTests {
     private func shape(enabled: Bool = true, cursor: Bool = true, drag: Bool = true, press: GrabCursorRule.Press = .none,
                        armed: Bool = true, buttonDown: Bool = false, over: Bool = true, spoiled: Bool = false,
-                       scrolling: Bool = false) -> GrabShape? {
+                       scrolling: Bool = false, passing: Bool = false) -> GrabShape? {
         GrabCursorRule.shape(enabled: enabled, cursor: cursor, drag: drag, press: press, armed: armed,
-                             buttonDown: buttonDown, over: over, spoiled: spoiled, scrolling: scrolling)
+                             buttonDown: buttonDown, over: over, spoiled: spoiled, scrolling: scrolling, passing: passing)
+    }
+
+    @Test func `The closed hand steps aside while a scroll goes on to the app`() {
+        #expect(shape(press: .holding, passing: true) == nil)
+        #expect(shape(press: .taken, passing: true) == nil)
+        #expect(shape(press: .holding, passing: false) == .closed)
     }
 
     @Test func `No hand unless the gesture, its drag and its cursor are on`() {

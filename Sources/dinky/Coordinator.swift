@@ -1294,7 +1294,8 @@ final class Coordinator {
     /// a press dragged across it or a stroke of its wheel: the number of the hold, nil where it takes nothing, as
     /// `beginStripScroll()` says. A hold the mouse still has, its release lost, is let go of first; one the fingers have
     /// is theirs, and so is one a press dragging it has, from a stroke, while its button is down.
-    func mouseTookHold(_ holder: StripHolder) -> Int? {
+    /// `point`, where the press went down, picks the display; the pointer now without one.
+    func mouseTookHold(_ holder: StripHolder, at point: CGPoint? = nil) -> Int? {
         if let scroll = stripScroll {
             guard scroll.holder != .fingers else { return nil }
             if holder == .wheel, scroll.holder == .drag,
@@ -1304,7 +1305,7 @@ final class Coordinator {
             }
             endStripScroll(velocity: 0, glance: false)
         }
-        return beginStripScroll(holder: holder) ? stripScroll?.hold : nil
+        return beginStripScroll(holder: holder, at: point) ? stripScroll?.hold : nil
     }
 
     /// The mouse holding the strip, by hold `hold`, moved `points` across, right positive: the strip's content goes with
@@ -1399,13 +1400,14 @@ final class Coordinator {
     /// where they are, a glide under way carrying on into it at its speed: through Dock's connection, as a scroll
     /// glides, where Dock moves them all as they are, else through Accessibility. Nothing is laid out on its Space till
     /// they let go. False, and nothing changed, when they take nothing: the rest of their stroke does nothing.
-    private func beginStripScroll(holder: StripHolder = .fingers) -> Bool {
+    /// `point` picks the display, the pointer's without one.
+    private func beginStripScroll(holder: StripHolder = .fingers, at point: CGPoint? = nil) -> Bool {
         // A press the mouse drags the strip with is down, swallowed: no click the app has.
         guard enabled, !clickHold, drag == nil, windowPress == nil,
               holder == .drag || !CGEventSource.buttonState(.combinedSessionState, button: .left),
               !MissionControl.shared.active, !SpaceSwitcher.shared.switching,
               !WindowSwitcher.shared.isShowing, !WorkspaceSwitcher.shared.isShowing,
-              let pointer = CGEvent(source: nil)?.location,
+              let pointer = point ?? CGEvent(source: nil)?.location,
               let display = displays.displays.first(where: { $0.frame.contains(pointer) }),
               !dinky_display_is_animating(display.uuid as CFString),
               dinky_current_space_id(display.uuid as CFString) == display.currentSpaceID else { return false }
@@ -1620,6 +1622,8 @@ final class Coordinator {
     private func handBack(_ key: UInt64) {
         guard let scroll = stripScroll, scroll.key == key else { return }
         stripScroll = nil
+        // A press of the mouse's that held it moves nothing more, its hand gone till the button comes up.
+        mouseStripScroll.holdEnded(scroll.hold)
         mouseCursorInterrupted(settle: false)
         if scroll.throughDock { ScriptingAddition.forget(workspaces[key]?.windows) }
         stripScrollWatch?.invalidate()
@@ -1678,7 +1682,10 @@ final class Coordinator {
 
     /// dinky turned off: the fingers hold nothing, and the strip they held forgets it was scrolled freely.
     private func dropStripScroll() {
-        if stripScroll != nil { mouseCursorInterrupted(settle: false) }
+        if let hold = stripScroll?.hold {
+            mouseStripScroll.holdEnded(hold)
+            mouseCursorInterrupted(settle: false)
+        }
         if let key = stripScroll?.key { workspaces[key]?.cancelFreeScroll() }
         stripScroll = nil
         stripScrollWatch?.invalidate()

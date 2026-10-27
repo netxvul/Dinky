@@ -111,15 +111,16 @@ public enum GrabCursorRule {
     /// How long after the last scroll seen the open hand may show again.
     public static let scrollQuiet: CFTimeInterval = 0.15
 
-    /// None unless the gesture, its drag and its cursor are on. A press taken or holding the strip: closed; one spent,
-    /// none. No press: open while the modifier is held (`armed`) with the button up over a window a press would take
-    /// (`over`), unless something else spoiled the hold, as a key going down with the modifier, or a scroll goes on
-    /// (`scrolling`).
+    /// None unless the gesture, its drag and its cursor are on. A press taken or holding the strip: closed, unless a
+    /// scroll goes on to the app (`passing`), when the closed hand steps aside so the scroll reaches the window under the
+    /// pointer; one spent, none. No press: open while the modifier is held (`armed`) with the button up over a window a
+    /// press would take (`over`), unless something else spoiled the hold, as a key going down with the modifier, or a
+    /// scroll goes on (`scrolling`).
     public static func shape(enabled: Bool, cursor: Bool, drag: Bool, press: Press, armed: Bool, buttonDown: Bool,
-                             over: Bool, spoiled: Bool, scrolling: Bool = false) -> GrabShape? {
+                             over: Bool, spoiled: Bool, scrolling: Bool = false, passing: Bool = false) -> GrabShape? {
         guard enabled, cursor, drag else { return nil }
         switch press {
-        case .taken, .holding: return .closed
+        case .taken, .holding: return passing ? nil : .closed
         case .spent: return nil
         case .none: return armed && !buttonDown && over && !spoiled && !scrolling ? .open : nil
         }

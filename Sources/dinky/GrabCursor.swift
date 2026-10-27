@@ -68,11 +68,14 @@ final class GrabCursor {
             // The guard ordered it out for an event let through meanwhile: it goes, rather than coming back over it.
             guard Self.isShown else { return clear() }
             panel.order(.above, relativeTo: Int(window.id))
+            // Taken meanwhile: the guard's order-out, sent after its take, may reach the window server after this.
+            if !Self.isShown { clear() }
             return
         }
         over = (window.id, window.frame)
         place(window.frame, level: window.layer, above: window.id)
         set(.open)
+        if !Self.isShown { clear() }
     }
 
     /// The closed hand over the whole `display`, a level above the normal one, so no window raised while the strip is
@@ -82,6 +85,7 @@ final class GrabCursor {
         over = nil
         place(display, level: Int(CGWindowLevelForKey(.normalWindow)) + 1, above: nil)
         set(.closed)
+        if !Self.isShown { clear() }
     }
 
     /// The hand set again where another app set its own over it, while the pointer is over the panel: called every frame

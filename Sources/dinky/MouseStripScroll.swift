@@ -104,8 +104,6 @@ final class MouseStripScroll {
     }
 
     func update(_ settings: MouseScroll, sides: ModifierSides) {
-        // The hand turned on with the taps in place: they are made again, so the guard goes in behind them.
-        if modifierTap != nil, wantsGuard(settings), !grabGuard.isRunning { stop() }
         self.settings = settings
         self.sides = sides
         grab.clear()
@@ -120,15 +118,11 @@ final class MouseStripScroll {
         arm(exactlyHeld(settings.modifier, sides: sides, in: CGEventSource.flagsState(.combinedSessionState)))
     }
 
-    /// Whether the hand's guard is wanted: with the cursor on and the calls it needs there.
-    private func wantsGuard(_ settings: MouseScroll) -> Bool {
-        settings.enabled && settings.drag && settings.cursor && GrabCursor.available
-    }
-
     private func start() {
         guard modifierTap == nil else { return }
-        // First, so it goes in behind every tap made after it; only with the hand on.
-        if wantsGuard(settings) { grabGuard.start() }
+        // First, so it goes in behind every tap made after it: off till the hand may show, so it costs nothing with the
+        // cursor off, and there should the cursor be turned on later.
+        if GrabCursor.available { grabGuard.start() }
         let presses = MainEventTap([.leftMouseDown], options: .defaultTap, enabled: false, owner: self,
                                    callback: mouseScrollPressCallback)
         let grabs = MainEventTap([.leftMouseDown, .leftMouseDragged, .leftMouseUp, .mouseMoved], options: .defaultTap,
@@ -263,22 +257,25 @@ final class MouseStripScroll {
         return true
     }
 
+    /// The press is written back before each call into the coordinator, never after one: the coordinator can end the
+    /// hold meanwhile (`holdEnded`), which a stale copy written back would undo.
     private func moved(to point: CGPoint, at time: CFTimeInterval) {
         guard var press, !press.spent else { return }
-        defer { self.press = press }
         if press.hold == nil {
             guard MouseDragStart.holds(dx: point.x - press.at.x, dy: point.y - press.at.y) else { return }
             // A stroke holding the strip loses it to the press.
             if case .holding = stroke { stroke = .spent }
-            guard let hold = coordinator.mouseTookHold(.drag) else {
-                press.spent = true
+            // The strip of the display pressed, however far the pointer has gone since.
+            guard let hold = coordinator.mouseTookHold(.drag, at: press.at) else {
+                self.press?.spent = true
                 print("\(stamp()) mouse-scroll: drag took no hold")
                 DispatchQueue.main.async { [weak self] in self?.updateCursor() }
                 return
             }
-            press.hold = hold
             // From where it was pressed: the strip has the grabbed point under the pointer.
+            press.hold = hold
             press.last = press.at
+            self.press = press
             // A hold ended to take this one cleared the hand: closed again, once the press is noted holding.
             DispatchQueue.main.async { [weak self] in self?.updateCursor() }
         }
@@ -286,7 +283,14 @@ final class MouseStripScroll {
         let dx = Double(point.x - press.last.x)
         press.last = point
         press.velocity.add(dx, at: time)
+        self.press = press
         coordinator.mouseScrolled(dx, hold: hold)
+    }
+
+    /// The coordinator ended hold `hold`, as a Space changing or Mission Control mid-drag, or the strip taken over: a
+    /// press holding it moves nothing more, and shows no hand, till the button comes up.
+    func holdEnded(_ hold: Int) {
+        if press?.hold == hold { press?.spent = true }
     }
 
     /// The press taken let go, moving across at `velocity` points a second.
@@ -483,11 +487,13 @@ extension MouseStripScroll {
     private func updateCursor() {
         let state: GrabCursorRule.Press = press.map { $0.spent ? .spent : $0.hold != nil ? .holding : .taken } ?? .none
         let point = CGEvent(source: nil)?.location ?? .zero
-        var strokeBusy = false
+        var strokeBusy = false, strokePassing = false
         if case .holding = stroke { strokeBusy = true }
-        if case .passing = stroke { strokeBusy = true }
-        let scrolling = GrabCursorRule.scrolling(at: CACurrentMediaTime(), lastScroll: max(passedScrollAt, grabGuard.lastScroll),
-                                                 stroke: strokeBusy)
+        if case .passing = stroke { (strokeBusy, strokePassing) = (true, true) }
+        let now = CACurrentMediaTime(), lastScroll = max(passedScrollAt, grabGuard.lastScroll)
+        let scrolling = GrabCursorRule.scrolling(at: now, lastScroll: lastScroll, stroke: strokeBusy)
+        // A scroll going on to the app through a press: swallowed spent strokes stamp no time, so they hide nothing.
+        let passing = GrabCursorRule.scrolling(at: now, lastScroll: lastScroll, stroke: strokePassing)
         // While a right or other button is down its drag and release go to the app that got the press: no panel.
         let otherDown = CGEventSource.buttonState(.hidSystemState, button: .right)
             || CGEventSource.buttonState(.hidSystemState, button: .center)
@@ -497,7 +503,8 @@ extension MouseStripScroll {
         let shape = cursorOn ? GrabCursorRule.shape(enabled: settings.enabled, cursor: settings.cursor, drag: settings.drag,
                                                     press: state, armed: armed,
                                                     buttonDown: CGEventSource.buttonState(.hidSystemState, button: .left),
-                                                    over: window != nil, spoiled: spoiled, scrolling: scrolling) : nil
+                                                    over: window != nil, spoiled: spoiled, scrolling: scrolling,
+                                                    passing: passing) : nil
         switch otherDown ? nil : shape {
         case .open?:
             grab.showOpen(over: window!)
@@ -605,7 +612,9 @@ extension MouseStripScroll {
     }
 
     private func updateKeeper() {
-        let wanted = (armed && cursorOn) || grab.isShowing
+        // While a press is taken too, so the closed hand comes back once a scroll passed meanwhile goes quiet, even with
+        // the modifier let go mid-drag.
+        let wanted = (armed && cursorOn) || grab.isShowing || (cursorOn && pressTaken)
         // The guard hears presses and scrolls only while the hand may show, its scrolls keeping the open hand off.
         grabGuard.enable(wanted)
         guard wanted != (keeper != nil) else { return }
