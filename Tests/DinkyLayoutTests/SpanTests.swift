@@ -153,6 +153,22 @@ struct SpanTests {
         #expect(straddling(ws).isEmpty)
     }
 
+    @Test func `With walls at the outer edges nothing peeks and the columns fill both displays`() {
+        let seam = Seam(left: rect(-1920, 30, 1920, 1170), right: rect(0, 39, 1800, 1066))
+        var ws = spanning(8, gaps: Gaps(all: 8), seam: seam, centring: .alwaysFill)
+        ws.walls = [.left, .right]
+        for id in ws.windows {
+            ws.focus(id)
+            let frames = ws.layout().frames
+            #expect(straddling(ws).isEmpty, "\(id)")
+            for other in ws.windows {
+                #expect(frames[other]!.minX >= -1920 && frames[other]!.maxX <= 1800, "\(other) at \(frames[other]!), \(id) focused")
+            }
+            let shown = ws.windows.map { frames[$0]! }.filter { $0.width > 200 }
+            #expect(shown.map(\.minX).min() == -1912 && shown.map(\.maxX).max() == 1792, "\(id) focused: \(ws.windows.map { "\($0):\(Int(frames[$0]!.minX))+\(Int(frames[$0]!.width))" })")
+        }
+    }
+
     @Test func `Two strips coming together meet at the seam`() {
         var left = Workspace(bounds: rect(0, 0, 1000, 600), algorithm: .scrolling)
         left.insert(1)

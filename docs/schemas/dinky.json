@@ -110,6 +110,11 @@
           "default": "both",
           "description": "With span-displays, which display center-focused-column centres a column on: both centres on the two together, so the column rests beside the line between them; mouse on the display under the pointer; focused on the display the column is on as focus comes to it. Focus stepping along the strip never scrolls it back."
         },
+        "span-peek": {
+          "type": "boolean",
+          "default": true,
+          "description": "With span-displays, whether columns scrolled off the outer edges of the two displays peek out there, as on one display. false hides them behind the column in view nearest the edge, as beside another display, and leaves no gutter: the columns fill out to the outer gaps."
+        },
         "span-displays": {
           "type": "boolean",
           "default": false,

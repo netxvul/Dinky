@@ -296,6 +296,10 @@ public struct Scrolling: Equatable {
     public var spanDisplays = false
     /// With `spanDisplays`, which display focusing a column centres it on, with `centerFocusedColumn` other than `never`.
     public var spanCenterOn = SpanCenterOn.both
+    /// With `spanDisplays`, whether columns scrolled off the strip's outer edges peek out there, as on one display;
+    /// off, they hide behind the column in view nearest the edge, as at a display beside another, and the columns fill
+    /// to the outer gaps.
+    public var spanPeek = true
     /// Whether the file still sets `glide`, which no longer does anything: the strip scrolls through the Dock
     /// scripting addition when top-level `scripting-addition` allows it and the addition answers, and moves its windows
     /// frame by frame otherwise. `dinky doctor` says the key can go.
@@ -309,6 +313,7 @@ public struct Scrolling: Equatable {
         centerFocusedColumn = try t.choice("center-focused-column") ?? centerFocusedColumn
         spanDisplays = try t.bool("span-displays") ?? spanDisplays
         spanCenterOn = try t.choice("span-center-on") ?? spanCenterOn
+        spanPeek = try t.bool("span-peek") ?? spanPeek
         retiredGlide = t.retired("glide")
         try t.done()
     }

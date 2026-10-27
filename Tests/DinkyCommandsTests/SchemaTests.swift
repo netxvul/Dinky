@@ -168,6 +168,7 @@ struct SchemaTests {
         center-focused-column = 'on-overflow'
         span-displays = true
         span-center-on = 'mouse'
+        span-peek = false
 
         [switcher]
         enabled = true
