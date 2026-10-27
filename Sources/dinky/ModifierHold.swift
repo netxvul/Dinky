@@ -43,8 +43,11 @@ final class ModifierHold {
         case spoiled
     }
 
-    /// An event older than this as the swallowing tap gets it was held up past the tap's timeout: the app has had it.
+    /// An event older than this as the swallowing tap gets it, with the tap timed out since it happened, was held up
+    /// past the timeout: the app has had it.
     private static let timedOut: CFTimeInterval = 1
+    /// When the swallowing tap last timed out.
+    private var swallowerTimedOutAt = -CFTimeInterval.infinity
 
     /// What the swallowing tap takes; everything else is only ever listened to.
     private static let swallowable: [CGEventType] = [.keyDown, .leftMouseDown, .leftMouseUp, .rightMouseDown,
@@ -373,6 +376,7 @@ final class ModifierHold {
     fileprivate func intercepted(_ type: CGEventType, _ event: CGEvent) -> Bool {
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
+            if type == .tapDisabledByTimeout { swallowerTimedOutAt = CACurrentMediaTime() }
             // What went by meanwhile, the listener heard.
             if swallowing { swallower?.enable(true) }
             return true
@@ -385,9 +389,10 @@ final class ModifierHold {
             heardFirst.remove(at: index)
             return true
         }
-        // Held up past the tap's timeout, the window server gave it to the app already, unheard by the listener:
-        // handled as one gone to the app, and let through, so a click held so long gets its release.
-        let canSwallow = eventAge(event) <= Self.timedOut
+        // Held up past the tap's timeout, the tap timing out since it happened, the window server gave it to the app
+        // already, unheard by the listener: handled as one gone to the app, and let through, so a click held so long gets
+        // its release. Old only from waiting before this tap, it is this tap's still.
+        let canSwallow = eventAge(event) <= Self.timedOut || swallowerTimedOutAt < eventTime(event)
         let passes = handle(type, event, canSwallow: canSwallow) || !canSwallow
         if passedOn.count >= 32 { passedOn.removeFirst() }
         passedOn.append((type, event.timestamp))

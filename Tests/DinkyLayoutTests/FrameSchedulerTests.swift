@@ -707,6 +707,27 @@ extension SlowStepTests {
         Thread.sleep(forTimeInterval: 0.05)
         #expect(scheduler.isSlow(1))
     }
+
+    @Test func `A run's first size is left out even after moves, whatever sizes earlier steps left`() {
+        let windows = FakeWindows([10: .zero])
+        let scheduler = windows.scheduler()
+        func job(_ x: CGFloat, _ width: CGFloat) -> FrameJob {
+            FrameJob(pid: 1, id: 10, frame: CGRect(x: x, y: 0, width: width, height: 100))
+        }
+        // A size written earlier, so the next run starts with sizes left behind.
+        scheduler.step([job(0, 100)])
+        Thread.sleep(forTimeInterval: 0.05)
+        scheduler.startRun([10])
+        // The run's first step only moves the window: its mark is not spent there.
+        scheduler.step([job(10, 100)])
+        Thread.sleep(forTimeInterval: 0.05)
+        windows.holds[10] = DispatchSemaphore(value: 0)
+        scheduler.step([job(20, 120)])
+        Thread.sleep(forTimeInterval: FrameScheduler.slowStep + 0.03)
+        windows.holds[10]!.signal()
+        Thread.sleep(forTimeInterval: 0.05)
+        #expect(!scheduler.isSlow(1), "the run's first size, the app laying the window out")
+    }
 }
 
 struct BusyProcessTests {

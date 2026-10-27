@@ -874,15 +874,16 @@ final class Coordinator {
             // The pin is what its app has focused: it may be read straight from now on, till focus moves.
             confirmedPin = id
             focused = id
+            // The app answered: what a command read while the strip moved is past.
+            readWhileMoving = nil
         } else if let answer = model.windows[real], isVisible(answer.spaceID) {
             confirmedPin = nil
             focused = real
+            readWhileMoving = nil
         } else {
             focused = fallback()
         }
         frontRead = (id, focused, after)
-        // The app asked: what a command read while the strip moved is past.
-        readWhileMoving = nil
         return focused
     }
 

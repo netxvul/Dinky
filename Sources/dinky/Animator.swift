@@ -154,9 +154,9 @@ final class Animator: NSObject {
     }
 
     /// A tree sets off with none of its windows gliding: apps that kept up again are slow no longer, unless a window of
-    /// theirs glides on elsewhere, whose column still holds to it.
+    /// theirs glides on elsewhere where a column can hold to it: placed on screen by its tree, not handed to a sink.
     private func settleRecovered() {
-        let gliding = Set(entries.values.map(\.pid))
+        let gliding = Set(entries.values.filter { placers[$0.key] != nil && sinks[$0.key] == nil }.map(\.pid))
         slowPids.subtract(recovered.subtracting(gliding))
         recovered.formIntersection(gliding)
     }

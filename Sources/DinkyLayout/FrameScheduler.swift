@@ -287,14 +287,14 @@ public final class FrameScheduler: @unchecked Sendable {
             }
             if job.leadEdge == nil { app.ledIn[job.id] = nil; app.slack[job.id] = nil; app.probes[job.id] = nil }
             if let edge = job.leadEdge, job.frame.maxX > edge { job.frame.size.width += app.slack[job.id] ?? 0 }
-            let runStart = lock.withLock { runStarts.remove(job.id) != nil }
             if answered {
                 if app.written[job.id] == job.frame.size {
                     answered = move(job)
                 } else {
                     // The first size of a run is the app laying the window out again, not keeping up with the steps:
                     // its time is left out of theirs. Sizes changing step after step are the steps, an app slow to
-                    // follow them slow.
+                    // follow them slow. A run's mark is spent by its first size, not by moves before it.
+                    let runStart = lock.withLock { runStarts.remove(job.id) != nil }
                     let first = runStart || (app.stepSizes[job.id]?.isEmpty ?? true)
                     let resizing = Date()
                     answered = write(job)
