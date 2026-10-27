@@ -209,14 +209,14 @@ final class FrameApplier {
     /// Raise overlapping windows into the layout's order around `front`, a window dinky has just activated, once
     /// raising keeps focus on it, trying again till then, an app not answering left out (see `RaiseAfterActivating`).
     /// `pinned` is the strip's pins. A newer call, or `cancelActivationRaise`, calls off one still trying. Logged where
-    /// anything was out of order, with whether it is after.
+    /// anything was out of order, with whether it is after. `raised` runs on the main thread once anything was raised.
     func raiseIntoOrder(afterActivating front: WindowID, _ layout: Layout, pids: [WindowID: pid_t],
-                        pinned: Set<WindowID>) {
+                        pinned: Set<WindowID>, raised: (() -> Void)? = nil) {
         let began = CACurrentMediaTime()
         let generation = lock.withLock { activationRaises += 1; return activationRaises }
         raiseQueue.async { [unowned self] in
             attemptRaise(ActivationRaise(front: front, layout: layout, pids: pids, pinned: pinned, began: began,
-                                         generation: generation), first: true)
+                                         generation: generation, raised: raised), first: true)
         }
     }
 
@@ -229,14 +229,16 @@ final class FrameApplier {
     /// A call of `raiseIntoOrder(afterActivating:)` still trying: on raiseQueue only.
     private final class ActivationRaise {
         let front: WindowID, layout: Layout, pids: [WindowID: pid_t], pinned: Set<WindowID>, began: CFTimeInterval
-        let generation: Int
+        let generation: Int, raised: (() -> Void)?
         /// Why each try so far was not ready.
         var waits: [String] = []
+        /// The app focused at the first try.
+        var firstOwner: pid_t?
 
         init(front: WindowID, layout: Layout, pids: [WindowID: pid_t], pinned: Set<WindowID>, began: CFTimeInterval,
-             generation: Int) {
+             generation: Int, raised: (() -> Void)?) {
             (self.front, self.layout, self.pids, self.pinned) = (front, layout, pids, pinned)
-            (self.began, self.generation) = (began, generation)
+            (self.began, self.generation, self.raised) = (began, generation, raised)
         }
 
         func log(_ outcome: String) {
@@ -252,19 +254,25 @@ final class FrameApplier {
             return raise.waits.isEmpty ? () : raise.log("superseded")
         }
         let focused = dinky_border_focused_window(), now = CACurrentMediaTime()
+        let focusedOwner = focused != 0 ? dinky_window_info(focused).pid : 0
+        if first { raise.firstOwner = focusedOwner }
         unansweredRaises = unansweredRaises.filter { $0.value > now }
         let busy = Set(raise.pids.values.filter { scheduler.isBusy($0) || unansweredRaises[$0] != nil })
         let step = RaiseAfterActivating.step(
             raises: raise.layout.raises(current: onScreenOrder()), front: raise.front, owners: raise.pids,
-            focused: focused, focusedOwner: focused != 0 ? dinky_window_info(focused).pid : 0, pinned: raise.pinned,
-            busy: { busy.contains($0) }, elapsed: now - raise.began, retry: !first)
+            focused: focused, focusedOwner: focusedOwner, pinned: raise.pinned, busy: { busy.contains($0) },
+            elapsed: now - raise.began, retry: !first, firstOwner: raise.firstOwner)
         let list = { (ids: [WindowID]) in ids.map(String.init).joined(separator: " ") }
+        let pids = { (pids: [Int32]) in pids.map(String.init).joined(separator: " ") }
         switch step {
         case .done:
             if !first { raise.log("in order meanwhile") }
+        case .busy(let busy):
+            if !first { raise.log("busy \(pids(busy)), nothing raised") }
         case .raise(let ids, let busy):
             self.raise(ids, pids: raise.pids, front: raise.front)
-            let left = busy.isEmpty ? "" : " (busy \(busy.map(String.init).joined(separator: " ")) left out)"
+            if let raised = raise.raised { DispatchQueue.main.async(execute: raised) }
+            let left = busy.isEmpty ? "" : " (busy \(pids(busy)) left out)"
             // Read again once the raise has settled, to tell whether it took.
             raiseQueue.asyncAfter(deadline: .now() + RaiseEchoes.settle) {
                 let after = raise.layout.raises(current: onScreenOrder())

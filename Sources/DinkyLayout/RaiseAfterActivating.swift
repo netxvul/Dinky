@@ -26,13 +26,16 @@ public enum RaiseAfterActivating {
     }
 
     public enum Step: Equatable {
-        /// Nothing out of order to raise.
+        /// Nothing out of order.
         case done
+        /// Out of order are only windows of these apps, not answering: nothing raised.
+        case busy([Int32])
         /// Raise these, back to front, leaving out those of `busy` apps.
         case raise([WindowID], busy: [Int32])
         /// Not yet, for this reason: try again after `interval`.
         case wait(Wait)
-        /// Not ready by `longest`, or focus went to another app meanwhile.
+        /// Not ready by `longest`, or focus went meanwhile to an app other than `front`'s and the one focused at the
+        /// first try.
         case giveUp(Wait)
     }
 
@@ -43,12 +46,14 @@ public enum RaiseAfterActivating {
     /// window, so `front` goes last when its app has another raised. Raising another window of the app whose window
     /// is focused would take focus from it, so the raise waits for `front` to be the one, except where the focused
     /// window is a pin of `front`'s app, put in front through Dock and so read as that app's frontmost: only its app
-    /// counts. Focus gone to another app on a retry is the user's doing, and the raise gives up.
+    /// counts. An app activated is in front only a moment after it was asked to be, so on the first tries the app
+    /// focused before, `firstOwner` the one focused at the first try, can still be: focus gone on a retry to an app
+    /// other than those two is the user's doing, and the raise gives up.
     public static func step(raises: [WindowID], front: WindowID, owners: [WindowID: Int32], focused: WindowID,
                             focusedOwner: Int32, pinned: Set<WindowID> = [], busy: (Int32) -> Bool,
-                            elapsed: Double, retry: Bool = false) -> Step {
+                            elapsed: Double, retry: Bool = false, firstOwner: Int32? = nil) -> Step {
         let frontOwner = owners[front]
-        if retry, focused != 0, focused != front, focusedOwner != frontOwner {
+        if retry, focused != 0, focused != front, focusedOwner != frontOwner, focusedOwner != firstOwner {
             return .giveUp(Wait(focused: focused, pid: focusedOwner))
         }
         var skipped: [Int32] = []
@@ -57,7 +62,7 @@ public enum RaiseAfterActivating {
             if !skipped.contains(pid) { skipped.append(pid) }
             return false
         }
-        guard !ids.isEmpty else { return .done }
+        guard !ids.isEmpty else { return skipped.isEmpty ? .done : .busy(skipped) }
         if ids.last != front, let pid = frontOwner, !busy(pid), ids.contains(where: { owners[$0] == pid }) {
             ids = ids.filter { $0 != front } + [front]
         }
