@@ -141,13 +141,15 @@ ctrl-alt-cmd-s = 'layout tiles accordion scrolling'
 ### Across two displays
 
 A prototype, off unless `[scrolling] span-displays = true`. With exactly two
-displays side by side, the Nth Space of the left display pairs with the Nth
-of the right one. While both show a pair, and both are scrolling workspaces,
-they run one strip across both displays: the left one's columns, then the
-right one's. Switching either display to a Space of a pair, from dinky or with
-a swipe, switches the other to its partner; one that has no partner, as a
-full-screen app's Space, leaves the other display alone, and the two strips go
-their own ways again till both show a pair.
+displays side by side, while both show a scrolling workspace, the two run one
+strip across both displays: the left one's columns, then the right one's. The
+Nth Space of one display is the partner of the Nth of the other: switching
+either display to a Space, from dinky or with a swipe, switches the other to
+its partner where both are scrolling, so with workspaces 1 to 3 on the left
+display and 4 to 6 on the right, 1 and 4 go together, 2 and 5, 3 and 6. A
+display switched to a Space that is not scrolling, or a full-screen app's,
+leaves the other alone, and the two strips go their own ways again till both
+show scrolling workspaces.
 
 Columns keep their widths as shares of one display, the narrower one if they
 differ, so none is wider than a display; a lone column fills the display it is

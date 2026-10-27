@@ -3,12 +3,13 @@ import DinkyLayout
 import DinkyPrivate
 
 // `[scrolling] span-displays`: two displays side by side running one strip across both (see DinkyLayout's Span.swift).
-// The Nth user Space of the left display pairs with the Nth of the right one. While the displays show a pair whose
-// Spaces both lay out as scrolling, the right Space's tree is taken into the left one's, which then lays out across both
-// displays, and the right Space's windows belong to it (`treeKey`). A display switched to a Space of a pair, by dinky or
-// a swipe, takes the other display to its partner (`followSpan`). Once they show no pair, the layout of either side is
-// no longer scrolling, or the displays change, the strip splits again, each window going back to the tree of the Space
-// it is on. A window the strip takes over the seam is moved to the other display's Space by dinky as most of it crosses
+// While the two Spaces they show both lay out as scrolling, they are a pair: the right Space's tree is taken into the
+// left one's, which then lays out across both displays, and the right Space's windows belong to it (`treeKey`). The Nth
+// user Space of one display is the partner of the Nth of the other: a display switched to a Space, by dinky or a swipe,
+// takes the other display to its partner where both scroll (`followSpan`), so the two switch as one. Once the displays
+// show no pair, as one shows a Space that does not scroll or a full-screen app's, or the displays change, the strip
+// splits again, each window going back to the tree of the Space it is on, and comes together again as they show a pair.
+// Nothing changes while a switch is under way: the pair it ends on is taken as it lands. A window the strip takes over the seam is moved to the other display's Space by dinky as most of it crosses
 // (`settleSpanSpaces`), rather than left to macOS.
 
 /// Two Spaces showing side by side as one strip, its tree the left one's.
@@ -59,12 +60,11 @@ extension Coordinator {
         return (workspaces[space]?.chosenAlgorithm ?? algorithm(settings)) == .scrolling
     }
 
-    /// The pair that should run across the displays now: two displays side by side, each showing its Space of one pair,
-    /// both scrolling.
+    /// The pair that should run across the displays now: two displays side by side, each showing a user Space that
+    /// scrolls.
     private func wantedSpan() -> SpanPair? {
         guard enabled, config.scrolling.spanDisplays, let (left, right) = sideBySide(),
-              let i = left.userSpaces.firstIndex(of: left.currentSpaceID),
-              right.userSpaces.firstIndex(of: right.currentSpaceID) == i,
+              left.userSpaces.contains(left.currentSpaceID), right.userSpaces.contains(right.currentSpaceID),
               scrolls(left.currentSpaceID), scrolls(right.currentSpaceID) else { return nil }
         return SpanPair(left: left.currentSpaceID, right: right.currentSpaceID, leftDisplay: left.uuid,
                         rightDisplay: right.uuid)
@@ -72,9 +72,20 @@ extension Coordinator {
 
     /// Runs a strip across the displays, or splits the one that does, as the displays, their Spaces and their layouts
     /// have it now, and fits the one running across them to where the displays are. Not while fingers, the mouse or a
-    /// drag hold a strip: once they let go.
+    /// drag hold a strip, nor while a display switches Space: once they let go, or it lands.
     func updateSpan() {
-        guard !holdsStrip, drag == nil else { return }
+        guard !holdsStrip, drag == nil, !SpaceSwitcher.shared.switching else {
+            fitSpan()
+            // Looked at again once the switch has landed, which may come with no pass of its own.
+            if config.scrolling.spanDisplays, !spanRetryPending {
+                spanRetryPending = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                    self?.spanRetryPending = false
+                    self?.flush()
+                }
+            }
+            return
+        }
         let wanted = wantedSpan()
         if let span, span != wanted { unspan(span) }
         if let wanted, span != wanted { spanUp(wanted) }

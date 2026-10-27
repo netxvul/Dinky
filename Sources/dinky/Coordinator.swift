@@ -59,6 +59,7 @@ final class Coordinator {
     /// Each display's Space as `followSpan` last saw it, by UUID.
     var spanShown: [String: UInt64] = [:]
     var spanSettlePending = false
+    var spanRetryPending = false
     var placements: [WindowID: Placement] = [:]
     var dirty: Set<UInt64> = []
     /// Classification attempts for windows whose AX element has not appeared yet.

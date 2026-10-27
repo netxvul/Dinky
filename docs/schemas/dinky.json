@@ -107,7 +107,7 @@
         "span-displays": {
           "type": "boolean",
           "default": false,
-          "description": "Prototype: with exactly two displays side by side, each showing a scrolling workspace, run one strip across both. The Nth Space of the left display pairs with the Nth of the right one, and switching one switches the other."
+          "description": "Prototype: with exactly two displays side by side, each showing a scrolling workspace, run one strip across both. Switching one display to a Space switches the other to the Space at the same place among its own, where both are scrolling."
         }
       }
     },
