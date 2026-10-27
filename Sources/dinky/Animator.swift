@@ -64,9 +64,10 @@ final class Animator: NSObject {
     private var linkDisplay: CGDirectDisplayID?
     /// When the last frame stepped was to show, so each step goes as far as when its own will.
     private var lastTarget: CFTimeInterval?
-    /// Since when the link has run, how many frames it stepped, and the longest wait between two, for the log once it
-    /// pauses: how evenly the glides went.
-    private var pace: (since: CFTimeInterval, frames: Int, longest: CFTimeInterval)?
+    /// Since when the link has run, how many frames it stepped, the longest wait between two and when it ended, and the
+    /// longest a tree's placer or sink took over one frame, for the log once it pauses: how evenly the glides went.
+    private var pace: (since: CFTimeInterval, frames: Int, longest: CFTimeInterval, longestAt: Date?,
+                       slowestCall: CFTimeInterval)?
     /// Held while windows glide, so App Nap does not bunch the frames, as SlideScroll holds it.
     private var activity: NSObjectProtocol?
     /// When a frame was last stepped, on the wall clock, so a display link that stopped firing is noticed.
@@ -136,6 +137,10 @@ final class Animator: NSObject {
 
     /// Whether dinky is moving the window right now, so its frame changes are not the user's.
     func isAnimating(_ id: WindowID) -> Bool { entries[id] != nil }
+    /// Whether the tree has a glide under way: windows stepping, or its finish, placer or sink still held.
+    func isGliding(_ key: UInt64) -> Bool {
+        finishes[key] != nil || placers[key] != nil || sinks[key] != nil || entries.values.contains { $0.key == key }
+    }
 
     /// The windows moving now.
     var animating: [WindowID] { Array(entries.keys) }
@@ -352,7 +357,7 @@ final class Animator: NSObject {
         if fresh || link?.isPaused == true {
             link?.isPaused = false
             lastStepAt = CACurrentMediaTime()
-            pace = (lastStepAt, 0, 0)
+            pace = (lastStepAt, 0, 0, nil, 0)
         }
         if activity == nil {
             activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical],
@@ -413,7 +418,9 @@ final class Animator: NSObject {
             let seconds = lastStepAt - pace.since
             print("\(stamp()) animator: \(pace.frames) frames in \(Int((seconds * 1000).rounded())) ms, "
                   + "\(Int((Double(pace.frames) / max(seconds, 0.001)).rounded())) a second, "
-                  + "the longest wait \(String(format: "%.1f", pace.longest * 1000)) ms")
+                  + "the longest wait \(String(format: "%.1f", pace.longest * 1000)) ms"
+                  + (pace.longestAt.map { " at \(stamp($0))" } ?? "")
+                  + ", the slowest placing \(String(format: "%.1f", pace.slowestCall * 1000)) ms")
             fflush(stdout)
         }
         pace = nil
@@ -437,10 +444,18 @@ final class Animator: NSObject {
         lastTarget = link.targetTimestamp
         if var counted = pace {
             counted.frames += 1
-            counted.longest = max(counted.longest, gap)
+            if gap > counted.longest { (counted.longest, counted.longestAt) = (gap, Date()) }
             pace = counted
         }
         step(dt: min(max(gap, 0), 1.0 / 30))
+    }
+
+    /// `work`, timed for the pace line: the longest a tree's placer or sink took over a frame.
+    private func timed<T>(_ work: () -> T) -> T {
+        let began = CACurrentMediaTime()
+        let result = work()
+        if pace != nil { pace!.slowestCall = max(pace!.slowestCall, CACurrentMediaTime() - began) }
+        return result
     }
 
     /// Advances every window by `dt` seconds and writes the frames; `dt` of `timeout` or more lands them all.
@@ -471,7 +486,7 @@ final class Animator: NSObject {
         for (key, sink) in sinks {
             let ours = frames.filter { moving[$0.key]?.key == key }
             frames = frames.filter { moving[$0.key]?.key != key }
-            if !ours.isEmpty { sink(ours) }
+            if !ours.isEmpty { timed { sink(ours) } }
         }
         // A strip's windows go on screen together, each tree's resting ones where they rest, and each column's quick
         // windows where its slow one shows.
@@ -479,14 +494,14 @@ final class Animator: NSObject {
         for (key, placer) in placers {
             let ours = frames.filter { moving[$0.key]?.key == key }
             guard !ours.isEmpty else { continue }
-            var placed = placer.place(placer.base.merging(ours) { $1 })
+            var placed = timed { placer.place(placer.base.merging(ours) { $1 }) }
             let slow = Set(placed.keys.filter { windowPids[$0].map(slowPids.contains) ?? false })
-            let hold = ColumnHold.held(placed, columns: columns(key), slow: slow) { id in
-                let info = dinky_window_info(id)
-                return info.exists ? info.frame : nil
+            // No slow window, no column to hold: nothing to read.
+            if !slow.isEmpty {
+                let hold = ColumnHold.held(placed, columns: columns(key), slow: slow) { serverFrame($0) }
+                placed.merge(hold.frames) { $1 }
+                held.formUnion(hold.held)
             }
-            placed.merge(hold.frames) { $1 }
-            held.formUnion(hold.held)
             for id in ours.keys { frames[id] = placed[id] ?? frames[id] }
             for (id, still) in placer.resting where moving[id] == nil {
                 guard let frame = placed[id], frame != still.frame, !applier.isSlow(still.pid) || stepCount % 3 == 2 else { continue }

@@ -523,7 +523,15 @@ extension Coordinator {
                 print("\(stamp()) drag: could not ask for \(ids.sorted()) to move to Space \(space)")
             }
         }
-        if !away.isEmpty { _ = waitUntil(0.5) { away.keys.allSatisfy { dinky_window_space_id($0) == moves[$0] } } }
+        // Each done once it is there, or once it has left for another Space, where macOS put it instead.
+        if !away.isEmpty {
+            _ = waitUntil(0.5) {
+                away.allSatisfy { id, was in
+                    let now = dinky_window_space_id(id)
+                    return now == moves[id] || now != 0 && now != was
+                }
+            }
+        }
         for (id, was) in away {
             let now = dinky_window_space_id(id)
             print("\(stamp()) drag: \(id) on Space \(was), \(now == moves[id] ? "moved" : "could not move") to Space \(moves[id]!)")

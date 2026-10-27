@@ -99,6 +99,7 @@ final class BorderManager {
             break
         }
 
+        if event.kind == .windowLevel, let window = event.window { borders[window.id]?.levelChanged() }
         if let window = event.window {
             if event.change == .removed {
                 // Released now, not at the flush: WindowServer can reuse the id before then.

@@ -75,6 +75,12 @@ final class Coordinator {
     /// The tiled window being dragged with the mouse, until the button is released. See Drag.swift.
     var drag: DragSession?
     var dragging: WindowID? { drag?.id }
+    /// Whether dinky is moving windows now: a glide, a staging or system tiling still settling, a push, a strip held
+    /// by fingers or the mouse, or a drag.
+    var movesWindows: Bool {
+        !animator.animating.isEmpty || !stagingWindows.isEmpty || !systemTiling.isEmpty || !pushes.isEmpty
+            || stripScroll != nil || drag != nil
+    }
     /// The tiled window the mouse button is down on, from the first frame change the press brings till the window has
     /// gone from where it was pressed, which makes the press a drag, or the button comes up. See Drag.swift.
     var windowPress: WindowPress?
@@ -316,13 +322,15 @@ final class Coordinator {
     /// macOS stacks windows by focus, and a band window focused last would cover the pin it slides under. So also for a
     /// band window in front of a pin that is about to sweep across it (`sweeping`, by pin), as a glide sets off, and for
     /// any band window in front of one as fingers take hold of the strip (`takingHold`). `raising` are windows the same
-    /// pass is about to raise, counted as in front of every pin. Never over a window outside the tree at the pin's level
+    /// pass is about to raise, counted as in front of every pin. `stack` is the window server's list of the windows
+    /// shown, front to back, when the caller has read it already (`onScreenStack`). Never over a window outside the tree
+    /// at the pin's level
     /// or lower in front of it, a dialog or a floating window in use, nor while a click, a drag or a press is under way,
     /// or a window is fullscreen over the pins. A pinned column is raised whole once any of its windows is covered, as it
     /// stacks, its shown window last; and a window of a pinned app that has focus, or that the tree is focusing, is
     /// raised after them, so it keeps its app's focus: it is not counted as covering a pin, as it would cover it again.
     func raiseCoveredPins(in only: UInt64? = nil, sweeping: [WindowID: Set<WindowID>] = [:], raising: Set<WindowID> = [],
-                          takingHold: Bool = false) {
+                          takingHold: Bool = false, stack shown: [(id: WindowID, layer: Int, frame: CGRect?)]? = nil) {
         guard enabled, !clickHold, drag == nil, windowPress == nil else { return }
         var keys = workspaces.keys.filter { key in
             (only.map { $0 == key } ?? isVisible(key)) && !(workspaces[key]?.pinnedWindows.isEmpty ?? true)
@@ -333,7 +341,7 @@ final class Coordinator {
         guard !keys.isEmpty else { return }
         // The windows shown, front to back, where the window server shows them: the window model hears late of moves
         // through Dock, which a strip's glides and the fingers' scrolls make.
-        let stack = onScreenStack().compactMap { shown -> StackedWindow? in
+        let stack = (shown ?? onScreenStack()).compactMap { shown -> StackedWindow? in
             guard let window = model.windows[shown.id], window.isVisible else { return nil }
             return StackedWindow(id: shown.id, layer: shown.layer, frame: shown.frame ?? window.frame, pid: window.pid)
         }
@@ -353,7 +361,7 @@ final class Coordinator {
         // The app in front as the window server has it, not the one dinky is about to focus: its windows are the ones
         // Accessibility cannot raise a window over.
         let asked = dinky_border_focused_window()
-        let shownFront = dinky_window_info(asked).pid
+        let shownFront = model.windows[asked]?.pid ?? dinky_window_info(asked).pid
         var raise: [WindowID] = [], fronts: [WindowID] = [], raisedBy: [(key: UInt64, pins: [WindowID], cause: String)] = []
         for key in keys {
             let workspace = workspaces[key]!
@@ -398,7 +406,8 @@ final class Coordinator {
                 telemetry.pinsRaised(key, pins.filter(hit.contains), cause + how)
             }
             borders?.replaceRings(raise.filter(hit.contains))
-            let live = dinky_window_info(dinky_border_focused_window()).pid
+            let focused = dinky_border_focused_window()
+            let live = self.model.windows[focused]?.pid ?? dinky_window_info(focused).pid
             raisedInBackground.formUnion(background.filter { hit.contains($0) && self.model.windows[$0]?.pid != live })
         }
         if ordering {
@@ -1281,8 +1290,7 @@ final class Coordinator {
         let strip = workspace.stripFrames, windows = model.windows
         let pids = Dictionary(uniqueKeysWithValues: strip.keys.compactMap { id in windows[id].map { (id, $0.pid) } })
         let sizes = Dictionary(uniqueKeysWithValues: strip.keys.compactMap { id -> (WindowID, CGSize)? in
-            let info = dinky_window_info(id)
-            return info.exists ? (id, info.frame.size) : nil
+            serverFrame(id).map { (id, $0.size) }
         })
         // Dock moves windows without resizing them: only a strip whose windows all have the sizes it gives them, with
         // no wall, behind which a window hides at another, can follow the fingers through it.
@@ -1746,10 +1754,7 @@ final class Coordinator {
         // - Any other keeps to resizing as it glides, as does one whose app is not answering, which would hold it up.
         // Read where the window server has them: just after a glide the window model can be a move or two behind. A
         // window counts as coming back until it has its size.
-        let frameOf = { [self] (id: WindowID) -> CGRect? in
-            let info = dinky_window_info(id)
-            return info.exists ? info.frame : model.windows[id]?.frame
-        }
+        let frameOf = { [self] (id: WindowID) -> CGRect? in serverFrame(id) ?? model.windows[id]?.frame }
         let edge = display.map { $0.visibleArea.maxX < $0.frame.maxX - 0.5 ? $0.visibleArea.maxX : $0.frame.maxX } ?? 0
         let dock = display.map { $0.visibleArea.maxX < $0.frame.maxX - 0.5 } ?? false
         // A right pin is a wall to the band's windows: one growing to the left must not reach past the screen edge under
@@ -1903,14 +1908,16 @@ final class Coordinator {
         // not once it ends there.
         // Those this raises go in front of the pins too, so they count as in front of them already.
         let pinFrames = workspace.pinnedWindows.compactMap { id in layout.frames[id].map { (id, $0) } }
-        let raising = pinFrames.isEmpty ? [] : Set(layout.raises(current: onScreenOrder()))
+        // The window list read once, for what this pass raises and for the pins it sweeps under.
+        let shownStack = pinFrames.isEmpty ? nil : onScreenStack()
+        let raising = shownStack.map { Set(layout.raises(current: $0.map(\.id))) } ?? []
         applier.raiseIntoOrder(layout, pids: pids, front: workspace.focused)
         var sweeping: [WindowID: Set<WindowID>] = [:]
         for (id, target) in layout.frames where workspace.pinSide(of: id) == nil {
             guard let now = model.windows[id]?.frame else { continue }
             for (pin, frame) in pinFrames where frame.intersects(now.union(target)) { sweeping[pin, default: []].insert(id) }
         }
-        if !sweeping.isEmpty { raiseCoveredPins(in: key, sweeping: sweeping, raising: raising) }
+        if !sweeping.isEmpty { raiseCoveredPins(in: key, sweeping: sweeping, raising: raising, stack: shownStack) }
         let sized = staged.union(shrinkOnce), special = sized.union(held).union(growLeft)
         // Where the window server has those changing size, or that just went fullscreen or came back, which the system's
         // own tiling can have moved without the window model hearing of it yet.
@@ -2000,6 +2007,10 @@ final class Coordinator {
             }
             guard anyMoves || strip.keys.contains(where: animator.isAnimating) else {
                 settleGlide()
+                // A glide of the tree still under way here steps only windows that have left it, as one moved to
+                // another display: it would go on moving them on the old one and, at its end, write the old layout
+                // over this one. Stopped first, as a glide this pass takes over is.
+                if animator.isGliding(key) { animator.stop(key) }
                 return write()
             }
             // A long scroll takes longer, a little more for each column it passes, so a window an app is slow to move
@@ -2039,10 +2050,7 @@ final class Coordinator {
                 strip[id] != nil && !fullscreen.contains(id) && workspace.pinSide(of: id) == nil && workspace.isInView(id)
                     && workspace.columns(around: id).own.count == 1
             }.map { ($0, workspace.columns(around: $0)) }
-            let shown = { (id: WindowID) -> CGRect? in
-                let info = dinky_window_info(id)
-                return info.exists ? info.frame : nil
-            }
+            let shown = { (id: WindowID) -> CGRect? in serverFrame(id) }
             let place = { (frames: [WindowID: CGRect]) -> [WindowID: CGRect] in
                 var input = strip
                 for (id, frame) in frames where !fullscreen.contains(id) { input[id] = frame }
@@ -2054,7 +2062,7 @@ final class Coordinator {
                     guard let frame = shown(lead) else { continue }
                     input[lead] = frame
                     input = ResizeOnce.guarded(input, lead: lead, left: beside.left, right: beside.right, gap: guardGap,
-                                               shown: shown)
+                                               shown: { $0 == lead ? frame : shown($0) })
                 }
                 var placed = workspace.placeStrip(input)
                 // Placed as the guard has it: hanging past the screen edge at its size, such a window is no window
@@ -2207,9 +2215,8 @@ final class Coordinator {
         func check() {
             guard live(), enabled else { return ended() }
             let shown = answered && staging.allSatisfy { id, frame in
-                let info = dinky_window_info(id)
-                guard info.exists, let got = settled[id] else { return true }
-                return ResizeOnce.shows(info.frame, staging: frame) || info.frame.isClose(to: got, within: 2)
+                guard let got = settled[id], let shown = serverFrame(id) else { return true }
+                return ResizeOnce.shows(shown, staging: frame) || shown.isClose(to: got, within: 2)
             }
             guard shown || CACurrentMediaTime() - started > 2 else {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 120) { check() }
@@ -2277,8 +2284,7 @@ final class Coordinator {
             }
         }
         guard animates else { return write() }
-        let info = dinky_window_info(id)
-        let start = info.exists ? info.frame : window.frame
+        let start = serverFrame(id) ?? window.frame
         let display = displays.display(ofWindow: id)
         let dock = display.map { $0.visibleArea.maxX < $0.frame.maxX - 0.5 } ?? false
         let edge = display.map { dock ? $0.visibleArea.maxX : $0.frame.maxX } ?? 0
@@ -2325,8 +2331,7 @@ final class Coordinator {
             guard let self else { return }
             pushes[key] = nil
             guard placements[id]?.floating == true, model.windows[id] != nil else { return }
-            let now = dinky_window_info(id)
-            let staged = now.exists ? now.frame : staging
+            let staged = serverFrame(id) ?? staging
             applier.assume([id: staged.size], pids: pids)
             animator.animate(key, from: [id: staged], to: [id: ResizeOnce.glideTarget(frame, size: staged.size)],
                              pids: pids, then: write)
@@ -2362,19 +2367,19 @@ final class Coordinator {
             systemFilled[id] = identifier == SystemTiling.fill ? start : nil
             if identifier == SystemTiling.fill { systemTiled.insert(id) }
             // From where it is now: a step of a glide it was in can have landed since.
-            let began = CACurrentMediaTime(), pressedAt = dinky_window_info(id)
-            let from = pressedAt.exists ? pressedAt.frame : start
+            let began = CACurrentMediaTime()
+            let from = serverFrame(id) ?? start
             var last = from, since = began
             func check() {
                 guard live() else { return }
-                let info = dinky_window_info(id), now = CACurrentMediaTime()
-                if info.exists, info.frame != last { last = info.frame; since = now }
+                let seen = serverFrame(id), now = CACurrentMediaTime()
+                if let seen, seen != last { last = seen; since = now }
                 let moved = !last.isClose(to: from, within: 1), still = now - since
                 // Still for a while once it has moved for about as long as the system's animation takes: it can pause
                 // near the end before its last frame, which would land over a frame written sooner, and an app busy
                 // with a step can pause in the middle. Or never set off; or gone, or so long that something else has it.
                 let done = moved && still > 0.15 && now - began > 0.35 || !moved && now - began > 1
-                    || !info.exists || now - began > 2.5
+                    || seen == nil || now - began > 2.5
                 guard done else {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 120) { check() }
                     return
@@ -2398,8 +2403,7 @@ final class Coordinator {
     /// Where a floating window is, or where it is gliding to.
     func floatingFrame(of id: WindowID) -> CGRect? {
         if isAnimating(id), let target = floatingTargets[id] { return target }
-        let info = dinky_window_info(id)
-        return info.exists ? info.frame : model.windows[id]?.frame
+        return serverFrame(id) ?? model.windows[id]?.frame
     }
 
     /// The animator's key for one floating window's glide, apart from every Space ID, which keys a tree's.

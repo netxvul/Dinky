@@ -7,8 +7,8 @@ import DinkyPrivate
 func uptime() -> UInt64 { clock_gettime_nsec_np(CLOCK_UPTIME_RAW) }
 
 /// The time of day to the millisecond, to prefix log lines whose timing matters.
-func stamp() -> String {
-    stampFormatter.string(from: Date())
+func stamp(_ date: Date = Date()) -> String {
+    stampFormatter.string(from: date)
 }
 
 /// Made once: a formatter is slow to make, and the log asks for the time on every line.

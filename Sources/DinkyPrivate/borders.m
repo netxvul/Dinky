@@ -61,22 +61,28 @@ static CGRect outer_frame(CGRect frame, double width)
     return CGRectInset(frame, -width, -width);
 }
 
-// Moves, copies the target's level and sub-level and orders next to `relative`, the target or
-// a window just above it, in one transaction. SLSGetWindowSubLevel needs Screen Recording and
-// returns 0 without it (JankyBorders 7ba72e5), which is every normal window's sub-level anyway.
-static void place(uint32_t border, uint32_t target, uint32_t relative, CGPoint origin, DinkyBorderOrder order,
-                  bool synchronous)
+// SLSGetWindowSubLevel needs Screen Recording and returns 0 without it (JankyBorders 7ba72e5), which is every normal
+// window's sub-level anyway.
+void dinky_border_level(uint32_t target, int64_t *level, int32_t *subLevel)
 {
     int cid = dinky_connection();
-    int64_t level = 0;
-    SLSGetWindowLevel(cid, target, &level);
+    *level = 0;
+    SLSGetWindowLevel(cid, target, level);
+    *subLevel = SLSGetWindowSubLevel && SLSTransactionSetWindowSubLevel ? SLSGetWindowSubLevel(cid, target) : 0;
+}
 
+// Moves, sets `level` and `subLevel`, the target's, and orders next to `relative`, the target or a window just above
+// it, in one transaction.
+static void place_at(uint32_t border, uint32_t target, uint32_t relative, CGPoint origin, DinkyBorderOrder order,
+                     bool synchronous, int64_t level, int32_t subLevel)
+{
+    int cid = dinky_connection();
     CFTypeRef transaction = SLSTransactionCreate(cid);
     if (!transaction) return;
     SLSTransactionMoveWindowWithGroup(transaction, border, origin);
     SLSTransactionSetWindowLevel(transaction, border, (int)level);
     if (SLSGetWindowSubLevel && SLSTransactionSetWindowSubLevel) {
-        SLSTransactionSetWindowSubLevel(transaction, border, SLSGetWindowSubLevel(cid, target));
+        SLSTransactionSetWindowSubLevel(transaction, border, subLevel);
     }
     // A window raised past its target leaves `relative` behind until that is placed again, which may come after this:
     // put it back directly above the target first, so this one lands next to both.
@@ -84,6 +90,16 @@ static void place(uint32_t border, uint32_t target, uint32_t relative, CGPoint o
     SLSTransactionOrderWindow(transaction, border, order, relative);
     SLSTransactionCommit(transaction, synchronous);
     CFRelease(transaction);
+}
+
+// As place_at, the target's level and sub-level read now.
+static void place(uint32_t border, uint32_t target, uint32_t relative, CGPoint origin, DinkyBorderOrder order,
+                  bool synchronous)
+{
+    int64_t level = 0;
+    int32_t subLevel = 0;
+    dinky_border_level(target, &level, &subLevel);
+    place_at(border, target, relative, origin, order, synchronous, level, subLevel);
 }
 
 // CGPathAddRoundedRect needs the radius to fit in the rect.
@@ -231,6 +247,12 @@ void dinky_glow_move(uint32_t border, uint32_t target, uint32_t above, CGRect fr
 void dinky_border_move(uint32_t border, uint32_t target, CGRect frame, double width, DinkyBorderOrder order)
 {
     place(border, target, target, outer_frame(frame, width).origin, order, false);
+}
+
+void dinky_border_move_at_level(uint32_t border, uint32_t target, CGRect frame, double width, DinkyBorderOrder order,
+                                int64_t level, int32_t subLevel)
+{
+    place_at(border, target, target, outer_frame(frame, width).origin, order, false, level, subLevel);
 }
 
 void dinky_border_move_to_space(uint32_t border, uint64_t spaceID)

@@ -45,7 +45,13 @@ final class Recovery {
         self.model = model
         self.applier = applier
         carryOver()
-        model.observe { [weak self] _ in self?.record() }
+        model.observe { [weak self] event in
+            // A window moved or resized, as on every frame of a glide, changes the journal only when it has just become
+            // one to journal: its entry keeps the frame it had before dinky wrote any.
+            if event.change == .updated, let window = event.window, let self,
+               !(window.isNormal && entries[window.id] == nil) { return }
+            self?.record()
+        }
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification,
                                                           object: nil, queue: .main) { [weak self] _ in self?.record() }
         resume()
