@@ -534,7 +534,11 @@ Every card has its own display's proportions. With more than one display and
 `displays = 'all'`, each display's workspaces are a group, left to right as the
 displays are arranged, with the display's name over it; a dot marks the
 workspace each display shows. A display with no numbered workspace shows the
-Space it is on, and picking it focuses that display.
+Space it is on, and picking it focuses that display. With `show-fullscreen`,
+each native full-screen Space (the green button's) follows its display's
+workspaces as a card of its window filling the display, or of both windows
+side by side in Split View, named for its apps; picking it focuses the window
+in front, and macOS goes to its Space.
 
 Thumbnails are the [window-switcher](#window-switcher)'s and need Screen Recording too.
 macOS draws no Space but the ones on screen, so a workspace's windows are
@@ -548,6 +552,7 @@ on screen as the capsule shows; a window not captured yet shows its app's icon.
 | `modifier` | `'none'` | `'alt'`, `'ctrl'`, `'cmd'`, `'shift'` or `'hyper'`; not the same as `[window-switcher]`'s unless their `trigger`s differ, so one key can be held for one switcher and double-tapped for the other (keep the held one's `delay-ms` at least its `double-tap-ms`, or a slow tap shows it). `'none'` turns holding it off; a binding still shows the capsule. Which key of the pair counts follows [`[modifiers]`](#modifiers). |
 | `displays` | `'all'` | `'all'`: every display's workspaces, a group per display. `'pointer'`: only those of the display under the pointer. |
 | `show-empty` | `true` | Cards for workspaces without windows. |
+| `show-fullscreen` | `true` | A card for each native full-screen Space, after its display's workspaces. |
 | `exclude` | `[]` | Workspace numbers left out, such as `[3]`. |
 | `card-height` | `85` | Each card's height in points, `60` to `200`; its width follows its display. A row too wide for the display is scaled down. |
 | `thumbnails` | `'windows'` | `'windows'` shows a picture of each window; `'icons'` only app icons; `'schematic'` a fixed picture of each workspace's layout, the same whatever windows it has: tiles one window beside two, accordion three stacked, scrolling two columns between parked slivers, fixed its template's cells, free three overlapping windows. Its windows are solid grey blocks with a hairline edge, as Windows draws its snap layouts, all in the accent colour on the card picked. Neither of the last two needs Screen Recording. |

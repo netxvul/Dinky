@@ -138,6 +138,7 @@ extension Config {
     modifier = 'none'               # none (off) | alt | ctrl | cmd | shift | hyper; not [window-switcher]'s unless the triggers differ
     displays = 'all'                # all (a group per display) | pointer (the display under the pointer)
     show-empty = true               # cards for workspaces without windows
+    show-fullscreen = true          # a card for each native full-screen Space, after its display's workspaces
     exclude = []                    # workspace numbers left out
     card-height = 85                # points, 60 to 200; the width follows each display's proportions
     thumbnails = 'windows'          # windows (pictures, need Screen Recording) | icons (app icons) | schematic (a fixed picture of the layout)
