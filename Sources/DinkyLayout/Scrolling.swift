@@ -595,7 +595,7 @@ extension Workspace {
         return Dictionary(uniqueKeysWithValues: frames.map { id, frame in
             if let wall = wallParking(frame, covers: covers), !hanging.contains(id),
                let cover = wall == .left ? covers.left : covers.right {
-                if let curtain = curtain(frame, at: wall, under: cover.frame, alone: cover.alone), !keepsSize {
+                if let curtain = curtain(frame, at: wall, under: cover), !keepsSize {
                     return (id, curtain)
                 }
                 return (id, hiddenAtWall(id, frame, behind: cover.frame, sizedBy: resting?[cover.id], wall: wall,
@@ -608,9 +608,25 @@ extension Workspace {
         })
     }
 
-    /// The biggest window of a column shown whole, and whether it is its column's only one.
+    /// The biggest window of a column shown whole, and the frames of that column's windows.
     struct WallCover {
-        let id: WindowID, frame: CGRect, alone: Bool
+        let id: WindowID, frame: CGRect, column: [CGRect]
+
+        /// Whether the column's windows, top to bottom, leave no gap between them from `top` down to `bottom`, as an
+        /// accordion's overlapping windows do, half a point allowed.
+        func spans(from top: CGFloat, to bottom: CGFloat) -> Bool {
+            var reached: CGFloat?
+            for rect in column.sorted(by: { $0.minY < $1.minY }) {
+                if let low = reached {
+                    guard rect.minY <= low + 0.5 else { break }
+                    reached = max(low, rect.maxY)
+                } else {
+                    guard rect.minY <= top else { return false }
+                    reached = rect.maxY
+                }
+            }
+            return reached.map { $0 >= bottom } ?? false
+        }
     }
 
     /// For strip frames such as `placeStrip` takes, the biggest window of the column in view nearest each side: what
@@ -622,7 +638,7 @@ extension Workspace {
             guard !rects.isEmpty, shown,
                   let biggest = rects.max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height })
             else { return nil }
-            return WallCover(id: biggest.id, frame: biggest.frame, alone: rects.count == 1)
+            return WallCover(id: biggest.id, frame: biggest.frame, column: rects.map(\.frame))
         }
         return (covers.min { $0.frame.minX < $1.frame.minX }, covers.max { $0.frame.maxX < $1.frame.maxX })
     }
@@ -680,14 +696,17 @@ extension Workspace {
     /// between that column and the wall shows the window rather than nothing. Only while the cover leaves room at the
     /// wall, and the window's edge away from the wall, and its shadow, stay `shadowReach` inside the cover's far edge,
     /// short of the column beyond; nil otherwise, and for a window wholly past the wall, inside the outer gap or
-    /// beyond, which hide behind the cover. Under a column of several windows, `alone` false, only one no taller than
-    /// the cover: one taller would show in the gaps between that column's windows.
-    func curtain(_ frame: CGRect, at wall: Direction, under cover: CGRect, alone: Bool = true) -> CGRect? {
-        let inset = stripInset, reach = Self.shadowReach
+    /// beyond, which hide behind the cover. Under a column of several windows, only one no taller than the cover, or
+    /// one the column's windows span top to bottom with no gap between them, as an accordion's: one reaching past
+    /// would show in the gaps between that column's windows.
+    func curtain(_ frame: CGRect, at wall: Direction, under column: WallCover) -> CGRect? {
+        let inset = stripInset, reach = Self.shadowReach, cover = column.frame
         // Only where the cover leaves room at the wall: one reaching out to the outer gap covers it all.
         let partly = wall == .right ? frame.minX < inset.maxX - 1 : frame.maxX > inset.minX + 1
         let room = wall == .right ? cover.maxX < inset.maxX - 1 : cover.minX > inset.minX + 1
-        guard partly, room, alone || frame.minY >= cover.minY && frame.maxY <= cover.maxY else { return nil }
+        let covered = column.column.count == 1 || frame.minY >= cover.minY && frame.maxY <= cover.maxY
+            || column.spans(from: frame.minY, to: frame.maxY)
+        guard partly, room, covered else { return nil }
         let held = keptOffWalls(frame)
         return wall == .right ? held.minX >= cover.minX + reach ? held : nil
             : held.maxX <= cover.maxX - reach ? held : nil
