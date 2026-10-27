@@ -86,14 +86,26 @@ extension Workspace {
 
     /// The window to focus as the fingers let go: of the column whose middle shows nearest the middle of the strip's
     /// area, the focused one on a tie, or at an end of the strip, the column there, which the middle cannot reach once
-    /// it shows whole; of a column of several, the one most recently focused.
+    /// it shows whole; of a column of several, the one most recently focused. Beside a wall the strip rests lined up
+    /// with it (`wallAligned`), the focused column off the middle, as far from it as its neighbour on the wall side:
+    /// there the middle is where the focused column's showed as they took hold, so it keeps half a column's way either
+    /// side.
     var snappedWindow: WindowID? {
         let band = bandRange
         guard isScrolling, let first = band.first, let last = band.last else { return nil }
         let area = stripArea, spans = columnSpans(in: area)
         let offset = offset(for: spans, in: area, showingFocus: false)
-        let away = { (i: Int) in abs(spans[i].start + spans[i].width / 2 - offset - area.width / 2) }
-        var index = focused.flatMap { bandIndex(of: $0) } ?? first
+        let focusedColumn = focused.flatMap { bandIndex(of: $0) }
+        let walled = walls.contains(.right) && pinnedIndex(.right) == nil
+            || walls.contains(.left) && pinnedIndex(.left) == nil
+        let middle: CGFloat
+        if walled, let start = freeScrollFrom, let f = focusedColumn {
+            middle = spans[f].start + spans[f].width / 2 - start
+        } else {
+            middle = area.width / 2
+        }
+        let away = { (i: Int) in abs(spans[i].start + spans[i].width / 2 - offset - middle) }
+        var index = focusedColumn ?? first
         for i in band where away(i) < away(index) { index = i }
         if let limits = heldLimits(for: spans, in: area) {
             let stays = { (i: Int) in

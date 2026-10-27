@@ -288,17 +288,19 @@ extension Workspace {
     /// failing that, the one that puts it wholly beyond, starting at the wall; failing both, `offset`. Either only with
     /// the focused band column still whole on screen and within the ends (`heldLimits`). Showing comes first: the side
     /// away from the wall can show a column in part, or peek, and the wall side cannot. With walls on both sides, the
-    /// right one's choice, then the left one's from there; should that make a column straddle the right one again, the
-    /// one of the three offsets leaving the least room bare at the walls. Not on a pinned side, nor for a strip that
-    /// fits, nor with no band column focused.
+    /// right one's choice, then the left one's from there; should that make a column straddle the right one again,
+    /// once more round both, and the one of those offsets leaving the least room bare at the walls. Not on a pinned
+    /// side, nor for a strip that fits, nor with no band column focused or, a pin focused, focused last
+    /// (`shownBandColumn`).
     func wallAligned(_ offset: CGFloat, spans: [(start: CGFloat, width: CGFloat)], in area: CGRect) -> CGFloat {
         let right = walls.contains(.right) && pinnedIndex(.right) == nil
         let left = walls.contains(.left) && pinnedIndex(.left) == nil
         let band = bandRange
-        guard right || left, let focusedColumn = focused.flatMap({ bandIndex(of: $0) }),
+        guard right || left, let focusedColumn = shownBandColumn,
               let limits = heldLimits(for: spans, in: area) else { return offset }
         // A column counts as whole a little past the area, as spans are rounded to the point: an area an odd number of
-        // points wide leaves two half-width spans one point over it. A straddler is one past a wall by more than half one.
+        // points wide leaves two half-width spans one point over it. A straddler is one past a wall by more than half
+        // one.
         let slack: CGFloat = 0.5, wholeSlack: CGFloat = 1.5
         func onScreen(_ i: Int, at c: CGFloat) -> (minX: CGFloat, maxX: CGFloat) {
             let minX = area.minX + spans[i].start - c
@@ -340,15 +342,23 @@ extension Workspace {
         guard right && left else { return aligned(right ? .right : .left, from: offset) }
         let afterRight = aligned(.right, from: offset), afterBoth = aligned(.left, from: afterRight)
         guard straddler(.right, at: afterBoth) != nil else { return afterBoth }
-        return [offset, afterRight, afterBoth].min { bare(at: $0) < bare(at: $1) }!
+        // The left step left a column straddling the right wall: once more round both, then the least room bare.
+        let again = aligned(.right, from: afterBoth), againBoth = aligned(.left, from: again)
+        return [offset, afterRight, afterBoth, again, againBoth].min { bare(at: $0) < bare(at: $1) }!
+    }
+
+    /// The band column that must show whole where the strip rests: the focused one's, or with a pin focused, the band
+    /// window focused last's (as `heldLimits` takes it). Nil with neither in the band.
+    var shownBandColumn: Int? {
+        focused.flatMap { bandIndex(of: $0) } ?? bandFocus.flatMap { bandIndex(of: $0) }
     }
 
     /// Lines the strip up with its walls where it shows now (`wallAligned`), as after a display came beside it: no
     /// centring again. Not while a click holds the scroll, fingers scroll it freely, the scroll is kept, something is
-    /// or is about to be fullscreen, or no band window has focus.
+    /// or is about to be fullscreen, or no band column is to show whole (`shownBandColumn`).
     public mutating func alignToWalls() {
         guard isScrolling, !holdsScroll, freeScrollFrom == nil, !keepsScroll, fullscreenWindows.isEmpty,
-              pendingFullscreen == nil, focused.flatMap({ bandIndex(of: $0) }) != nil else { return }
+              pendingFullscreen == nil, shownBandColumn != nil else { return }
         let area = stripArea, spans = columnSpans(in: area)
         scrollOffset = wallAligned(shownOffset, spans: spans, in: area)
     }
