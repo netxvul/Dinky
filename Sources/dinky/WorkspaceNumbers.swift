@@ -23,6 +23,10 @@ final class WorkspaceNumbers {
     private var homes: [UInt32: Int] = [:]
     /// The last note of homes, kept only if the displays are still the same at the next one.
     private var pendingHomes: [UInt32: Int]?
+    /// Each workspace's display while the displays were settled, any layout: whether a display change touched it.
+    /// Noted as `homes` is.
+    private var homeDisplays: [Int: String] = [:]
+    private var pendingHomeDisplays: [Int: String]?
     /// Each scrolling workspace's strip while the displays were settled, its order, widths and pins, to put back once a
     /// display change has poured its windows elsewhere and they return (`returnDisplaced`). Noted as `homes` is.
     private var strips: [Int: NotedStrip] = [:]
@@ -229,10 +233,12 @@ final class WorkspaceNumbers {
         }
         guard !displaced, !arranging, onlineDisplays == knownDisplays, let coordinator = AppState.shared.coordinator else {
             pendingHomes = nil
+            pendingHomeDisplays = nil
             pendingStrips = nil
             return
         }
         if let pendingHomes { homes = pendingHomes }
+        if let pendingHomeDisplays { homeDisplays = pendingHomeDisplays }
         if let pendingStrips { strips = pendingStrips }
         var noted: [UInt32: Int] = [:]
         for window in coordinator.model.windows.values where window.isNormal && !window.isMinimized {
@@ -240,6 +246,7 @@ final class WorkspaceNumbers {
         }
         pendingHomes = noted
         let displays = AppState.shared.displays
+        pendingHomeDisplays = binding.compactMapValues { displays.display(containingSpace: $0)?.uuid }
         pendingStrips = binding.compactMapValues { space in
             coordinator.workspaces[space].flatMap { tree in
                 tree.isScrolling && !tree.windows.isEmpty
@@ -250,8 +257,8 @@ final class WorkspaceNumbers {
 
     /// Moves windows that a display change left off their workspace back onto it, and puts back the strips it took
     /// apart. The Spaces of the strips put back, to be placed at once. `stale`, long after an arrangement failed, moves
-    /// back only windows still on a display's first Space, where macOS pours them, whose workspace's strip was noted on
-    /// a display the change touched, and puts back no strip: one put on a first Space by hand stays.
+    /// back only windows still on a display's first Space, where macOS pours them, whose workspace was on a display the
+    /// change touched, and puts back no strip: one put on a first Space by hand stays if its workspace was not.
     private func returnDisplaced(stale: Bool = false) -> Set<UInt64> {
         let model = AppState.shared.displays
         var targets: [UInt32: UInt64] = [:]
@@ -261,7 +268,7 @@ final class WorkspaceNumbers {
             guard let target = binding[n], space != target, let display = model.display(containingSpace: space),
                   display.userSpaces.contains(space) else { continue }
             if stale {
-                guard display.userSpaces.first == space, let noted = strips[n]?.display, changedDisplays.contains(noted)
+                guard display.userSpaces.first == space, let noted = homeDisplays[n], changedDisplays.contains(noted)
                 else { continue }
             }
             targets[id] = target
