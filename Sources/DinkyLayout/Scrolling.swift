@@ -677,18 +677,21 @@ extension Workspace {
 
     /// For strip frames such as `placeStrip` takes, the window at each wall that windows parked there are under: the
     /// cover (`wallCovers(of:)`) where at least one band window is held there as a curtain or hides behind it, the
-    /// left wall's first. None on a pinned side, whose pin is put in front of the band by the pins' own ordering.
+    /// left wall's first, each once: between two walls with one column shown, it is both walls' cover. None on a
+    /// pinned side, whose pin is put in front of the band by the pins' own ordering.
     public func wallCovers(_ frames: [WindowID: CGRect]) -> [WindowID] {
         let covers = wallCovers(of: frames), hanging = hangingUnderPins(frames)
         var parkedAt: Set<Direction> = []
         for (id, frame) in frames where !hanging.contains(id) && pinSide(of: id) == nil {
             if let wall = wallParking(frame, covers: covers) { parkedAt.insert(wall) }
         }
-        return [(Direction.left, covers.left), (.right, covers.right)].compactMap { wall, cover in
+        var ids: [WindowID] = []
+        for (wall, cover) in [(Direction.left, covers.left), (.right, covers.right)] {
             guard parkedAt.contains(wall), let cover, pinnedIndex(wall == .left ? .left : .right) == nil,
-                  pinSide(of: cover.id) == nil else { return nil }
-            return cover.id
+                  pinSide(of: cover.id) == nil, !ids.contains(cover.id) else { continue }
+            ids.append(cover.id)
         }
+        return ids
     }
 
     /// Where a window part past `wall` stays as a curtain: at its size, held at the wall where the strip holds a

@@ -593,6 +593,15 @@ struct ScrollingWallAlignTests {
         #expect(covers.last.map { frames[$0]!.maxX > 900 } == true)
     }
 
+    @Test func `Between two walls one column shown is the cover once`() {
+        // The middle display of three: one column wide enough that only it shows, windows parked past both walls.
+        var ws = builtIn(5, focused: 3, walls: [.left, .right])
+        ws.setWidth(ofColumn: 2, 0.95)
+        let strip = ws.stripFrames
+        #expect(strip.values.contains { $0.maxX > 1801 } && strip.values.contains { $0.minX < -1 }, "parked at both")
+        #expect(ws.wallCovers(strip) == [3])
+    }
+
     @Test func `A pinned side has no cover`() {
         var ws = builtIn(7, focused: 7)
         _ = ws.pin(.right)
