@@ -471,6 +471,9 @@ enum Dispatcher {
                                  follow: Bool) -> Reply? {
         guard wid != 0 else { return .error("no focused window") }
         guard dinky_window_space_id(wid) != space else { return .nothing("window \(wid) is already on \(destination)", ok: true) }
+        // A move under way from before, as one across a moment ago, is over: its check would bring the window back, even
+        // as this one lands late.
+        AppState.shared.coordinator?.arriving[wid] = nil
         let from = AppState.shared.displays.display(ofWindow: wid)
         if let error = move(wid, to: space, arriving: destination) { return error }
         if let from { keepOffset(of: wid, from: from, to: to, space: space) }
@@ -480,8 +483,6 @@ enum Dispatcher {
         let across = from.map { $0.uuid != to.uuid } ?? false
         let joins = across && coordinator?.isFloating(wid) == false && coordinator?.settings(for: space).isFree == false
         if joins { coordinator?.placeAtOnce(space) }
-        // A move under way from before, as one across a moment ago, is over: its check would bring the window back.
-        coordinator?.arriving[wid] = nil
         coordinator?.windowMoved(wid, refocus: !follow)
         if joins { coordinator?.joined(wid, space) }
         return nil
