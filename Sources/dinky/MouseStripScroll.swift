@@ -138,6 +138,8 @@ final class MouseStripScroll {
             return
         }
         (pressTap, grabTap, wheelTap, modifierTap, hoverTap) = (presses, grabs, wheels, flags, hovers)
+        // The Dock's bar read ahead, so the first press finds one (`dockBarFrame` never waits).
+        _ = dockBarFrame()
     }
 
     private func stop() {
@@ -152,6 +154,9 @@ final class MouseStripScroll {
 
     private func arm(_ held: Bool) {
         armed = held
+        // The Dock's bar read again as the hold starts, unless the last read still holds, in a few ms and before a
+        // quick click needs it: a press comes before the first look at what is under the pointer.
+        if held { _ = dockBarFrame() }
         pressTap?.enable(held && settings.drag)
         updateWheelTap()
         hoverGeneration += 1
