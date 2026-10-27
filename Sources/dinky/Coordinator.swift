@@ -104,6 +104,8 @@ final class Coordinator {
     private var frontBackoff: [pid_t: CFTimeInterval] = [:]
     /// Trees `moveTree` took to a display of another size or other gaps, whose pins are fitted once the move holds.
     private var pendingPinFit: Set<UInt64> = []
+    /// Trees `moveTree` took to a display with other walls, lined up with them once the move holds.
+    private var pendingWallAlign: Set<UInt64> = []
     /// A raise of the pins of a strip fingers hold is under way.
     private var pinRaiseInFlight = false
     /// A pass of `raiseCoveredPins` is waiting to run after window events.
@@ -557,16 +559,18 @@ final class Coordinator {
     private func fitToDisplays() {
         for key in workspaces.keys {
             guard let display = displays.display(containingSpace: key) else { continue }
-            let (bounds, gaps) = (workspaces[key]!.bounds, workspaces[key]!.gaps)
+            let (bounds, gaps, walls) = (workspaces[key]!.bounds, workspaces[key]!.gaps, workspaces[key]!.walls)
             workspaces[key]!.bounds = display.visibleArea
             workspaces[key]!.gaps = self.gaps(on: display)
-            workspaces[key]!.walls = walls(of: display)
+            workspaces[key]!.walls = self.walls(of: display)
             // Only as the display or the gaps change: pins dropped at any other pass would never come back.
             // The band's own room first, as a pass would, so the pins are fitted to a band at the size it lays out at.
             if workspaces[key]!.bounds != bounds || workspaces[key]!.gaps != gaps {
                 workspaces[key]!.fitBand()
                 workspaces[key]!.fitPins()
             }
+            // A display put beside it, or moved away: lined up with the walls it has now, where it shows.
+            if workspaces[key]!.walls != walls { workspaces[key]!.alignToWalls() }
         }
     }
 
@@ -598,6 +602,9 @@ final class Coordinator {
         let resized = tree.bounds != display.visibleArea || tree.gaps != gaps(on: display)
         pendingPinFit.remove(from)
         if resized { pendingPinFit.insert(to) } else { pendingPinFit.remove(to) }
+        // Lined up with new walls only once its windows are there (`fitMovedTree`), as its pins are fitted.
+        pendingWallAlign.remove(from)
+        if tree.walls != walls(of: display) { pendingWallAlign.insert(to) } else { pendingWallAlign.remove(to) }
         tree.bounds = display.visibleArea
         tree.gaps = gaps(on: display)
         tree.walls = walls(of: display)
@@ -610,10 +617,11 @@ final class Coordinator {
     /// back brings the tree back as it was.
     func fitMovedTree(_ key: UInt64) {
         guard workspaces[key] != nil else { return }
-        let resized = pendingPinFit.remove(key) != nil
+        let resized = pendingPinFit.remove(key) != nil, walled = pendingWallAlign.remove(key) != nil
         edit(key) { workspace in
             workspace.fitBand()
             if resized { workspace.fitPins() }
+            if walled { workspace.alignToWalls() }
         }
         flush()
     }
@@ -1164,6 +1172,8 @@ final class Coordinator {
         workspace.fullscreenFollowsLater = config.fullscreen.followDelayMs > 0
         workspace.fullscreenPushesStrip = config.fullscreen.scrolling == .push
         workspace.walls = walls(of: display)
+        // An empty tree, so nothing to line up yet; as any tree whose walls are set, all the same.
+        if !workspace.walls.isEmpty { workspace.alignToWalls() }
         return workspace
     }
 
