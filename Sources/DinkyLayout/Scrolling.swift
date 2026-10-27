@@ -549,11 +549,13 @@ extension Workspace {
     func parked(_ frames: [WindowID: CGRect], resting: [WindowID: CGRect]? = nil) -> [WindowID: CGRect] {
         let keepsSize = !pushedColumns.isEmpty
         let columns = root.children.map { $0.windows.filter { frames[$0] != nil } }
-        let covers = columns.compactMap { ids -> (id: WindowID, frame: CGRect)? in
+        let covers = columns.compactMap { ids -> (id: WindowID, frame: CGRect, alone: Bool)? in
             let rects = ids.map { (id: $0, frame: frames[$0]!) }
             let shown = rects.allSatisfy { $0.frame.minX >= bounds.minX - 1 && $0.frame.maxX <= bounds.maxX + 1 }
-            guard !rects.isEmpty, shown else { return nil }
-            return rects.max { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
+            guard !rects.isEmpty, shown,
+                  let biggest = rects.max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height })
+            else { return nil }
+            return (biggest.id, biggest.frame, rects.count == 1)
         }
         let left = covers.min { $0.frame.minX < $1.frame.minX }, right = covers.max { $0.frame.maxX < $1.frame.maxX }
         // How much of each window must stay on screen at each edge, column by column from the screen outwards,
@@ -619,7 +621,9 @@ extension Workspace {
             if offLeft != offRight, walls.contains(offLeft ? .left : .right), let cover = offLeft ? left : right,
                !hanging.contains(id) {
                 let wall: Direction = offLeft ? .left : .right
-                if let curtain = curtain(frame, at: wall, under: cover.frame), !keepsSize { return (id, curtain) }
+                if let curtain = curtain(frame, at: wall, under: cover.frame, alone: cover.alone), !keepsSize {
+                    return (id, curtain)
+                }
                 return (id, hiddenAtWall(id, frame, behind: cover.frame, sizedBy: resting?[cover.id], wall: wall,
                                          keepsSize: keepsSize))
             }
@@ -635,13 +639,14 @@ extension Workspace {
     /// between that column and the wall shows the window rather than nothing. Only while the cover leaves room at the
     /// wall, and the window's edge away from the wall, and its shadow, stay `shadowReach` inside the cover's far edge,
     /// short of the column beyond; nil otherwise, and for a window wholly past the wall, inside the outer gap or
-    /// beyond, which hide behind the cover.
-    func curtain(_ frame: CGRect, at wall: Direction, under cover: CGRect) -> CGRect? {
+    /// beyond, which hide behind the cover. Under a column of several windows, `alone` false, only one no taller than
+    /// the cover: one taller would show in the gaps between that column's windows.
+    func curtain(_ frame: CGRect, at wall: Direction, under cover: CGRect, alone: Bool = true) -> CGRect? {
         let inset = stripInset, reach = Self.shadowReach
         // Only where the cover leaves room at the wall: one reaching out to the outer gap covers it all.
         let partly = wall == .right ? frame.minX < inset.maxX - 1 : frame.maxX > inset.minX + 1
         let room = wall == .right ? cover.maxX < inset.maxX - 1 : cover.minX > inset.minX + 1
-        guard partly, room else { return nil }
+        guard partly, room, alone || frame.minY >= cover.minY && frame.maxY <= cover.maxY else { return nil }
         let held = keptOffWalls(frame)
         return wall == .right ? held.minX >= cover.minX + reach ? held : nil
             : held.maxX <= cover.maxX - reach ? held : nil
