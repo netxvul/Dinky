@@ -183,6 +183,9 @@ struct ConfigTests {
         #expect(try Config.parse("[scrolling]\ncenter-focused-column = 'always'\n").scrolling.centerFocusedColumn == .always)
         #expect(try Config.parse("").scrolling.spanDisplays == false)
         #expect(try Config.parse("[scrolling]\nspan-displays = true\n").scrolling.spanDisplays)
+        #expect(try Config.parse("").scrolling.spanCenterOn == .both)
+        #expect(try Config.parse("[scrolling]\nspan-center-on = 'focused'\n").scrolling.spanCenterOn == .focused)
+        assertError("[scrolling]\nspan-center-on = 'left'\n", path: "scrolling.span-center-on", line: 2, contains: "mouse")
         #expect(try Config.parse("[scrolling]\ncenter-focused-column = 'always-fill'\n").scrolling.centerFocusedColumn == .alwaysFill)
         #expect(try Config.parse("[scrolling]\ncenter-focused-column = 'on-overflow'\n").scrolling.centerFocusedColumn == .onOverflow)
         assertError("[scrolling]\ncenter-focused-column = 'yes'\n", path: "scrolling.center-focused-column", line: 2,

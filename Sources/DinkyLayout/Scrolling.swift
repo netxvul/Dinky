@@ -280,23 +280,33 @@ extension Workspace {
     mutating func reveal(_ id: WindowID) {
         holdsScroll = false
         freeScrollFrom = nil
+        let from = revealingFrom
+        revealingFrom = nil
         guard isScrolling, let index = bandIndex(of: id) else { return }
-        let area = stripArea, spans = columnSpans(in: area), column = spans[index]
+        let area = stripArea, spans = columnSpans(in: area), column = spans[index], resting = scrollOffset
         let shown = showing(column, from: offset(for: spans, in: area), in: area)
-        let middle = centred(column, in: area)
+        // Across a seam, the display `spanCentring` names, if any (see Span.swift).
+        let side = centringSide(column, from: shown, in: area)
+        let middle = side.map { centred(column, onLeft: $0, in: area) } ?? centred(column, in: area)
+        var centres = true
         switch columnCentring {
-        case .never: scrollOffset = shown
+        case .never:
+            scrollOffset = shown
+            centres = false
         case .always, .alwaysFill: scrollOffset = middle
         case .onOverflow:
             // Across a seam, where it rests now: lined up with the seam, it can be past the ends the layout keeps to,
             // and a column beside the seam a point past the gutter, as spans are rounded, counts as whole.
             let before = spansDisplays ? scrollOffset : offset(for: spans, in: area, showingFocus: false)
             let slack: CGFloat = spansDisplays ? 1.5 : 0
-            scrollOffset = abs(showing(column, from: before, in: area) - before) <= slack ? shown : middle
+            centres = abs(showing(column, from: before, in: area) - before) > slack
+            scrollOffset = centres ? middle : shown
         }
-        // Across a seam, a centred column rests beside it on the side nearer where the strip shows now.
+        // Across a seam, a centred column rests beside it on the side nearer where the strip shows now, or on the display
+        // `spanCentring` names; focus stepping along the strip never scrolls it back.
+        let step = from.map { index == $0 ? 0 : index > $0 ? 1 : -1 } ?? 0
         scrollOffset = seamAligned(wallAligned(scrollOffset, spans: spans, in: area), spans: spans, in: area,
-                                   near: scrollOffset)
+                                   near: resting, onLeft: centres ? side : nil, stepping: step)
     }
 
     /// The resting offset nearest in spirit to `offset` with no band column straddling a wall: at a wall nothing leaves

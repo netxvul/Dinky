@@ -9,9 +9,21 @@ import CoreGraphics
 // resting offset nearest the one the strip would have otherwise that does so, the focused column whole. Centring
 // (`columnCentring`) centres on both displays together, so the focused column comes to rest beside the seam, on the
 // side nearer where the strip shows: centred on the display it is on, it would snap to that display's outer edge as
-// often as to the seam, and the strip would scroll the other way from focus. Unlike a
+// often as to the seam, and the strip would scroll the other way from focus. `spanCentring` can name one display
+// instead, the one under the pointer or the one the column is on: the column then rests whole on it as near its middle
+// as the seam allows. Either way focus stepping along the strip never scrolls it back. Unlike a
 // wall (Scrolling.swift), the seam parks nothing: a column scrolling over it goes on to the other display, and only the
 // outer edges of the two park and peek. A column is as tall as the display its middle is on.
+
+/// Which display focusing a column centres it on, across a seam (`Workspace.spanCentring`).
+public enum SpanCentring: Equatable, Sendable {
+    /// Both together: it rests beside the seam, on the side nearer where the strip shows.
+    case both
+    /// The display it is on as focus comes to it.
+    case focused
+    /// The left display (true) or the right one, as the one under the pointer.
+    case display(left: Bool)
+}
 
 /// The two displays a strip runs across, as their visible areas, top-left origin.
 public struct Seam: Equatable, Sendable {
@@ -108,12 +120,22 @@ extension Workspace {
     /// where any does. Of two about as near, a column's width either way as when `offset` centres a column on the seam,
     /// the one nearer `near`, where the strip shows now, so it moves no more than it must. `offset` itself where none
     /// will do, on one display, or with no band column to show.
+    /// With `onLeft`, only offsets showing it whole on that display, where there are any; with `stepping`, the way focus
+    /// stepped along the strip, 1 right and -1 left, none scrolling it back from `near`, where there are any.
     func seamAligned(_ offset: CGFloat, spans: [(start: CGFloat, width: CGFloat)], in area: CGRect,
-                     inside: Bool = false, near: CGFloat? = nil) -> CGFloat {
-        guard seamLine != nil, let focusedColumn = shownBandColumn else { return offset }
+                     inside: Bool = false, near: CGFloat? = nil, onLeft: Bool? = nil, stepping: Int = 0) -> CGFloat {
+        guard let x = seamLine, let focusedColumn = shownBandColumn else { return offset }
         let band = bandRange
-        let shown = seamOffsets(spans: spans, in: area).map(\.offset)
+        var shown = seamOffsets(spans: spans, in: area).map(\.offset)
             .filter { showsWhole(focusedColumn, at: $0, spans: spans, in: area) }
+        func narrowed(_ keeps: (CGFloat) -> Bool) {
+            let kept = shown.filter(keeps)
+            if !kept.isEmpty { shown = kept }
+        }
+        if let onLeft {
+            narrowed { c in (area.minX + spans[focusedColumn].start - c + spans[focusedColumn].width / 2 < x) == onLeft }
+        }
+        if let near, stepping != 0 { narrowed { c in stepping > 0 ? c >= near - 0.5 : c <= near + 0.5 } }
         let all = inside ? shown.filter { c in band.allSatisfy { showsWhole($0, at: c, spans: spans, in: area) } } : []
         // Columns of a width differ by a point or two of rounding and gap: that far counts as a tie.
         let tie = gaps.horizontal + 4
@@ -121,6 +143,24 @@ extension Workspace {
             (near == nil ? abs(c - offset) : (abs(c - offset) / tie).rounded(), abs(c - (near ?? offset)), c)
         }
         return (all.isEmpty ? shown : all).min { rank($0) < rank($1) } ?? offset
+    }
+
+    /// The display `spanCentring` centres `column` on, left (true) or right, as the strip shows at `offset`; nil to
+    /// centre across both, or on one display.
+    func centringSide(_ column: (start: CGFloat, width: CGFloat), from offset: CGFloat, in area: CGRect) -> Bool? {
+        guard let x = seamLine else { return nil }
+        switch spanCentring {
+        case .both: return nil
+        case .focused: return area.minX + column.start + column.width / 2 - offset < x
+        case .display(let left): return left
+        }
+    }
+
+    /// The offset that puts `column` in the middle of the left display's part of `area` (true), or the right one's.
+    func centred(_ column: (start: CGFloat, width: CGFloat), onLeft left: Bool, in area: CGRect) -> CGFloat {
+        guard let x = seamLine else { return centred(column, in: area) }
+        let (from, to) = left ? (area.minX, x) : (x, area.maxX)
+        return (column.start + column.width / 2 - ((from + to) / 2 - area.minX)).rounded()
     }
 
     /// The display a window at `frame` belongs on across the seam: left of it (true) where most of it is left of it.

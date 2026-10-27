@@ -705,6 +705,7 @@ final class Coordinator {
             workspaces[key]!.autoOrientAccordions = config.accordion.orientation == .auto
             workspaces[key]!.columnWidth = config.scrolling.columnWidth
             workspaces[key]!.columnCentring = columnCentring
+            workspaces[key]!.spanCentring = spanCentring
             workspaces[key]!.fullscreenFocus = fullscreenFocus
             workspaces[key]!.fullscreenFollowsLater = config.fullscreen.followDelayMs > 0
             workspaces[key]!.fullscreenPushesStrip = config.fullscreen.scrolling == .push
@@ -1283,6 +1284,7 @@ final class Coordinator {
                                   algorithm: algorithm(settings))
         workspace.columnWidth = config.scrolling.columnWidth
         workspace.columnCentring = columnCentring
+        workspace.spanCentring = spanCentring
         workspace.fullscreenFocus = fullscreenFocus
         workspace.fullscreenFollowsLater = config.fullscreen.followDelayMs > 0
         workspace.fullscreenPushesStrip = config.fullscreen.scrolling == .push
@@ -1297,6 +1299,11 @@ final class Coordinator {
         ColumnCentring(rawValue: config.scrolling.centerFocusedColumn.rawValue) ?? .never
     }
 
+    /// Which display a strip across two centres on, from `[scrolling] span-center-on`; `mouse` is read as `edit` runs.
+    private var spanCentring: SpanCentring {
+        config.scrolling.spanCenterOn == .focused ? .focused : .both
+    }
+
     /// What focusing another window does to fullscreen, from `[fullscreen] focus-change`.
     private var fullscreenFocus: FullscreenFocus {
         FullscreenFocus(rawValue: config.fullscreen.focusChange.rawValue) ?? .exit
@@ -1306,6 +1313,11 @@ final class Coordinator {
     @discardableResult
     func edit<T>(_ key: UInt64, _ change: (inout Workspace) -> T) -> T? {
         guard var workspace = workspaces[key] else { return nil }
+        // Across two displays with `span-center-on = 'mouse'`, centring goes to the display under the pointer now.
+        workspace.spanCentring = spanCentring
+        if config.scrolling.spanCenterOn == .mouse, let x = workspace.seam?.x, let pointer = CGEvent(source: nil)?.location {
+            workspace.spanCentring = .display(left: pointer.x < x)
+        }
         let before = workspace.layout(), pending = workspace.pendingFullscreen
         let result = change(&workspace)
         workspaces[key] = workspace

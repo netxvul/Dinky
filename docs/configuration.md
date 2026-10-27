@@ -166,7 +166,8 @@ displays park and peek. Each column is as tall as the display it is on.
 `focus`, `move` and `join-with` left and right go on across it, and a window
 dragged over it drops into the same strip by the same zones,
 `center-focused-column` centres on both displays together, so the focused
-column rests beside the line between them, and
+column rests beside the line between them, or with `span-center-on` on the
+display under the pointer or the one the column is on, and
 fullscreen with `[fullscreen] scrolling = 'push'` fills that display only.
 
 ```toml
@@ -182,6 +183,7 @@ span-displays = true
 |---|---|---|
 | `column-width` | `0.49` | A new column's width, as a share of the display inside the outer gaps, from `0.1` to `1`. Omarchy's `0.49` fits two columns side by side. Once the columns no longer all fit and some park at the edges, it is a share of that width less the gutters they peek out in, 25 points and half an inner gap on each side with no other display beyond it. |
 | `center-focused-column` | `'never'` | Where focusing a column scrolls it. `'never'` scrolls just far enough to show it whole; `'always'` puts it in the middle of the display, the first and last columns too, leaving the display bare beyond them; `'always-fill'` puts it in the middle too, but never scrolls past the strip's ends: the first and last columns, and with narrow columns the ones next to them, go only as far as the display's edge, the columns beside them filling the rest; `'on-overflow'` puts it in the middle only when it did not all show, and leaves one already in view where it is. Columns that all fit stay centred as a whole. |
+| `span-center-on` | `'both'` | With `span-displays`, which display `center-focused-column` centres a column on: `'both'` centres on the two together, so the column rests beside the line between them; `'mouse'` on the display under the pointer; `'focused'` on the display the column is on as focus comes to it. Whichever it is, focus stepping along the strip never scrolls it back. |
 | `span-displays` | `false` | A prototype. With exactly two displays side by side, each showing a scrolling workspace, one strip runs across both, as if they were one wide display: see [Across two displays](#across-two-displays). |
 
 </div>

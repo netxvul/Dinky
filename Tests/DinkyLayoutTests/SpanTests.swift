@@ -89,18 +89,20 @@ struct SpanTests {
         }
     }
 
-    @Test(arguments: [ColumnCentring.never, .always, .onOverflow, .alwaysFill])
-    func `Stepping focus scrolls the strip only the way it steps`(_ centring: ColumnCentring) {
+    @Test(arguments: [ColumnCentring.never, .always, .onOverflow, .alwaysFill],
+          [SpanCentring.both, .focused, .display(left: true), .display(left: false)])
+    func `Stepping focus scrolls the strip only the way it steps`(_ centring: ColumnCentring, _ on: SpanCentring) {
         // Displays of different sizes, as a laptop's beside a monitor, so the middle of both is not the seam.
         let seam = Seam(left: rect(-1920, 30, 1920, 1170), right: rect(0, 39, 1800, 1066))
         var ws = spanning(8, gaps: Gaps(all: 8), seam: seam, centring: centring)
+        ws.spanCentring = on
         ws.focus(1)
         var offset = ws.shownOffset
         for direction in Array(repeating: Direction.right, count: 7) + Array(repeating: .left, count: 7) {
             let moved = ws.focus(direction)
             #expect(moved)
             let now = ws.shownOffset
-            #expect(direction == .right ? now >= offset : now <= offset, "\(centring) \(direction) to \(ws.focused!)")
+            #expect(direction == .right ? now >= offset : now <= offset, "\(centring) \(on) \(direction) to \(ws.focused!)")
             #expect(straddling(ws).isEmpty)
             offset = now
         }
@@ -112,6 +114,30 @@ struct SpanTests {
             ws.focus(id)
             let frame = ws.layout().frames[id]!
             #expect(frame.maxX == 995 || frame.minX == 1005, "\(id) at \(frame)")
+        }
+    }
+
+    @Test(arguments: [true, false]) func `Centring on one display brings the focused column there`(_ left: Bool) {
+        var ws = spanning(8, gaps: Gaps(all: 10), centring: .always)
+        ws.spanCentring = .display(left: left)
+        for id in [4, 5, 6, 7, 6, 5, 4, 3] as [WindowID] {
+            ws.focus(id)
+            let frame = ws.layout().frames[id]!
+            #expect(left ? frame.maxX <= 1000 : frame.minX >= 1000, "\(id) at \(frame)")
+            #expect(straddling(ws).isEmpty)
+        }
+    }
+
+    @Test func `Centring on the focused column's display keeps it on the display it was on`() {
+        var ws = spanning(8, gaps: Gaps(all: 10), centring: .always)
+        ws.spanCentring = .focused
+        ws.focus(4)
+        for direction in [Direction.right, .right, .left, .left] {
+            let before = ws.layout()
+            _ = ws.focus(direction)
+            let id = ws.focused!, was = before.frames[id]!, now = ws.layout().frames[id]!
+            // Wholly on a display before: on that one still.
+            if was.maxX <= 1000 || was.minX >= 1000 { #expect((was.midX < 1000) == (now.midX < 1000), "\(id) from \(was) to \(now)") }
         }
     }
 

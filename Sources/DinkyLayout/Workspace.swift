@@ -109,6 +109,11 @@ public struct Workspace: Equatable, Sendable {
     /// Scrolling: the two displays side by side one strip runs across (`[scrolling] span-displays`), `bounds` being both;
     /// nil on one display. See Span.swift.
     public internal(set) var seam: Seam?
+    /// Scrolling across a seam: which display focusing a column centres it on, with `columnCentring` other than
+    /// `never`. See Span.swift.
+    public var spanCentring = SpanCentring.both
+    /// The band column focus moved from, for the `reveal` it is moving with: the way it steps along the strip.
+    var revealingFrom: Int?
     /// The algorithm a `layout` command switched to, kept over the config's. Nil follows the config.
     public var chosenAlgorithm: TilingAlgorithm?
 
@@ -415,6 +420,7 @@ public struct Workspace: Equatable, Sendable {
             case .keep: fullscreenWindows = [id] + fullscreenWindows.filter { $0 != id }
             }
         }
+        let previousColumn = focused.flatMap { bandIndex(of: $0) }
         focused = id
         if bandIndex(of: id) != nil { bandFocus = id }
         for depth in path.indices {
@@ -424,6 +430,7 @@ public struct Workspace: Equatable, Sendable {
             scrollOffset = held
             holdsScroll = true
         } else {
+            revealingFrom = previousColumn
             reveal(id)
         }
     }

@@ -104,6 +104,12 @@
           "default": "never",
           "description": "Where focusing a column scrolls it, as niri's center-focused-column: never just far enough to show it whole, always to the middle of the display, end columns too, always-fill to the middle but never past the strip's ends, so end columns go only to the display's edge and it stays filled, on-overflow to the middle only when it did not all show. Columns that all fit stay centred as a whole."
         },
+        "span-center-on": {
+          "type": "string",
+          "enum": ["both", "mouse", "focused"],
+          "default": "both",
+          "description": "With span-displays, which display center-focused-column centres a column on: both centres on the two together, so the column rests beside the line between them; mouse on the display under the pointer; focused on the display the column is on as focus comes to it. Focus stepping along the strip never scrolls it back."
+        },
         "span-displays": {
           "type": "boolean",
           "default": false,

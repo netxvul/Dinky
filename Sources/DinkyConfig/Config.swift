@@ -294,6 +294,8 @@ public struct Scrolling: Equatable {
     /// Whether two displays side by side run one strip across both, while each shows a scrolling workspace: a prototype,
     /// off by default.
     public var spanDisplays = false
+    /// With `spanDisplays`, which display focusing a column centres it on, with `centerFocusedColumn` other than `never`.
+    public var spanCenterOn = SpanCenterOn.both
     /// Whether the file still sets `glide`, which no longer does anything: the strip scrolls through the Dock
     /// scripting addition when top-level `scripting-addition` allows it and the addition answers, and moves its windows
     /// frame by frame otherwise. `dinky doctor` says the key can go.
@@ -306,6 +308,7 @@ public struct Scrolling: Equatable {
         guard (0.1...1).contains(columnWidth) else { throw ConfigError(path: t.path("column-width"), "must be 0.1 to 1") }
         centerFocusedColumn = try t.choice("center-focused-column") ?? centerFocusedColumn
         spanDisplays = try t.bool("span-displays") ?? spanDisplays
+        spanCenterOn = try t.choice("span-center-on") ?? spanCenterOn
         retiredGlide = t.retired("glide")
         try t.done()
     }
@@ -878,6 +881,16 @@ public enum FullscreenFocusChange: String, CaseIterable {
 }
 
 /// Where focusing a scrolling column scrolls it. The names match `DinkyLayout.ColumnCentring`.
+/// Which display focusing a column centres it on while a strip runs across two (`[scrolling] span-center-on`).
+public enum SpanCenterOn: String, CaseIterable {
+    /// Both together: the column rests beside the line between them, on the side nearer where the strip shows.
+    case both
+    /// The display under the pointer.
+    case mouse
+    /// The display the column is on as focus comes to it.
+    case focused
+}
+
 public enum CenterFocusedColumn: String, CaseIterable {
     /// Just far enough to show it whole.
     case never
