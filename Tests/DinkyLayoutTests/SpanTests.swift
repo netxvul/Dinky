@@ -331,6 +331,31 @@ struct SpanTests {
         }
     }
 
+    @Test func `Per display, a column takes the shorter display's height just before it crosses, the taller's as it does`() {
+        let seam = Seam(left: rect(-1920, 30, 1920, 1170), right: rect(0, 39, 1800, 1066))
+        var ws = spanning(8, gaps: Gaps(all: 8), seam: seam, centring: .never)
+        ws.focus(4)
+        let held = ws.beginFreeScroll()
+        #expect(held)
+        // Step the strip along a point at a time: each column's height against where its middle is.
+        var crossings = 0
+        for _ in 0..<1800 {
+            ws.scrollFreely(by: -1)
+            for frame in ws.stripFrames.values where frame.maxX > -1920 && frame.minX < 1800 {
+                let middle = frame.midX
+                if middle >= 0 {
+                    #expect(frame.height == 1050, "on the shorter display \(frame)")
+                } else if middle > -Workspace.seamLead {
+                    crossings += 1
+                    #expect(frame.height == 1050, "about to cross to the shorter \(frame)")
+                } else {
+                    #expect(frame.height == 1154, "on the taller display \(frame)")
+                }
+            }
+        }
+        #expect(crossings > 0)
+    }
+
     @Test func `Two strips coming together meet at the seam`() {
         var left = Workspace(bounds: rect(0, 0, 1000, 600), algorithm: .scrolling)
         left.insert(1)

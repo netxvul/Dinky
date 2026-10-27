@@ -892,7 +892,8 @@ public enum FullscreenFocusChange: String, CaseIterable {
 /// How tall the columns of a strip across two displays of different heights are (`[scrolling] span-height`). The names
 /// match `DinkyLayout.SpanHeight`.
 public enum SpanHeightKind: String, CaseIterable {
-    /// As the display a column's middle is on: it changes size once as that crosses between them.
+    /// As the display a column's middle is on: it changes size once as that crosses between them, a little before on its
+    /// way to a shorter display.
     case perDisplay = "per-display"
     /// As high as both displays have room, top edges lined up: nothing changes size crossing between them.
     case overlap

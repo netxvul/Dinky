@@ -95,12 +95,23 @@ extension Workspace {
     }
 
     /// `rect` as tall as the display it is on, inside the outer gaps there (`displayInset`): the one `anchor` is on, or
-    /// its middle; as it is on one display.
+    /// its middle. With `spanHeight` `perDisplay`, a column whose middle comes within `seamLead` of the seam on the taller
+    /// display already has the shorter one's height: macOS shows it there as its middle crosses, and an app slow to take
+    /// a size has it by then. As it is on one display.
     func onDisplay(_ rect: CGRect, anchor: CGFloat? = nil) -> CGRect {
-        guard seamLine != nil else { return rect }
-        let inset = displayInset(at: anchor ?? rect.midX)
+        guard let x = seamLine else { return rect }
+        var inset = displayInset(at: anchor ?? rect.midX)
+        if anchor == nil, spanHeight == .perDisplay {
+            let there = displayInset(at: rect.midX < x ? x + 1 : x - 1)
+            // Short of half the column, less a gap: one resting beside the seam keeps its display's height.
+            let lead = min(Self.seamLead, rect.width / 2 - gaps.horizontal)
+            if there.height < inset.height, abs(rect.midX - x) < lead { inset = there }
+        }
         return CGRect(x: rect.minX, y: inset.minY, width: rect.width, height: inset.height)
     }
+
+    /// How far before the seam a column's middle takes the shorter display's height on its way there.
+    static let seamLead: CGFloat = 100
 
     /// The offsets that put a boundary between band columns on the seam, each with the boundary: band column k's start,
     /// the band's upper bound its end. Between two columns, half an inner gap of each either side of the seam; at the
