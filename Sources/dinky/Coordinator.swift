@@ -111,7 +111,8 @@ final class Coordinator {
     private var frontBackoff: [pid_t: CFTimeInterval] = [:]
     /// Trees `moveTree` took to a display of another size or other gaps, whose pins are fitted once the move holds.
     private var pendingPinFit: Set<UInt64> = []
-    /// Trees `moveTree` took to a display with other walls, lined up with them once the move holds.
+    /// Trees `moveTree` took to a display with other walls, or of another size or other gaps, lined up with its walls
+    /// once the move holds.
     private var pendingWallAlign: Set<UInt64> = []
     /// A raise of the pins of a strip fingers hold is under way.
     private var pinRaiseInFlight = false
@@ -596,8 +597,10 @@ final class Coordinator {
                 workspaces[key]!.fitBand()
                 workspaces[key]!.fitPins()
             }
-            // A display put beside it, or moved away: lined up with the walls it has now, where it shows.
-            if workspaces[key]!.walls != walls { workspaces[key]!.alignToWalls() }
+            // A display put beside it, moved away or resized: lined up with the walls it has now, where it shows.
+            if workspaces[key]!.walls != walls || workspaces[key]!.bounds != bounds || workspaces[key]!.gaps != gaps {
+                workspaces[key]!.alignToWalls()
+            }
         }
     }
 
@@ -631,7 +634,7 @@ final class Coordinator {
         if resized { pendingPinFit.insert(to) } else { pendingPinFit.remove(to) }
         // Lined up with new walls only once its windows are there (`fitMovedTree`), as its pins are fitted.
         pendingWallAlign.remove(from)
-        if tree.walls != walls(of: display) { pendingWallAlign.insert(to) } else { pendingWallAlign.remove(to) }
+        if resized || tree.walls != walls(of: display) { pendingWallAlign.insert(to) } else { pendingWallAlign.remove(to) }
         tree.bounds = display.visibleArea
         tree.gaps = gaps(on: display)
         tree.walls = walls(of: display)

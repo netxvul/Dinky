@@ -429,6 +429,22 @@ struct ScrollingWallAlignTests {
         #expect(ws.layout() == once)
     }
 
+    @Test func `An area an odd number of points wide lines up at the wall all the same`() {
+        // FlipGo beside the built-in display: 1243 points between the outer gaps, two half-width columns one over.
+        var ws = Workspace(bounds: rect(1800, -144, 1280, 1570), gaps: Gaps(all: 8), algorithm: .scrolling)
+        ws.columnWidth = 0.5
+        ws.walls = [.left]
+        ws.columnCentring = .alwaysFill
+        for id in 0..<5 { ws.insert(WindowID(id + 1)) }
+        for id: WindowID in [1, 2, 3, 4, 5, 4, 3, 2, 1] {
+            ws.focus(id)
+            let frames = ws.layout().frames
+            #expect(frames.values.allSatisfy { $0.minX >= 1800 }, "focus \(id): nothing past the wall")
+            let nearest = frames.values.map(\.minX).min()!
+            #expect(nearest - 1808 <= 8, "focus \(id): no more than a gap bare at the wall")
+        }
+    }
+
     @Test func `Between two walls nothing straddles either at rest`() {
         var ws = strip(5, gaps: Gaps(all: 10), walls: [.left, .right])
         ws.columnCentring = .alwaysFill
