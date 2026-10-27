@@ -1097,12 +1097,13 @@ final class Coordinator {
                 guard let key = placements[id]?.space, let workspace = workspaces[key] else { return }
                 // The passes before this one could not raise its app's other windows into order while another of them
                 // had focus (see `FrameApplier.raisingKeepsFocus`), as after a let-go of a strip of one app's windows,
-                // where the column coming into view stays under those hiding behind it: they go into order now.
+                // where the column coming into view stays under those hiding behind it: they go into order now, once
+                // the window server has this one in front and the apps are free (`RaiseAfterActivating`).
                 let layout = workspace.layout()
                 let pids = Dictionary(uniqueKeysWithValues: layout.order.compactMap { id in
                     id == self.dragging ? nil : self.model.windows[id].map { (id, $0.pid) }
                 })
-                applier.raiseIntoOrder(layout, pids: pids, front: id)
+                applier.raiseIntoOrder(afterActivating: id, layout, pids: pids)
                 // Activated, its app brought it to the front: over a pin, as one wider than the band hangs, the pin goes
                 // back over it now, not only once the window events come.
                 if !workspace.pinnedWindows.isEmpty { raiseCoveredPins(in: key) }

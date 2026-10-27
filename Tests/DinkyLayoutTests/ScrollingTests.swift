@@ -521,6 +521,22 @@ struct ScrollingWallAlignTests {
         #expect(ws.layout() == layout, "the same laid out again")
     }
 
+    @Test func `At the strip's end a column part past the wall hides behind a column of several, not as a curtain`() {
+        // The focused end column holds two windows one above the other: a curtain under it would show in the gap
+        // between them, so the neighbour part past the wall hides behind the bigger one instead.
+        var ws = flipGo(shares: [0.5, 0.5, 0.5, 0.5, 0.57])
+        ws.insert(6)
+        ws.focus(6)
+        let joined = ws.join(.left)
+        #expect(joined && ws.stripColumns.last == [5, 6])
+        let frames = ws.layout().frames
+        let cover = [frames[5]!, frames[6]!].max { $0.width * $0.height < $1.width * $1.height }!
+        #expect(cover.contains(frames[4]!), "hidden inside the bigger window of the column, \(frames[4]!) in \(cover)")
+        let between = CGRect(x: frames[5]!.minX, y: frames[5]!.maxY, width: frames[5]!.width,
+                             height: frames[6]!.minY - frames[5]!.maxY)
+        #expect(!frames[4]!.intersects(between.insetBy(dx: 0, dy: 0.5)), "nothing in the gap between them")
+    }
+
     @Test func `At a wall the column in view goes up over the ones hiding behind it`() {
         var ws = Workspace(bounds: rect(0, 0, 1800, 1169), gaps: Gaps(all: 8), algorithm: .scrolling)
         ws.columnWidth = 0.5

@@ -39,6 +39,8 @@ final class FrameApplier {
     private var raising = RaiseEchoes()
     /// Apps that did not answer a raise, till when they are left out of raises: on raiseQueue only.
     private var unansweredRaises: [pid_t: CFTimeInterval] = [:]
+    /// Counts the calls of `raiseIntoOrder(afterActivating:)`, so a newer one takes over: on raiseQueue only.
+    private var activationRaises = 0
     private static let minimumsURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("dinky/minimum-sizes.json")
 
@@ -200,6 +202,68 @@ final class FrameApplier {
             }
             if Self.raisingKeepsFocus(ids, front: front, pids: pids) { self.raise(ids, pids: pids, front: front) }
             done()
+        }
+    }
+
+    /// Raise overlapping windows into the layout's order around `front`, a window dinky has just activated, once
+    /// raising keeps focus on it and their apps are free, trying again till then (see `RaiseAfterActivating`). A newer
+    /// call takes over from one still trying. Logged where anything was out of order, with whether it is after.
+    func raiseIntoOrder(afterActivating front: WindowID, _ layout: Layout, pids: [WindowID: pid_t]) {
+        let began = CACurrentMediaTime()
+        raiseQueue.async { [unowned self] in
+            activationRaises += 1
+            attemptRaise(ActivationRaise(front: front, layout: layout, pids: pids, began: began,
+                                         generation: activationRaises), first: true)
+        }
+    }
+
+    /// A call of `raiseIntoOrder(afterActivating:)` still trying: on raiseQueue only.
+    private final class ActivationRaise {
+        let front: WindowID, layout: Layout, pids: [WindowID: pid_t], began: CFTimeInterval, generation: Int
+        /// Why each try so far was not ready.
+        var waits: [String] = []
+
+        init(front: WindowID, layout: Layout, pids: [WindowID: pid_t], began: CFTimeInterval, generation: Int) {
+            (self.front, self.layout, self.pids, self.began, self.generation) = (front, layout, pids, began, generation)
+        }
+
+        func log(_ outcome: String) {
+            let waited = Int(((CACurrentMediaTime() - began) * 1000).rounded())
+            let tries = waits.isEmpty ? "" : ", waited on " + waits.joined(separator: "; ")
+            print("\(stamp()) raise after activating \(front): \(outcome) after \(waited) ms\(tries)")
+        }
+    }
+
+    /// One try of `raise`, on raiseQueue.
+    private func attemptRaise(_ raise: ActivationRaise, first: Bool) {
+        guard raise.generation == activationRaises else { return raise.waits.isEmpty ? () : raise.log("superseded") }
+        let focused = dinky_border_focused_window(), now = CACurrentMediaTime()
+        unansweredRaises = unansweredRaises.filter { $0.value > now }
+        let busy = Set(raise.pids.values.filter { scheduler.isBusy($0) || unansweredRaises[$0] != nil })
+        let step = RaiseAfterActivating.step(
+            raises: raise.layout.raises(current: onScreenOrder()), front: raise.front, owners: raise.pids,
+            focused: focused, focusedOwner: focused != 0 ? dinky_window_info(focused).pid : 0,
+            busy: { busy.contains($0) }, elapsed: now - raise.began)
+        let list = { (ids: [WindowID]) in ids.map(String.init).joined(separator: " ") }
+        switch step {
+        case .done:
+            if !first { raise.log("in order meanwhile") }
+        case .raise(let ids):
+            self.raise(ids, pids: raise.pids, front: raise.front)
+            // Read again once the raise has settled, to tell whether it took.
+            raiseQueue.asyncAfter(deadline: .now() + RaiseEchoes.settle) {
+                let after = raise.layout.raises(current: onScreenOrder())
+                let state = after.isEmpty ? "in order" : "still out of order: \(list(after))"
+                raise.log("raised \(list(ids)), \(state)")
+            }
+        case .wait(let wait):
+            raise.waits.append(wait.description)
+            raiseQueue.asyncAfter(deadline: .now() + RaiseAfterActivating.interval) { [unowned self] in
+                attemptRaise(raise, first: false)
+            }
+        case .giveUp(let wait):
+            raise.waits.append(wait.description)
+            raise.log("gave up")
         }
     }
 
