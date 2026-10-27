@@ -141,6 +141,18 @@ struct SpanTests {
         }
     }
 
+    @Test func `The column in view at an outer edge reaches over room the narrower display's shares leave`() {
+        // The left display 120 points wider than the right: two half columns leave that much at its outer edge.
+        let seam = Seam(left: rect(-1920, 30, 1920, 1170), right: rect(0, 39, 1800, 1066))
+        var ws = spanning(8, gaps: Gaps(all: 8), seam: seam, centring: .always)
+        ws.focus(5)
+        let frames = ws.layout().frames
+        let left = ws.windows.filter { frames[$0]!.minX >= -1920 && frames[$0]!.maxX <= 0 }
+        let outer = left.min { frames[$0]!.minX < frames[$1]!.minX }!
+        #expect(frames[outer]!.minX == -1912, "out to the outer gap")
+        #expect(straddling(ws).isEmpty)
+    }
+
     @Test func `Two strips coming together meet at the seam`() {
         var left = Workspace(bounds: rect(0, 0, 1000, 600), algorithm: .scrolling)
         left.insert(1)

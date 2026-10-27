@@ -162,7 +162,9 @@ line between the displays falls between two columns, half an inner gap either
 side; the focused column always shows whole. That line parks nothing: a column
 scrolled over it goes on to the other display, its windows moved to that
 display's Space as most of them crosses, and only the outer edges of the two
-displays park and peek. Each column is as tall as the display it is on.
+displays park and peek. Each column is as tall as the display it is on. Where
+the wider display has room left at its outer edge, less than a column, the
+column in view nearest that edge reaches over it to the outer gap.
 `focus`, `move` and `join-with` left and right go on across it, and a window
 dragged over it drops into the same strip by the same zones,
 `center-focused-column` centres on both displays together, so the focused

@@ -513,7 +513,9 @@ extension Workspace {
     /// and at the far end of the strip the gutter there too, which the end column reaches into instead of a column
     /// parking in it. Not reached over, that room would show the screen's background between the column and the outer
     /// gap. Only less room than the narrowest column takes: more is a column's worth, as columns of other widths can
-    /// leave, and the column keeps its width. Not on a pinned side: the pin is there, a gap from the band.
+    /// leave, and the column keeps its width. Not on a pinned side: the pin is there, a gap from the band. Across a seam,
+    /// the outer edges of the two displays too: columns are shares of the narrower one, so the wider one has room left
+    /// at its outer edge that a column in view reaches over rather than leave a sliver of the next one showing there.
     /// `edges` are each column's window edges where the strip has it.
     func reachingWalls(_ edges: [(left: CGFloat, right: CGFloat)], in area: CGRect) -> (left: Int?, right: Int?) {
         let inset = stripInset, band = bandRange
@@ -521,11 +523,11 @@ extension Workspace {
         // The room from the column's window to the outer gap holds the column's own half gap too.
         let reaches = { (room: CGFloat) in room > 0 && reachesOver(room - gaps.horizontal / 2, in: area) }
         let left = inView.first.flatMap { i in
-            i > band.lowerBound && walls.contains(.left) && pinnedIndex(.left) == nil && reaches(edges[i].left - inset.minX)
-                ? i : nil
+            i > band.lowerBound && (walls.contains(.left) || spansDisplays) && pinnedIndex(.left) == nil
+                && reaches(edges[i].left - inset.minX) ? i : nil
         }
         let right = inView.last.flatMap { i in
-            i < band.upperBound - 1 && walls.contains(.right) && pinnedIndex(.right) == nil
+            i < band.upperBound - 1 && (walls.contains(.right) || spansDisplays) && pinnedIndex(.right) == nil
                 && reaches(inset.maxX - edges[i].right) ? i : nil
         }
         return (left, right)
