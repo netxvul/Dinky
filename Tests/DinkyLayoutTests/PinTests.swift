@@ -1727,6 +1727,19 @@ struct StripRestoreTests {
         marked(restored, pins: [.right: 5])
     }
 
+    @Test func `A strip put back holds nothing it held as it was noted`() throws {
+        var snapshot = try pinned(strip(6, width: 0.3), 1, .left)
+        snapshot.focus(4)
+        do { let r = snapshot.beginFreeScroll(); #expect(r) }
+        snapshot.scrollFreely(by: 150)
+        try #require(snapshot.isScrollingFreely)
+        let restored = snapshot.restored(keeping: Set(snapshot.windows), adding: [])
+        #expect(!restored.isScrollingFreely)
+        #expect(!restored.holdsScroll && !restored.keepsScroll)
+        let focused = try #require(restored.focused)
+        #expect(restored.isInView(focused), "the focused column whole")
+    }
+
     @Test func `A pin gone since leaves no pin`() throws {
         let snapshot = try pinned(strip(3), 1, .left)
         let restored = snapshot.restored(keeping: [2, 3], adding: [])
@@ -1770,6 +1783,22 @@ struct BatchURoomTests {
         #expect(shape(ws.root) == shape(before.root) && ws.pins == before.pins)
     }
 
+    @Test func `The back window of a pinned accordion is over its own place`() throws {
+        var ws = try pinned(strip(4, width: 0.3), 1, .left)
+        ws.focus(2)
+        do { let r = ws.join(.left); #expect(r) }
+        let column = try #require(ws.root.path(of: 1)?.first)
+        ws.root.modify(at: [column]) { $0.mode = .accordion }
+        ws.focus(1)
+        let layout = ws.layout()
+        let back = try #require(layout.frames[2]), front = try #require(layout.frames[1])
+        let both = back.intersection(front)
+        try #require(!both.isEmpty, "the front window covers the back one there")
+        let point = CGPoint(x: both.midX, y: both.midY)
+        try #require(layout.order.first { layout.frames[$0]!.contains(point) } == 1)
+        #expect(ws.dropHit(at: point, in: layout, excluding: 2) == .own)
+    }
+
     @Test func `An accordion window grabbed from behind is over its own place`() throws {
         var ws = workspace(3, algorithm: .dwindle(.accordion))
         ws.focus(1)
@@ -1778,5 +1807,31 @@ struct BatchURoomTests {
         let front = layout.order.first { layout.frames[$0]!.contains(CGPoint(x: own.midX, y: own.midY)) }
         try #require(front != nil && front != 2, "another window is in front of 2 there")
         #expect(ws.dropHit(at: CGPoint(x: own.midX, y: own.midY), in: layout, excluding: 2) == .own)
+    }
+}
+
+struct StripRestoreDecisionTests {
+    @Test func `A strip is put back only on a display the change touched`() throws {
+        let snapshot = try pinned(strip(4, width: 0.3), 1, .left)
+        var lost = snapshot
+        lost.unpin(.left)
+        #expect(!lost.needsRestore(to: snapshot, displayChanged: false, spaceChanged: true, windowsAway: true))
+        #expect(lost.needsRestore(to: snapshot, displayChanged: true, spaceChanged: false, windowsAway: true))
+        #expect(!lost.needsRestore(to: snapshot, displayChanged: true, spaceChanged: false, windowsAway: false),
+                "nothing went away: a change is the user's")
+        #expect(snapshot.needsRestore(to: snapshot, displayChanged: true, spaceChanged: true, windowsAway: false),
+                "on a new Space it goes back whatever it looks like")
+        #expect(!snapshot.needsRestore(to: snapshot, displayChanged: true, spaceChanged: false, windowsAway: true),
+                "it kept its shape")
+    }
+
+    @Test func `A strip whose windows came back as new columns lost its shape`() throws {
+        let snapshot = try pinned(strip(4, width: 0.3), 1, .left)
+        var back = Workspace(bounds: snapshot.bounds, gaps: .zero, algorithm: .scrolling)
+        for id: WindowID in [2, 3, 1, 4] { back.insert(id) }
+        #expect(!back.keepsShape(of: snapshot))
+        var gone = snapshot
+        gone.remove(3)
+        #expect(gone.keepsShape(of: snapshot), "a window gone since leaves the rest as they were")
     }
 }

@@ -16,7 +16,7 @@ extension Dispatcher {
         }
         if let id = found { return focus(window: id) }
         let model = AppState.shared.displays
-        if boundaries == .allMonitorsOuterFrame, let from = model.display(ofWindow: coordinator.focusedWindow) {
+        if boundaries == .allMonitorsOuterFrame, let from = model.display(ofWindow: coordinator.commandFocusedWindow) {
             let line = displays(inLineWith: from, direction.orientation, model.displays)
             let index = line.firstIndex(of: from)! + (direction.isForward ? 1 : -1)
             if line.indices.contains(index) { return enter(line[index], from: direction) }

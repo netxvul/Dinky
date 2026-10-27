@@ -89,11 +89,12 @@ extension Workspace {
         let area = gaps.inset(bounds)
         guard area.width > 1, area.height > 1 else { return .none }
         let p = CGPoint(x: min(max(point.x, area.minX), area.maxX - 1), y: min(max(point.y, area.minY), area.maxY - 1))
-        // Over its own place, that, unless a pin is in front of it there, as one is of a band window hanging under it:
-        // only a pin, which is in front whatever the tree's focus says yet, not an accordion's window, say, in front of
-        // one grabbed from behind before its app is active.
+        // Over its own place, that, unless another column's pin is in front of it there, as one is of a band window
+        // hanging under it: only a pin, which is in front whatever the tree's focus says yet, not an accordion's window,
+        // say, in front of one grabbed from behind before its app is active, nor one of its own pinned stack.
         let front = layout.order.first { layout.frames[$0]!.contains(p) }
-        if layout.frames[id]?.contains(p) == true, front.map({ $0 == id || pinSide(of: $0) == nil }) ?? true { return .own }
+        if layout.frames[id]?.contains(p) == true,
+           front.map({ $0 == id || pinSide(of: $0) == nil || pinSide(of: $0) == pinSide(of: id) }) ?? true { return .own }
         if let edge = edgeDrop(at: p, in: layout, excluding: id) { return .tile(edge.target, edge.zone) }
         if let target = front {
             return .tile(target, dropZone(at: p, onto: target, in: layout) ?? .swap)

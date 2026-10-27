@@ -667,6 +667,46 @@ extension SlowStepTests {
         #expect(scheduler.takeRecovered() == [1])
         #expect(scheduler.takeRecovered().isEmpty, "handed on once")
     }
+
+    @Test func `A slow app keeping up again after a new glide cleared it is handed on as recovered`() {
+        let windows = FakeWindows([10: .zero])
+        let scheduler = windows.scheduler()
+        scheduler.step([job(1, 10, 40)])
+        Thread.sleep(forTimeInterval: 0.05)
+        windows.holds[10] = DispatchSemaphore(value: 0)
+        scheduler.step([job(1, 10, 50)])
+        Thread.sleep(forTimeInterval: FrameScheduler.slowStep + 0.03)
+        windows.holds[10]!.signal()
+        Thread.sleep(forTimeInterval: 0.05)
+        windows.holds[10] = nil
+        #expect(scheduler.isSlow(1))
+        // A new glide: the measure starts over, but whoever holds to the app's windows still has it slow.
+        scheduler.clearSlow()
+        for step in 1...FrameScheduler.recoveredAfter {
+            scheduler.step([job(1, 10, 50 + CGFloat(step))])
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        #expect(scheduler.takeRecovered() == [1])
+    }
+
+    @Test func `An app slow to follow a size changing step after step is slow`() {
+        let windows = FakeWindows([10: .zero])
+        let scheduler = windows.scheduler()
+        func sized(_ width: CGFloat) -> FrameJob { FrameJob(pid: 1, id: 10, frame: CGRect(x: 0, y: 0, width: width, height: 100)) }
+        // The run's first size, the app laying the window out, is left out of the measure; the next is a step.
+        windows.holds[10] = DispatchSemaphore(value: 0)
+        scheduler.step([sized(100)])
+        Thread.sleep(forTimeInterval: FrameScheduler.slowStep + 0.03)
+        windows.holds[10]!.signal()
+        Thread.sleep(forTimeInterval: 0.05)
+        #expect(!scheduler.isSlow(1))
+        windows.holds[10] = DispatchSemaphore(value: 0)
+        scheduler.step([sized(110)])
+        Thread.sleep(forTimeInterval: FrameScheduler.slowStep + 0.03)
+        windows.holds[10]!.signal()
+        Thread.sleep(forTimeInterval: 0.05)
+        #expect(scheduler.isSlow(1))
+    }
 }
 
 struct BusyProcessTests {

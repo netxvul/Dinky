@@ -413,33 +413,58 @@ extension Coordinator {
         guard let display = displays.display(containingSpace: key) else { return }
         makeWorkspace(key, on: display)
         let current = workspaces[key]!, coming = Set(returning)
+        // Not a window floated by hand since: it stays floating, out of the strip.
         let present = Set(snapshot.windows.filter { id in
             model.windows[id] != nil && (coming.contains(id) || current.contains(id))
+                && !(placements[id].map { $0.floating && !$0.freed } ?? false)
         })
         var tree = snapshot.restored(keeping: present, adding: current.windows.filter { !snapshot.contains($0) })
         (tree.bounds, tree.gaps, tree.walls) = (current.bounds, current.gaps, current.walls)
+        // On a display of another size, or gaps, its pins and band are fitted to it as a pass would.
+        if snapshot.bounds != tree.bounds || snapshot.gaps != tree.gaps {
+            tree.minimumSizes = minimumSizes(in: tree)
+            tree.fitBand()
+            tree.fitPins()
+        }
         let back = returning.filter { tree.contains($0) && placements[$0]?.space != key }
         for (old, ids) in Dictionary(grouping: back.filter { placements[$0]?.space != nil }, by: { placements[$0]!.space! }) {
             edit(old) { workspace in for id in ids { workspace.remove(id) } }
         }
         edit(key) { $0 = tree }
-        for id in back { placements[id]?.space = key }
+        for id in back {
+            // One floating only because a free workspace had it (`freed`) is tiled again, as `track` takes it back.
+            if placements[id]?.floating == true {
+                placements[id] = Placement(floating: false, space: key)
+                filledFrom[id] = nil
+                griddedFrom[id] = nil
+                heldTabs[id] = nil
+            } else {
+                placements[id]?.space = key
+            }
+        }
         print("\(stamp()) workspaces: strip on Space \(key) put back as it was, \(back.count) windows returning"
               + (tree.pins.isEmpty ? "" : ", pinned \(tree.pins.values.sorted())"))
-        for id in back { arrive(id, on: key) }
+        arrive(Dictionary(uniqueKeysWithValues: back.map { ($0, key) }))
+        // Laid out once its windows are home (`WorkspaceNumbers.returnDisplaced`): placed at once there, not glided
+        // across from where macOS poured them.
         dirty.insert(key)
-        flush()
     }
 
-    /// Window `wid`, moved by a command to `space` on another display: its tree there is placed at once rather than
-    /// glided, and the window is not taken in again as it arrives; a moment later it is looked at, as a drop's is, and
-    /// put right if it did not land.
-    func arrive(_ wid: WindowID, on space: UInt64) {
-        arriving[wid] = space
-        placeAtOnce(space)
-        for delay in [0.3, 1.0] { checkLanding(of: [wid: space], after: delay) }
+    /// Windows coming back to the trees of their Spaces in `moves`, by Space: those trees are placed at once rather than
+    /// glided, and the windows are not taken in again as they arrive (`watchArrival`).
+    func arrive(_ moves: [WindowID: UInt64]) {
+        for space in Set(moves.values) { placeAtOnce(space) }
+        watchArrival(moves)
+    }
+
+    /// Windows already in the trees of their Spaces in `moves` while macOS still moves them there: not taken in again as
+    /// they arrive, and looked at a moment later, as a drop's are, all together, put right if they did not land.
+    func watchArrival(_ moves: [WindowID: UInt64]) {
+        guard !moves.isEmpty else { return }
+        arriving.merge(moves) { $1 }
+        for delay in [0.3, 1.0] { checkLanding(of: moves, after: delay) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { [weak self] in
-            if self?.arriving[wid] == space { self?.arriving[wid] = nil }
+            for (id, space) in moves where self?.arriving[id] == space { self?.arriving[id] = nil }
         }
     }
 
@@ -463,8 +488,11 @@ extension Coordinator {
                 }
                 guard !isAnimating(id), let tile = workspaces[space]?.layout().frames[id] else { continue }
                 let resting = restingFrame(of: id, at: tile)
-                // Nor one where its app last put it for that tile, a few points off as some snap to their own grid.
-                guard !info.frame.isClose(to: resting, within: 2), !rests(id, at: info.frame, askedFor: tile) else { continue }
+                // Nor one where its app last put it for that tile, a few points off as some snap to their own grid: at the
+                // tile's corner, only its size off. One that stayed where it was let go refused the write, and goes again.
+                let snaps = abs(info.frame.minX - resting.minX) <= 2 && abs(info.frame.minY - resting.minY) <= 2
+                    && rests(id, at: info.frame, askedFor: tile)
+                guard !info.frame.isClose(to: resting, within: 2), !snaps else { continue }
                 print("\(stamp()) drag: \(id) at \(info.frame) on Space \(on) \(delay)s after the drop, "
                       + "not where its tile leaves it, \(resting), on Space \(space): placed again")
                 dirty.insert(space)

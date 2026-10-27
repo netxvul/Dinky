@@ -120,6 +120,13 @@ enum ScriptingAddition {
         for id in ids { sent[id] = nil }
     }
 
+    /// Window `id` shows at `origin`, as its move or resize events have it: one moved by other means than the last
+    /// sent, half a point or more, is sent again by the next move, even mid-glide or held.
+    static func noteShown(_ id: WindowID, at origin: CGPoint) {
+        guard let last = sent[id], hypot(last.x - origin.x, last.y - origin.y) >= 0.5 else { return }
+        sent[id] = nil
+    }
+
     /// Whether the payload Dock has can order windows (see `order`), as of `available`; one installed before 0.4.0
     /// cannot, and windows are raised through Accessibility instead.
     static var orders: Bool { cached && cachedOrders }

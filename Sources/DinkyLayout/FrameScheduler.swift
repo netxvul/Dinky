@@ -285,11 +285,13 @@ public final class FrameScheduler: @unchecked Sendable {
                 if app.written[job.id] == job.frame.size {
                     answered = move(job)
                 } else {
-                    // A size change is the app laying the window out again, not keeping up with the steps: its time is
-                    // left out of theirs.
+                    // The first size of a run is the app laying the window out again, not keeping up with the steps:
+                    // its time is left out of theirs. Sizes changing step after step are the steps, an app slow to
+                    // follow them slow.
+                    let first = app.stepSizes[job.id]?.isEmpty ?? true
                     let resizing = Date()
                     answered = write(job)
-                    began += Date().timeIntervalSince(resizing)
+                    if first { began += Date().timeIntervalSince(resizing) }
                 }
             }
             app.written[job.id] = job.frame.size
@@ -308,9 +310,10 @@ public final class FrameScheduler: @unchecked Sendable {
                 lock.withLock { _ = slow.insert(app.pid) }
             } else {
                 app.fastDrains += 1
-                // Quick again for a run of steps: no longer slow, whatever it was once.
-                if app.fastDrains >= Self.recoveredAfter {
-                    lock.withLock { if slow.remove(app.pid) != nil { quickAgain.insert(app.pid) } }
+                // Quick again for a run of steps: no longer slow, whatever it was once, and once a run, a glide since
+                // `clearSlow` having maybe found it slow before.
+                if app.fastDrains == Self.recoveredAfter {
+                    lock.withLock { slow.remove(app.pid); quickAgain.insert(app.pid) }
                 }
             }
         }

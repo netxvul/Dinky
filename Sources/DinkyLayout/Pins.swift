@@ -502,11 +502,38 @@ public func pinRaiseOrder(ownPins: [WindowID], fronts: [WindowID], front: Window
 extension Workspace {
     /// The strip as this snapshot had it before a display change took its windows away, its order, column widths and
     /// pins: without the windows not in `present` (gone since, or taken elsewhere by hand), and with `newcomers`, windows
-    /// its Space has that the snapshot did not, after the others as new windows come in.
+    /// its Space has that the snapshot did not, after the others as new windows come in. Nothing held as it was taken:
+    /// no fingers' free scroll, no click's or drop's hold on the scroll, the strip where it showed.
     public func restored(keeping present: Set<WindowID>, adding newcomers: [WindowID]) -> Workspace {
         var workspace = self
+        let shown = workspace.shownOffset
+        workspace.freeScrollFrom = nil
+        workspace.holdsScroll = false
+        workspace.keepsScroll = false
+        workspace.scrollOffset = shown
         for id in workspace.windows where !present.contains(id) { workspace.remove(id) }
         for id in newcomers where !workspace.contains(id) { workspace.insert(id) }
         return workspace
+    }
+}
+
+extension Workspace {
+    /// Whether this strip, as a display change left it, is to be put back as `snapshot` had it before: only where that
+    /// change touched its display (`displayChanged`), and then where its Space is another one now (`spaceChanged`), or
+    /// some of its windows went from it meanwhile (`windowsAway`) and it no longer has the snapshot's pins or column
+    /// order, as when macOS put them back and they came in as new columns.
+    public func needsRestore(to snapshot: Workspace, displayChanged: Bool, spaceChanged: Bool, windowsAway: Bool) -> Bool {
+        guard displayChanged else { return false }
+        if spaceChanged { return true }
+        guard windowsAway else { return false }
+        return !keepsShape(of: snapshot)
+    }
+
+    /// Whether this strip has `snapshot`'s pins and its columns in its order, windows of either alone left out.
+    public func keepsShape(of snapshot: Workspace) -> Bool {
+        let shared = Set(windows).intersection(snapshot.windows)
+        let columns = { (ws: Workspace) in ws.stripColumns.map { $0.filter(shared.contains) }.filter { !$0.isEmpty } }
+        let pinsHere = pins.filter { shared.contains($0.value) }, pinsThere = snapshot.pins.filter { shared.contains($0.value) }
+        return columns(self) == columns(snapshot) && pinsHere == pinsThere
     }
 }

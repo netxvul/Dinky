@@ -95,10 +95,13 @@ final class Animator: NSObject {
     /// The tree last set gliding, whose display the link steps on unless another gliding is faster.
     private var lastKey: UInt64?
     /// The display chosen for the link this turn of the main queue (`run`).
-    private var choice: CGDirectDisplayID??
+    /// Chosen for the trees then gliding: chosen again within the turn when that set changes.
+    private var choice: (keys: Set<UInt64>, display: CGDirectDisplayID?)?
     /// Apps found too slow to follow a glide frame by frame, in this glide or an earlier one: a column holds to their
     /// windows from a glide's first frame, rather than snapping back to them once they have fallen behind.
     private var slowPids: Set<pid_t> = []
+    /// Apps of `slowPids` that have kept up again during the glide: no longer slow once the next one starts.
+    private var recovered: Set<pid_t> = []
     /// Each window's app, as the passes have it, so a column still knows its slow window once that has arrived.
     private var windowPids: [WindowID: pid_t] = [:]
     /// Since when each window at its target has waited for the slow window of its column to land.
@@ -140,6 +143,13 @@ final class Animator: NSObject {
     /// Where a gliding window's steps write it now; nil for one not gliding.
     func frame(of id: WindowID) -> CGRect? { entries[id]?.frame }
 
+    /// A new glide: every app gets another chance to keep up, and one that kept up again in the last is slow no longer.
+    private func clearSlow() {
+        applier.clearSlow()
+        slowPids.subtract(recovered)
+        recovered = []
+    }
+
     /// Move the tree's windows from `starts` to `targets`, then run `finish`. Windows already there, or with
     /// no start, are left to `finish`; with none left to move, it runs at once. With `place`, the starts and targets
     /// are in strip coordinates and `place` puts them on screen on every frame; a window that was moving without it,
@@ -156,7 +166,7 @@ final class Animator: NSObject {
                  anchors: [WindowID: ResizeOnce.Anchor] = [:], restart: Set<WindowID> = [], curve: AnimationCurve? = nil,
                  sink: (([WindowID: CGRect]) -> Void)? = nil, then finish: @escaping () -> Void) {
         // A new glide: every app gets another chance to keep up.
-        if entries.isEmpty { applier.clearSlow() }
+        if entries.isEmpty { clearSlow() }
         following.remove(key)
         // What each moving window glided on till now, so one whose curve changes can start over on the new one.
         let before = curves
@@ -210,7 +220,7 @@ final class Animator: NSObject {
     /// run once its windows arrived, is dropped: the pass after the fingers lift runs its own.
     func follow(_ key: UInt64, from starts: [WindowID: CGRect], to targets: [WindowID: CGRect], pids: [WindowID: pid_t],
                 place: (([WindowID: CGRect]) -> [WindowID: CGRect])? = nil, sink: (([WindowID: CGRect]) -> Void)? = nil) {
-        if entries.isEmpty { applier.clearSlow() }
+        if entries.isEmpty { clearSlow() }
         windowPids.merge(pids) { $1 }
         if following.insert(key).inserted { finishes[key] = nil }
         let before = curves
@@ -307,16 +317,18 @@ final class Animator: NSObject {
     private func run() {
         // On the fastest display of the trees gliding, the one it is on if that is as fast, else the tree last set
         // gliding's; made again once that is another, the main one while unknown. Chosen once a turn of the main queue,
-        // as every move of the fingers calls this.
-        if choice == nil {
-            let keys = Set(entries.values.map(\.key))
+        // as every move of the fingers calls this, and again when the trees gliding are others.
+        let keys = Set(entries.values.map(\.key))
+        if choice?.keys != keys {
+            let wasChosen = choice != nil
             let candidates = Set(keys.compactMap(displayOf)).map { id in
                 (id: id, rate: Double(screen(of: id)?.maximumFramesPerSecond ?? 60))
             }
-            choice = .some(LinkChoice.display(current: linkDisplay, among: candidates) ?? lastKey.flatMap(displayOf))
-            DispatchQueue.main.async { [weak self] in self?.choice = nil }
+            let last = lastKey.flatMap(displayOf)
+            choice = (keys, LinkChoice.display(current: linkDisplay, preferred: last, among: candidates) ?? last)
+            if !wasChosen { DispatchQueue.main.async { [weak self] in self?.choice = nil } }
         }
-        let display = choice ?? nil
+        let display = choice?.display
         let fresh = link == nil || (display != nil && display != linkDisplay)
         if fresh { makeLink(on: display) }
         // Called again with every move of the fingers: only a link setting off starts the clocks again, so one that
@@ -435,8 +447,10 @@ final class Animator: NSObject {
             if finished, !following.contains(key) { done.insert(id) }
         }
         for entry in moving.values where applier.isSlow(entry.pid) { slowPids.insert(entry.pid) }
-        // An app that has kept up again is followed frame by frame again.
-        slowPids.subtract(applier.takeRecovered())
+        // An app that has kept up again is followed frame by frame again, but its column holds to it till the glide
+        // ends, rather than coming apart mid-glide; unless it falls behind again meanwhile.
+        recovered.formUnion(applier.takeRecovered())
+        recovered = recovered.filter { !applier.isSlow($0) }
         // A tree gliding something else takes its frames, and its windows are left alone.
         for (key, sink) in sinks {
             let ours = frames.filter { moving[$0.key]?.key == key }

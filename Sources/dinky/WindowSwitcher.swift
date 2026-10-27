@@ -465,7 +465,7 @@ final class WindowSwitcher {
         guard items.indices.contains(view.picked), let coordinator = AppState.shared.coordinator else { return }
         let id = items[view.picked].id
         if shownFree {
-            guard id != shownPick, coordinator.model.windows[id]?.spaceID == space, coordinator.focusedWindow != id else { return }
+            guard id != shownPick, coordinator.model.windows[id]?.spaceID == space, coordinator.commandFocusedWindow != id else { return }
         } else {
             guard coordinator.workspaces[space]?.contains(id) == true, coordinator.workspaces[space]?.focused != id else { return }
         }

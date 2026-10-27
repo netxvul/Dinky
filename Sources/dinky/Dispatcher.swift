@@ -103,7 +103,7 @@ enum Dispatcher {
             return fills ? .nothing("fullscreen: the window already fills the workspace", ok: true) : reply
         case .grid(let placement, let toggle):
             guard let coordinator = AppState.shared.coordinator else { return .error("tiling is not running") }
-            let id = window ?? coordinator.focusedWindow
+            let id = window ?? coordinator.commandFocusedWindow
             if toggle, coordinator.isFloating(id) == true {
                 // A free workspace would float the window again at once, so the toggle goes back to its frame instead.
                 if coordinator.isOnFreeWorkspace(id) {
@@ -308,7 +308,7 @@ enum Dispatcher {
     private static func floating(_ name: String, window: WindowID?,
                                  _ run: (Coordinator, WindowID) -> String?) -> Reply? {
         guard let coordinator = AppState.shared.coordinator else { return nil }
-        let id = window ?? coordinator.focusedWindow
+        let id = window ?? coordinator.commandFocusedWindow
         guard coordinator.isFloating(id) == true else { return nil }
         if let error = run(coordinator, id) { return .error("\(name): \(error)") }
         return .ok(name)
@@ -351,7 +351,7 @@ enum Dispatcher {
             workspace.minimumSizes = coordinator.minimumSizes(in: workspace)
             return pinning(&workspace)
         }
-        let id = window ?? coordinator.focusedWindow
+        let id = window ?? coordinator.commandFocusedWindow
         let result: PinChange?
         if let window {
             // A rule's window is pinned in its own tree or not at all, and one the user unpinned is left so.
@@ -400,7 +400,7 @@ enum Dispatcher {
     /// scrolling workspace back to its tree. Anything but floating tiles a floating window first.
     private static func layout(_ names: [LayoutName], window: WindowID?) -> Reply {
         guard let coordinator = AppState.shared.coordinator else { return .error("tiling is not running") }
-        let id = window ?? coordinator.focusedWindow
+        let id = window ?? coordinator.commandFocusedWindow
         guard let floating = coordinator.isFloating(id) else { return .error("layout: no window dinky manages is focused") }
         var current: [LayoutName] = floating ? [.floating] : [.tiling]
         if !floating, coordinator.isScrolling(id) {
@@ -474,10 +474,14 @@ enum Dispatcher {
         let from = AppState.shared.displays.display(ofWindow: wid)
         if let error = move(wid, to: space, arriving: destination) { return error }
         if let from { keepOffset(of: wid, from: from, to: to, space: space) }
-        // To another display, it is placed there at once: a glide would set out from where it was on the other one.
+        // A tiled window to another display joins the tree there placed at once: a glide would set out from where it was on
+        // the other one.
+        let coordinator = AppState.shared.coordinator
         let across = from.map { $0.uuid != to.uuid } ?? false
-        if across { AppState.shared.coordinator?.arrive(wid, on: space) }
-        AppState.shared.coordinator?.windowMoved(wid, refocus: !follow)
+        let joins = across && coordinator?.isFloating(wid) == false && coordinator?.settings(for: space).isFree == false
+        if joins { coordinator?.placeAtOnce(space) }
+        coordinator?.windowMoved(wid, refocus: !follow)
+        if joins { coordinator?.joined(wid, space) }
         return nil
     }
 

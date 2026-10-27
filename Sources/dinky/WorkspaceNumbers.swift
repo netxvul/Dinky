@@ -25,8 +25,19 @@ final class WorkspaceNumbers {
     private var pendingHomes: [UInt32: Int]?
     /// Each scrolling workspace's strip while the displays were settled, its order, widths and pins, to put back once a
     /// display change has poured its windows elsewhere and they return (`returnDisplaced`). Noted as `homes` is.
-    private var strips: [Int: Workspace] = [:]
-    private var pendingStrips: [Int: Workspace]?
+    private var strips: [Int: NotedStrip] = [:]
+    private var pendingStrips: [Int: NotedStrip]?
+    /// A strip as noted, with the Space it was on and that Space's display.
+    private struct NotedStrip {
+        let tree: Workspace
+        let space: UInt64
+        let display: String?
+    }
+    /// The displays that came or went since the displays were last settled.
+    private var changedDisplays: Set<String> = []
+    /// Workspaces some of whose windows were seen off them while displaced: macOS may put them back before the Spaces
+    /// are arranged, and the strip has lost its shape by then.
+    private var awayWhileDisplaced: Set<Int> = []
     /// The displays as the last display change left them.
     private var knownDisplays: Set<String> = []
     /// Set by a display coming or going, until an arrangement completes and windows are back on their workspaces.
@@ -62,7 +73,10 @@ final class WorkspaceNumbers {
             if !connected.isEmpty { print("displays: connected \(connected.sorted())") }
             if !disconnected.isEmpty { print("displays: disconnected \(disconnected.sorted())") }
             fflush(stdout)
-            if !connected.isEmpty || !disconnected.isEmpty { displaced = true }
+            if !connected.isEmpty || !disconnected.isEmpty {
+                displaced = true
+                changedDisplays.formUnion(connected.union(disconnected))
+            }
             arrangeSoon()
         }
         Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.noteHomes() }
@@ -144,6 +158,12 @@ final class WorkspaceNumbers {
     /// Notes which workspace each window is on, once a second. A note is kept only when the displays are the
     /// same a second later, so windows macOS is pouring off a display that is going away are never noted there.
     private func noteHomes() {
+        if displaced {
+            // Which workspaces' windows macOS has poured off them, while it does.
+            for (id, n) in homes where binding[n].map({ dinky_window_space_id(id) != $0 }) ?? false {
+                awayWhileDisplaced.insert(n)
+            }
+        }
         guard !displaced, !arranging, onlineDisplays == knownDisplays, let coordinator = AppState.shared.coordinator else {
             pendingHomes = nil
             pendingStrips = nil
@@ -156,8 +176,12 @@ final class WorkspaceNumbers {
             if let n = number(of: dinky_window_space_id(window.id)) { noted[window.id] = n }
         }
         pendingHomes = noted
+        let displays = AppState.shared.displays
         pendingStrips = binding.compactMapValues { space in
-            coordinator.workspaces[space].flatMap { $0.isScrolling && !$0.windows.isEmpty ? $0 : nil }
+            coordinator.workspaces[space].flatMap { tree in
+                tree.isScrolling && !tree.windows.isEmpty
+                    ? NotedStrip(tree: tree, space: space, display: displays.display(containingSpace: space)?.uuid) : nil
+            }
         }
     }
 
@@ -172,17 +196,38 @@ final class WorkspaceNumbers {
                   model.display(containingSpace: space)?.userSpaces.contains(space) == true else { continue }
             targets[id] = target
         }
-        guard !targets.isEmpty else { return }
+        let changed = changedDisplays, away = awayWhileDisplaced
+        changedDisplays = []
+        awayWhileDisplaced = []
+        var restored: Set<UInt64> = []
+        // A strip none of whose windows has to move back goes back as it was too, where the display change left it on a
+        // new Space, or macOS put its windows back as new columns: only on a display the change touched.
+        if let coordinator = AppState.shared.coordinator {
+            for (n, noted) in strips {
+                guard let space = binding[n], !targets.values.contains(space), let tree = coordinator.workspaces[space],
+                      tree.needsRestore(to: noted.tree, displayChanged: noted.display.map(changed.contains) ?? false,
+                                        spaceChanged: space != noted.space, windowsAway: away.contains(n)) else { continue }
+                coordinator.restoreStrip(noted.tree, on: space, returning: [])
+                restored.insert(space)
+            }
+        }
+        guard !targets.isEmpty else {
+            for space in restored { AppState.shared.coordinator?.placeAtOnce(space) }
+            return
+        }
         for (target, moving) in Dictionary(grouping: targets.keys, by: { targets[$0]! }) {
             // A strip goes back as it was before its windows move, so they arrive in it.
             if let n = number(of: target), let strip = strips[n] {
-                AppState.shared.coordinator?.restoreStrip(strip, on: target, returning: moving)
+                AppState.shared.coordinator?.restoreStrip(strip.tree, on: target, returning: moving)
+                restored.insert(target)
             }
             var ids = moving
             _ = dinky_move_windows_to_space(&ids, Int32(ids.count), target)
         }
         let arrived = { targets.filter { dinky_window_space_id($0.key) == $0.value }.count }
         _ = waitUntil(1) { arrived() == targets.count }
+        // Strips put back are placed at once now their windows are home, the snap not spent while they were away.
+        for target in restored { AppState.shared.coordinator?.placeAtOnce(target) }
         print("workspaces: returned \(arrived()) of \(targets.count) windows a display change moved off their workspace")
     }
 

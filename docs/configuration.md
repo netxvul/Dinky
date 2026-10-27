@@ -236,7 +236,8 @@ included, to a Space on its display and removes the Space left behind. Empty
 leftover Spaces are removed; ones with windows are left alone, unnumbered. A
 display with no workspaces keeps one unnumbered Space. Windows macOS piles onto
 another workspace when a display goes away, as around sleep, go back to their
-own workspace once the displays settle.
+own workspace once the displays settle, and a scrolling workspace's strip comes
+back as it was: in its order, at its column widths, its pins pinned.
 
 ## `[display.<pattern>]`
 
