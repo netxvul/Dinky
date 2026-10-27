@@ -369,7 +369,8 @@ enum Dispatcher {
         } else {
             let key = coordinator.placements[id]?.space
             let before = key.flatMap { coordinator.workspaces[$0]?.pinnedWindows } ?? []
-            result = coordinator.command { change(&$0) }
+            // On the window read above, not read again.
+            result = coordinator.command(on: id) { change(&$0) }
             let after = key.flatMap { coordinator.workspaces[$0]?.pinnedWindows } ?? []
             coordinator.unpinnedByHand.formUnion(Set(before).subtracting(after))
             coordinator.unpinnedByHand.subtract(after)
@@ -447,10 +448,14 @@ enum Dispatcher {
             n = (i + (target == .next ? 1 : -1) + displays.count) % displays.count
         }
         let to = displays[n]
+        // A full-screen Space there is no place for it, and macOS would put it on another one, behind.
+        guard to.userSpaces.contains(to.currentSpaceID) else {
+            return .nothing("display \(n + 1) shows a full-screen app", ok: false)
+        }
         if let reply = relocate(wid, to: to.currentSpaceID, on: to, destination: "display \(n + 1)", follow: follow) {
             return reply
         }
-        // The Space is on screen, so there is nothing to show first.
+        // The Space is on screen, a user Space as checked above, so there is nothing to show first.
         if follow { AppState.shared.coordinator?.focus(wid) }
         return .ok("moved window \(wid) to display \(n + 1)")
     }
@@ -475,7 +480,11 @@ enum Dispatcher {
         // as this one lands late.
         AppState.shared.coordinator?.arriving[wid] = nil
         let from = AppState.shared.displays.display(ofWindow: wid)
-        if let error = move(wid, to: space, arriving: destination) { return error }
+        if let error = move(wid, to: space, arriving: destination) {
+            // Not moved, or gone somewhere else: its tree lets go of it now, before a frame could write it back.
+            AppState.shared.coordinator?.windowMoved(wid, refocus: !follow)
+            return error
+        }
         if let from { keepOffset(of: wid, from: from, to: to, space: space) }
         // A tiled window to another display joins the tree there placed at once: a glide would set out from where it was on
         // the other one.
@@ -493,7 +502,7 @@ enum Dispatcher {
     private static func keepOffset(of wid: WindowID, from: Display, to: Display, space: UInt64) {
         let coordinator = AppState.shared.coordinator
         guard from.uuid != to.uuid, coordinator?.isFloating(wid) != false || coordinator?.settings(for: space).isFree == true,
-              let pid = windowPID(wid), let element = axWindow(pid: pid, wid: wid) else { return }
+              let pid = windowPID(wid), let element = axWindow(pid: pid, wid: wid, timeout: 0.25) else { return }
         let frame = dinky_window_info(wid).frame
         var origin = CGPoint(x: to.frame.minX + max(0, frame.minX - from.frame.minX),
                              y: to.frame.minY + max(0, frame.minY - from.frame.minY))
@@ -504,9 +513,17 @@ enum Dispatcher {
     /// act on the window's new place. Nil on success, else the error to answer.
     private static func move(_ wid: WindowID, to space: UInt64, arriving destination: String) -> Reply? {
         var ids = [wid]
+        let before = dinky_window_space_id(wid)
         guard dinky_move_windows_to_space(&ids, 1, space) else { return .error("move failed") }
-        guard waitUntil(0.5, { dinky_window_space_id(wid) == space }) else {
-            return .error("window \(wid) did not arrive on \(destination)")
+        // Done once it is there, or once it has left for another Space: macOS put it elsewhere, and it will not come.
+        var now: UInt64 = before
+        _ = waitUntil(0.5) {
+            now = dinky_window_space_id(wid)
+            return now == space || before != 0 && now != 0 && now != before
+        }
+        guard now == space else {
+            return .error(before != 0 && now != 0 && now != before ? "window \(wid) went to Space \(now), not \(destination)"
+                          : "window \(wid) did not arrive on \(destination)")
         }
         return nil
     }

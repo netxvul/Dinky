@@ -150,6 +150,30 @@ struct ResizeOnceTests {
         #expect(out == frames)
     }
 
+    @Test func `With no column beside it, nothing is read`() {
+        let frames: [WindowID: CGRect] = [2: rect(692, 41, 1446, 869)]
+        var calls: [WindowID] = []
+        let out = ResizeOnce.guarded(frames, lead: 2, left: [], right: [], gap: 11) { calls.append($0); return frames[$0] }
+        #expect(out == frames)
+        #expect(calls.isEmpty)
+    }
+
+    @Test func `The lead is read once, before the columns beside it`() {
+        let frames: [WindowID: CGRect] = [1: rect(-213, 41, 895, 869), 2: rect(692, 41, 1446, 869), 3: rect(2146, 41, 700, 869)]
+        var calls: [WindowID] = []
+        let out = ResizeOnce.guarded(frames, lead: 2, left: [[1]], right: [[3]], gap: 11) { calls.append($0); return frames[$0] }
+        #expect(out == frames)
+        #expect(calls == [2, 1, 3])
+    }
+
+    @Test func `A column beside it that is not in the frames is not read`() {
+        let frames: [WindowID: CGRect] = [2: rect(692, 41, 1446, 869)]
+        var calls: [WindowID] = []
+        let out = ResizeOnce.guarded(frames, lead: 2, left: [[1]], right: [[3]], gap: 11) { calls.append($0); return frames[$0] }
+        #expect(out == frames)
+        #expect(calls.isEmpty)
+    }
+
     @Test func `The right side mirrors the left`() {
         // Growing right over the right column (3), which slides off right faster than the window shows its edge there.
         let frames: [WindowID: CGRect] = [2: rect(8, 41, 1471, 869), 3: rect(1600, 41, 723, 869)]

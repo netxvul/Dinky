@@ -24,7 +24,11 @@ struct ColumnHoldTests {
 
     @Test func `A column all of quick or all of slow windows glides as it is`() {
         let shown: [WindowID: CGRect] = [1: rect(1475, 0, 400, 300), 2: rect(900, 300, 400, 300)]
-        #expect(ColumnHold.held(frames, columns: [[1, 2]], slow: [], shown: { shown[$0] }).frames == frames)
+        var reads = 0
+        let quick = ColumnHold.held(frames, columns: [[1, 2]], slow: [], shown: { reads += 1; return shown[$0] })
+        #expect(quick.frames == frames)
+        #expect(quick.held.isEmpty)
+        #expect(reads == 0)
         #expect(ColumnHold.held(frames, columns: [[1, 2]], slow: [1, 2], shown: { shown[$0] }).frames == frames)
     }
 

@@ -36,6 +36,9 @@ final class BorderWindow {
     private var drawn: Look?
     /// The noop glow's opacity as a whole.
     private var opacity = 1.0
+    /// The target's level and sub-level, read once while the border only follows it moving (`moveOnly`), as on every
+    /// frame of a glide; read again by any other update.
+    private var level: (level: Int64, subLevel: Int32)?
     private(set) var isShown = false
 
     init(target: UInt32) {
@@ -52,7 +55,8 @@ final class BorderWindow {
         let look = Look(size: window.frame.size, cornerRadius: window.cornerRadius,
                         color: color, width: width)
         if moveOnly, drawn?.with(color: color) != look { return hide() }
-        place(window, look: look, order: config.order == .above ? .above : .below)
+        if !moveOnly { level = nil }
+        place(window, look: look, order: config.order == .above ? .above : .below, keepLevel: moveOnly)
     }
 
     /// Place and draw the noop glow over `window` at `opacity` as a whole: a `width`-point ring of `color` around it and
@@ -70,7 +74,8 @@ final class BorderWindow {
         self.opacity = opacity
     }
 
-    private func place(_ window: Window, look: Look, order: DinkyBorderOrder, above: UInt32 = 0, opacity: Double = 1) {
+    private func place(_ window: Window, look: Look, order: DinkyBorderOrder, above: UInt32 = 0, opacity: Double = 1,
+                       keepLevel: Bool = false) {
         let scale = backingScale(of: window.frame)
         if scale != self.scale { recreate(scale: scale) }
         guard id != 0 else { return }
@@ -86,7 +91,14 @@ final class BorderWindow {
             fade(opacity)
             return
         }
-        if look == drawn {
+        if look == drawn, keepLevel {
+            if level == nil {
+                var read: (level: Int64, subLevel: Int32) = (0, 0)
+                dinky_border_level(target, &read.level, &read.subLevel)
+                level = read
+            }
+            dinky_border_move_at_level(id, target, window.frame, look.width, order, level!.level, level!.subLevel)
+        } else if look == drawn {
             dinky_border_move(id, target, window.frame, look.width, order)
         } else {
             let rgba = Self.rgba(look.color)
@@ -102,7 +114,13 @@ final class BorderWindow {
         isShown = true
     }
 
+    /// The target's level changed: read it again at the next placement.
+    func levelChanged() {
+        level = nil
+    }
+
     func hide() {
+        level = nil
         guard isShown else { return }
         dinky_border_hide(id)
         isShown = false
@@ -121,6 +139,7 @@ final class BorderWindow {
         spaceID = 0
         drawn = nil
         opacity = 1
+        level = nil
     }
 }
 

@@ -32,10 +32,11 @@ enum ScriptingAddition {
         guard enabled else { return false }
         let now = CACurrentMediaTime()
         if now - cachedAt > 1 {
-            cached = dinky_sa_available()
-            // Asked each time too, as the payload Dock has can be replaced by a newer one without dinky restarting.
-            cachedMoves = cached && dinky_sa_moves_windows()
-            cachedOrders = cached && dinky_sa_orders_windows()
+            // What it can do is asked each time too, as the payload Dock has can be replaced by a newer one without
+            // dinky restarting: one connection for all three.
+            var moves = false, orders = false
+            cached = dinky_sa_probe(&moves, &orders)
+            (cachedMoves, cachedOrders) = (moves, orders)
             cachedAt = now
             if cached { lastAliveAt = now }
         }

@@ -10,15 +10,33 @@
 // socket this is cheap, and it keeps the payload's accept-one-message loop simple. A short timeout bounds the worst
 // case so a wedged Dock cannot stall the main thread.
 
-static int sa_connect(void)
+// The socket's path for this user, written into `path`; false when the user cannot be looked up. From the uid, not
+// $USER, so the client and the Dock payload agree on the socket name regardless of environment.
+static bool sa_lookup_path(char *path, size_t size)
 {
-    // From the uid, not $USER, so the client and the Dock payload agree on the socket name regardless of environment.
     struct passwd *pw = getpwuid(getuid());
     const char *user = pw ? pw->pw_name : NULL;
-    if (!user) return -1;
+    if (!user) return false;
+    snprintf(path, size, DINKY_SA_SOCKET_PATH_FMT, user);
+    return true;
+}
 
+// The path, looked up once for every call after, on any thread; a failed lookup is tried again on the next call.
+static bool sa_path(char *path, size_t size)
+{
+    static char cached[255];
+    static bool found;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ found = sa_lookup_path(cached, sizeof(cached)); });
+    if (!found) return sa_lookup_path(path, size);
+    snprintf(path, size, "%s", cached);
+    return true;
+}
+
+static int sa_connect(void)
+{
     char path[255];
-    snprintf(path, sizeof(path), DINKY_SA_SOCKET_PATH_FMT, user);
+    if (!sa_path(path, sizeof(path))) return -1;
 
     int fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (fd < 0) return -1;
@@ -54,12 +72,9 @@ bool dinky_sa_available(void)
     return true;
 }
 
-// The payload's capabilities from its handshake, nothing when it does not answer.
-static uint32_t sa_attributes(void)
+// The payload's capabilities from its handshake over `fd`, which it closes; nothing when it does not answer.
+static uint32_t sa_handshake(int fd)
 {
-    int fd = sa_connect();
-    if (fd < 0) return false;
-
     char bytes[sizeof(int16_t) + 1];
     int16_t body = 1;
     memcpy(bytes, &body, sizeof(body));
@@ -82,6 +97,26 @@ static uint32_t sa_attributes(void)
     }
     close(fd);
     return attrib;
+}
+
+// The payload's capabilities from its handshake, nothing when it does not answer.
+static uint32_t sa_attributes(void)
+{
+    int fd = sa_connect();
+    if (fd < 0) return 0;
+    return sa_handshake(fd);
+}
+
+bool dinky_sa_probe(bool *moves, bool *orders)
+{
+    *moves = false;
+    *orders = false;
+    int fd = sa_connect();
+    if (fd < 0) return false;
+    uint32_t attrib = sa_handshake(fd);
+    *moves = (attrib & DINKY_SA_ATTRIB_MOVE_BATCH) != 0;
+    *orders = (attrib & DINKY_SA_ATTRIB_ORDER) != 0;
+    return true;
 }
 
 bool dinky_sa_moves_windows(void)

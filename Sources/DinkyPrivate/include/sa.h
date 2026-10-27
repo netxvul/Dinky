@@ -8,6 +8,10 @@
 // Whether the injected Dock payload answers right now (its socket connects). Cheap; call to choose the glide path.
 bool dinky_sa_available(void);
 
+// Whether the payload answers, as dinky_sa_available, and what it can do, as dinky_sa_moves_windows and
+// dinky_sa_orders_windows: one connection and one handshake for the three.
+bool dinky_sa_probe(bool *moves, bool *orders);
+
 // Whether the payload can also move windows' real positions in batches (`dinky_sa_move_batch`), as one installed
 // before it could not. Asks it, so call it as seldom as the above.
 bool dinky_sa_moves_windows(void);

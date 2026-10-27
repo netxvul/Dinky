@@ -27,6 +27,9 @@ final class WorkspaceNumbers {
     /// Noted as `homes` is.
     private var homeDisplays: [Int: String] = [:]
     private var pendingHomeDisplays: [Int: String]?
+    /// Puts the once-a-second note off while dinky moves windows, a few seconds at most: its reads take the main
+    /// thread from the frames.
+    private var noteBackstop = Backstop(most: 4)
     /// Each scrolling workspace's strip while the displays were settled, its order, widths and pins, to put back once a
     /// display change has poured its windows elsewhere and they return (`returnDisplaced`). Noted as `homes` is.
     private var strips: [Int: NotedStrip] = [:]
@@ -231,6 +234,7 @@ final class WorkspaceNumbers {
                 awayWhileDisplaced.insert(n)
             }
         }
+        guard noteBackstop.due(busy: AppState.shared.coordinator?.movesWindows == true) else { return }
         guard !displaced, !arranging, onlineDisplays == knownDisplays, let coordinator = AppState.shared.coordinator else {
             pendingHomes = nil
             pendingHomeDisplays = nil

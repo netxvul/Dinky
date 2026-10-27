@@ -1,6 +1,14 @@
 import AppKit
 import DinkyLayout
+import DinkyPrivate
 import os
+
+/// A window's frame as the window server has it, or nil when it cannot be read, as for a window gone: a local read,
+/// with no round trip to the server, for where only the frame is wanted, as on every frame of a glide.
+func serverFrame(_ id: WindowID) -> CGRect? {
+    var frame = CGRect.zero
+    return dinky_window_bounds(id, &frame) ? frame : nil
+}
 
 /// The windows on screen, front to back, as the window server lists them, desktop elements left out.
 func onScreenWindowInfo() -> [[String: Any]] {

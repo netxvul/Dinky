@@ -56,6 +56,15 @@ void dinky_glow_fade(uint32_t border, double opacity);
 void dinky_border_move(uint32_t border, uint32_t target, CGRect frame, double width,
                        DinkyBorderOrder order);
 
+// The target's level and sub-level, as dinky_border_update and dinky_border_move copy them to the border: two calls to
+// the window server.
+void dinky_border_level(uint32_t target, int64_t *level, int32_t *subLevel);
+
+// dinky_border_move with the target's level and sub-level as read before (dinky_border_level), for a border following
+// a window that only moves, as on every frame of a glide.
+void dinky_border_move_at_level(uint32_t border, uint32_t target, CGRect frame, double width, DinkyBorderOrder order,
+                                int64_t level, int32_t subLevel);
+
 // Puts the border on the target's Space. New borders start on the current Space.
 void dinky_border_move_to_space(uint32_t border, uint64_t spaceID);
 

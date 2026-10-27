@@ -141,12 +141,18 @@ public enum ResizeOnce {
                                gap: CGFloat, anchored: Bool = false, shown: (WindowID) -> CGRect?) -> [WindowID: CGRect] {
         guard var leadFrame = frames[lead] else { return frames }
         var out = frames
-        let leadShown = shown(lead)
+        // The lead is read only for a side that is there, at the head of the first: a read is a call to the window
+        // server.
+        var leadRead: CGRect??
+        func leadShownFrame() -> CGRect? {
+            if leadRead == nil { leadRead = .some(shown(lead)) }
+            return leadRead!
+        }
         func shift(_ columns: [[WindowID]], by dx: CGFloat) {
             for id in columns.joined() { if let frame = out[id] { out[id] = frame.offsetBy(dx: dx, dy: 0) } }
         }
         if let near = left.first, let nearMaxX = near.compactMap({ out[$0]?.maxX }).max() {
-            if let leadShown { shift(left, by: max(0, leadShown.minX - gap - nearMaxX)) }
+            if let leadShown = leadShownFrame() { shift(left, by: max(0, leadShown.minX - gap - nearMaxX)) }
             if let nearShown = near.compactMap({ shown($0)?.maxX }).max() {
                 let minX = min(leadFrame.minX, nearShown + gap)
                 if anchored { leadFrame.size.width = leadFrame.maxX - minX }
@@ -154,7 +160,7 @@ public enum ResizeOnce {
             }
         }
         if let near = right.first, let nearMinX = near.compactMap({ out[$0]?.minX }).min() {
-            if let leadShown { shift(right, by: min(0, leadShown.maxX + gap - nearMinX)) }
+            if let leadShown = leadShownFrame() { shift(right, by: min(0, leadShown.maxX + gap - nearMinX)) }
             if let nearShown = near.compactMap({ shown($0)?.minX }).min() {
                 let maxX = max(leadFrame.maxX, nearShown - gap)
                 if anchored { leadFrame.size.width = maxX - leadFrame.minX } else { leadFrame.origin.x = maxX - leadFrame.width }
