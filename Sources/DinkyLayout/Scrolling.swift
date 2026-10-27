@@ -104,14 +104,14 @@ extension Workspace {
     public var bandRect: CGRect { stripInset }
 
     /// The width a column's share is of: the strip's area as it is with nothing pinned, so pinning leaves the other
-    /// columns' widths alone.
+    /// columns' widths alone. Across a seam, the narrower display's part of it (`shareBase`).
     var shareWidth: CGFloat {
-        guard hasPins else { return stripArea.width }
+        guard hasPins else { return shareBase(of: stripArea) }
         // Without the pins, and so without a pin's fullscreen, which would count as pushing the strip.
         var plain = self
         plain.fullscreenWindows.removeAll { pinSide(of: $0) != nil }
         plain.pins = [:]
-        return plain.stripArea.width
+        return plain.shareBase(of: plain.stripArea)
     }
 
     /// Whether fullscreen here widens the window's column and pushes its neighbours off, rather than covering them.
@@ -150,12 +150,14 @@ extension Workspace {
     /// gutter on each side without a wall, by half an inner gap, which with a column's own half makes a whole one.
     /// Columns that all fit inside the outer gaps at their shares of it park nowhere, so they keep no gutters; nor
     /// does a lone column. A fullscreen column pushing the others off parks them, so it keeps them. Column widths
-    /// are shares of its width.
+    /// are shares of its width. Across a seam, columns fit only where they also leave it between two of them
+    /// (`fitsAcrossSeam`).
     var stripArea: CGRect {
         let area = stripInset, band = bandRange
         guard band.count > 1 else { return area }
-        if pushedColumns.isEmpty, let end = columnSpans(in: area)[safe: band.upperBound - 1],
-           end.start + end.width <= area.width { return area }
+        let spans = columnSpans(in: area)
+        if pushedColumns.isEmpty, let end = spans[safe: band.upperBound - 1],
+           end.start + end.width <= area.width, fitsAcrossSeam(spans: spans, in: area) { return area }
         let clear = Self.peek + gaps.horizontal / 2
         let left = walls.contains(.left) || pinnedIndex(.left) != nil ? 0 : max(clear - gaps.left, 0)
         let right = walls.contains(.right) || pinnedIndex(.right) != nil ? 0 : max(clear - gaps.right, 0)
@@ -170,8 +172,8 @@ extension Workspace {
     func columnSpans(in area: CGRect, pushed: Set<Int> = []) -> [(start: CGFloat, width: CGFloat)] {
         let band = bandRange, gap = gaps.horizontal, pinned = hasPins, beside = bandNeighbours
         // With a column pinned, the others keep the widths they have without: shares of the unpinned strip, as wide
-        // as the band at most.
-        let base = pinned ? shareWidth : area.width
+        // as the band at most. Across a seam, shares of one display, as wide as one goes (`shareBase`).
+        let room = shareBase(of: area), base = pinned ? shareWidth : room
         var start: CGFloat = 0
         return root.children.indices.map { i in
             // A pinned column has a place of its own (`pinRect`), not along the band.
@@ -180,11 +182,14 @@ extension Workspace {
                 + (i < band.upperBound - 1 || beside.right ? gap / 2 : 0)
             let minimum = root.children[i].minimumExtent(.horizontal, gap: gap, padding: accordionPadding, minimumSizes)
             let wide = (base * CGFloat(width(ofColumn: i))).rounded()
-            let share = pushed.contains(i) ? area.width + endGutters(of: i, area).left + endGutters(of: i, area).right
-                : pinned ? min(wide, area.width) : wide
+            let share = pushed.contains(i)
+                ? spansDisplays ? room : area.width + endGutters(of: i, area).left + endGutters(of: i, area).right
+                : pinned ? min(wide, room) : wide
             // A lone column fills the area, beside a pin no narrower than its windows take: it then hangs under the
-            // pin, or is held off a wall (`parked`), rather than growing past it onto the next display.
-            let lone = pinned ? max(area.width, minimum + insets) : area.width
+            // pin, or is held off a wall (`parked`), rather than growing past it onto the next display. Across a seam,
+            // only the display it is on, half an inner gap from the seam.
+            let alone = room - (spansDisplays ? gap / 2 : 0)
+            let lone = pinned ? max(alone, minimum + insets) : alone
             let width = band.count == 1 ? lone : max(share, minimum + insets)
             defer { start += width }
             return (start, width)
@@ -209,11 +214,17 @@ extension Workspace {
         let wanted = showingFocus && !holdsScroll && freeScrollFrom == nil
             ? focused.flatMap { bandIndex(of: $0) }.map { showing(spans[$0], from: scrollOffset, in: area) } : nil
         if keepsScroll { return wanted ?? scrollOffset }
+        // Across a seam, it then rests with the seam between columns, unless fingers or a click hold it.
+        let aligns = showingFocus && !holdsScroll && freeScrollFrom == nil
         guard let limits = heldLimits(for: spans, in: area) else {
             let total = bandEnd(of: spans), inset = stripInset
-            return (area.minX - inset.minX + (total - inset.width) / 2).rounded()
+            // Across a seam, a strip that fits stays where it is rather than centred, whose middle is the seam.
+            guard spansDisplays else { return (area.minX - inset.minX + (total - inset.width) / 2).rounded() }
+            let kept = min(max(wanted ?? scrollOffset, min(total - area.width, 0)), 0)
+            return aligns ? seamAligned(kept, spans: spans, in: area, inside: true) : kept
         }
-        return min(max(wanted ?? scrollOffset, limits.lowerBound), limits.upperBound)
+        let offset = min(max(wanted ?? scrollOffset, limits.lowerBound), limits.upperBound)
+        return aligns ? seamAligned(offset, spans: spans, in: area) : offset
     }
 
     /// `scrollLimits`, but past the end as far as a focused band column wider than the band, beside a pin, takes to
@@ -272,14 +283,16 @@ extension Workspace {
         guard isScrolling, let index = bandIndex(of: id) else { return }
         let area = stripArea, spans = columnSpans(in: area), column = spans[index]
         let shown = showing(column, from: offset(for: spans, in: area), in: area)
+        // Across a seam, the middle of the display the column shows on.
+        let middle = centredOnDisplay(column, from: shown, in: area)
         switch columnCentring {
         case .never: scrollOffset = shown
-        case .always, .alwaysFill: scrollOffset = centred(column, in: area)
+        case .always, .alwaysFill: scrollOffset = middle
         case .onOverflow:
             let before = offset(for: spans, in: area, showingFocus: false)
-            scrollOffset = showing(column, from: before, in: area) == before ? shown : centred(column, in: area)
+            scrollOffset = showing(column, from: before, in: area) == before ? shown : middle
         }
-        scrollOffset = wallAligned(scrollOffset, spans: spans, in: area)
+        scrollOffset = seamAligned(wallAligned(scrollOffset, spans: spans, in: area), spans: spans, in: area)
     }
 
     /// The resting offset nearest in spirit to `offset` with no band column straddling a wall: at a wall nothing leaves
@@ -371,7 +384,7 @@ extension Workspace {
         guard isScrolling, !holdsScroll, freeScrollFrom == nil, !keepsScroll, fullscreenWindows.isEmpty,
               pendingFullscreen == nil, shownBandColumn != nil else { return }
         let area = stripArea, spans = columnSpans(in: area)
-        scrollOffset = wallAligned(shownOffset, spans: spans, in: area)
+        scrollOffset = seamAligned(wallAligned(shownOffset, spans: spans, in: area), spans: spans, in: area)
     }
 
     /// Scrolls to the focused column as focusing it would have, now that the click that focused it with
@@ -409,7 +422,14 @@ extension Workspace {
         var offset = offset(for: spans, in: area)
         let focusedColumn = focused.flatMap { bandIndex(of: $0) }
         if let column = focusedColumn, pushed.contains(column) {
-            offset = spans[column].start + endGutters(of: column, area).left
+            if let x = seamLine {
+                // Across a seam it fills the display it is on, against the seam, the other display left as it shows.
+                let left = area.minX + spans[column].start + spans[column].width / 2 - offset < x
+                let between = seamOffsets(spans: spans, in: area)
+                offset = between.first { $0.boundary == column + (left ? 1 : 0) }?.offset ?? offset
+            } else {
+                offset = spans[column].start + endGutters(of: column, area).left
+            }
         }
         // Not with a column pinned: the system's Fill would cover it.
         let fills = { (i: Int, id: WindowID) in
@@ -433,18 +453,20 @@ extension Workspace {
             let x = area.minX + spans[i].start - offset
             let a = i == reaching.left ? reach.minX : edges[i].left
             let b = i == reaching.right ? reach.maxX : edges[i].right
-            // A pinned column stays at its side whatever the scroll.
-            let rect = band.contains(i) ? CGRect(x: a, y: area.minY, width: b - a, height: area.height) : pinRect(i)
+            // A pinned column stays at its side whatever the scroll. Across a seam, as tall as the display it is on.
+            let rect = onDisplay(band.contains(i) ? CGRect(x: a, y: area.minY, width: b - a, height: area.height)
+                : pinRect(i))
+            let filled = spansDisplays ? displayInset(at: rect.midX) : inset
             switch root.children[i] {
             case .window(let id):
-                result.frames[id] = fills(i, id) ? inset : rect
+                result.frames[id] = fills(i, id) ? filled : rect
                 result.order.append(id)
             case .container(let c) where pushed.contains(i):
                 let end = (x + unpushed[i].width - trail).rounded()
-                let inner = CGRect(x: a, y: area.minY, width: end - a, height: area.height)
+                let inner = onDisplay(CGRect(x: a, y: area.minY, width: end - a, height: area.height))
                 c.layout(in: inner, gaps: gaps, padding: accordionPadding, minimums: minimumSizes, path: [i], into: &result)
                 for id in Node.container(c).windows where fullscreenWindows.contains(id) {
-                    result.frames[id] = fills(i, id) ? inset : rect
+                    result.frames[id] = fills(i, id) ? filled : rect
                 }
             case .container(let c):
                 c.layout(in: rect, gaps: gaps, padding: accordionPadding, minimums: minimumSizes, path: [i], into: &result)
@@ -829,7 +851,7 @@ extension Workspace {
         let pinned = pinSide(ofColumn: column) != nil
         // A band column as wide as the band steps from the width it shows, not its share past it.
         let shown = pinned || !hasPins ? old : min(old, Double(stripArea.width / shareWidth))
-        setWidth(ofColumn: column, shown + Double(delta / (pinned ? gaps.inset(bounds).width : shareWidth)))
+        setWidth(ofColumn: column, shown + Double(delta / (pinned ? screenWidth : shareWidth)))
         reveal(focused)
         // A step a lone column or the minimum sizes swallow whole is undone, so the width does not drift out of sight;
         // so is a pin's that leaves the band too little room.

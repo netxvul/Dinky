@@ -73,7 +73,7 @@ extension Workspace {
     func pinSpan(_ index: Int) -> CGFloat {
         let gap = gaps.horizontal
         let minimum = root.children[index].minimumExtent(.horizontal, gap: gap, padding: accordionPadding, minimumSizes)
-        return max((gaps.inset(bounds).width * CGFloat(width(ofColumn: index))).rounded(), (minimum + gap / 2).rounded(.up))
+        return max((screenWidth * CGFloat(width(ofColumn: index))).rounded(), (minimum + gap / 2).rounded(.up))
     }
 
     /// Where the pinned column at `index` goes: from the outer gap on its side, its span less the half gap towards
@@ -95,7 +95,7 @@ extension Workspace {
     /// Whether the band keeps room enough: `minimumBandShare` of the area inside the outer gaps. A band window wider
     /// than that, as an app's minimum width makes it, hangs past the band, under the pins.
     var bandHasRoom: Bool {
-        stripInset.width >= gaps.inset(bounds).width * CGFloat(Self.minimumBandShare) - 0.5
+        stripInset.width >= screenWidth * CGFloat(Self.minimumBandShare) - 0.5
     }
 
     /// Whether a width step of the column at `index` is refused for the band's room: only a pinned column's, which narrows
@@ -378,7 +378,7 @@ extension Workspace {
     /// column, then the other, till the band has room again. Never unpinned for it. Only with a pin.
     public mutating func fitBand() {
         guard hasPins, !bandHasRoom else { return }
-        let inset = gaps.inset(bounds).width, gap = gaps.horizontal
+        let inset = screenWidth, gap = gaps.horizontal
         let order = [lastPinned ?? .right, lastPinned == .left ? .right : .left]
         for side in order {
             guard !bandHasRoom, let index = pinnedIndex(side), inset > 0 else { continue }

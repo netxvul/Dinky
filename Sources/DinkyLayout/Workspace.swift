@@ -106,6 +106,9 @@ public struct Workspace: Equatable, Sendable {
     var freeScrollFrom: CGFloat?
     /// Scrolling: the edges of `bounds` with another display beyond them, where a window cannot hang over.
     public var walls: Set<Direction> = []
+    /// Scrolling: the two displays side by side one strip runs across (`[scrolling] span-displays`), `bounds` being both;
+    /// nil on one display. See Span.swift.
+    public internal(set) var seam: Seam?
     /// The algorithm a `layout` command switched to, kept over the config's. Nil follows the config.
     public var chosenAlgorithm: TilingAlgorithm?
 
@@ -618,7 +621,10 @@ public struct Workspace: Equatable, Sendable {
         if isScrolling { result.frames = parked(result.frames) }
         let shown = fullscreenWindows.filter { result.frames[$0] != nil }
         // A pinned window fullscreen covers the strip whether it pushes or not: it has no column in the band to widen.
-        for id in shown where !pushesFullscreen || pinSide(of: id) != nil { result.frames[id] = gaps.inset(bounds) }
+        // Across a seam, the display it is on.
+        for id in shown where !pushesFullscreen || pinSide(of: id) != nil {
+            result.frames[id] = spansDisplays ? displayInset(at: result.frames[id]!.midX) : gaps.inset(bounds)
+        }
         result.order = shown + result.order.filter { !shown.contains($0) }
         if isScrolling {
             result.screen = bounds
