@@ -174,15 +174,16 @@ public struct Config: Equatable {
         }
         gestures = try t.table("gestures").map(Gestures.init) ?? gestures
         // One press with the same modifiers cannot both drag a window and scroll the strip; nor can a switcher's
-        // modifier, held alone, show its capsule ahead of them.
+        // modifier, held alone, show its capsule ahead of them. A switcher's double-tapped can serve both: held to
+        // scroll, it is no tap.
         let scrollModifier = gestures.mouseScroll.modifier
         if gestures.mouseScroll.enabled {
             if gestures.mouseScroll.drag, scrollModifier == drag.mouseModifier {
                 throw ConfigError(path: "gestures.mouse-scroll.modifier", "[drag] mouse-modifier already uses '\(scrollModifier.name)'")
             }
-            for (table, modifier) in [("window-switcher", windowSwitcher.modifier), ("workspace-switcher", workspaceSwitcher.modifier)]
-            where modifier != .none
-                && (modifier == .hyper ? modifiers.hyper : KeyCombo.Modifiers(names: modifier.rawValue)) == scrollModifier {
+            for (table, modifier, trigger) in [("window-switcher", windowSwitcher.modifier, windowSwitcher.trigger),
+                                               ("workspace-switcher", workspaceSwitcher.modifier, workspaceSwitcher.trigger)]
+            where modifier != .none && trigger == .hold && modifier.modifiers(hyper: modifiers.hyper) == scrollModifier {
                 throw ConfigError(path: "gestures.mouse-scroll.modifier", "[\(table)] already uses '\(modifier.rawValue)'")
             }
         }
@@ -310,6 +311,11 @@ public struct Scrolling: Equatable {
 /// `[modifiers] hyper`'s modifiers held together, from either side.
 public enum SwitcherModifier: String, CaseIterable {
     case none, alt, ctrl, cmd, shift, hyper
+
+    /// The modifiers held for it, `hyper` its `[modifiers] hyper` ones; none for `none`.
+    public func modifiers(hyper: KeyCombo.Modifiers) -> KeyCombo.Modifiers {
+        self == .hyper ? hyper : KeyCombo.Modifiers(names: rawValue) ?? []
+    }
 }
 
 /// A layout the switcher shows for: `tiles` is dwindle, `accordion` a dwindle accordion root, `free` a workspace dinky

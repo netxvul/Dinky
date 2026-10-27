@@ -162,7 +162,8 @@ final class MouseStripScroll {
             press = Press(at: point, last: point, velocity: LetGoVelocity(since: eventTime(event)))
             // Within the press's callback, so the tap is on before the drag comes.
             grabTap?.enable(true)
-            // The switchers' modifiers at work for something else, as a click with them is.
+            // The switchers' modifiers at work for something else, as a click with them is: a capsule up closes, and a
+            // modifier a switcher double-taps is no tap, whatever its own taps hear of the press swallowed here.
             WindowSwitcher.shared.dismiss()
             WorkspaceSwitcher.shared.dismiss()
             return false
@@ -288,6 +289,7 @@ final class MouseStripScroll {
         case 0:
             // A wheel without phases: notches.
             guard held, coordinator.mouseCanStep(at: event.location) else { return true }
+            spoilSwitcherTaps()
             notch(x != 0 ? x : y, continuous: continuous)
             return false
         case 128:
@@ -305,6 +307,7 @@ final class MouseStripScroll {
             }
             // A press holding the strip loses it to the stroke.
             if press?.hold != nil { press?.spent = true }
+            spoilSwitcherTaps()
             stroke = .holding(hold, ScrollAxisLock(), LetGoVelocity())
             scrollStroke(x: x, y: y, at: time)
             return false
@@ -348,6 +351,17 @@ final class MouseStripScroll {
         stroke = .coasting
         print("\(stamp()) mouse-scroll: wheel let go at \(Int(velocity.rounded())) pt/s")
         coordinator.mouseLetGo(velocity: velocity, hold: hold)
+    }
+
+    /// The modifier, held to scroll, is no tap of a switcher that double-taps the same one: its own taps hear the
+    /// modifier go down and up, but not the scroll in between, which this swallows.
+    private func spoilSwitcherTaps() {
+        let config = AppState.shared.config
+        let same = { (modifier: SwitcherModifier) in
+            modifier != .none && modifier.modifiers(hyper: config.modifiers.hyper) == self.settings.modifier
+        }
+        if same(config.windowSwitcher.modifier) { WindowSwitcher.shared.spoilTap() }
+        if same(config.workspaceSwitcher.modifier) { WorkspaceSwitcher.shared.spoilTap() }
     }
 
     /// A wheel without phases turned `delta`, its content going right or down positive: lines for one that clicks,

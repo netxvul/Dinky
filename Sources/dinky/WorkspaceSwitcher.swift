@@ -65,6 +65,8 @@ final class WorkspaceSwitcher {
     }
 
     var isShowing: Bool { hold.isShowing }
+    /// Its modifier, down now, was put to another use, as the mouse scrolling a strip with it: no tap (`ModifierHold`).
+    func spoilTap() { hold.spoilTap() }
     /// Whether the capsule, shown from the keyboard, is under `point`: a click there picks. A glance never is.
     func covers(_ point: CGPoint) -> Bool { hold.covers(point) }
     /// Whether the capsule, shown from the keyboard, takes this key.

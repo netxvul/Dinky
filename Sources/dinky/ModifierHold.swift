@@ -281,6 +281,13 @@ final class ModifierHold {
         liftCommit = nil
     }
 
+    /// The modifier, down now, was put to another use this hold does not hear of, as the mouse scrolling a strip with it:
+    /// that press is no tap, nor the first of two. Nothing else changes, so a capsule shown stays.
+    func spoilTap() {
+        lastTap = nil
+        if case .tapping = state { state = .spoiled }
+    }
+
     /// Hides what is shown without committing, as a binding that runs while it is up does.
     func dismiss() {
         lastTap = nil

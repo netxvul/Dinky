@@ -751,11 +751,13 @@ while a Space changes, in Mission Control, or, for a press, under a switcher
 shown from the keyboard. Choose a modifier apps leave alone with the mouse:
 Control-click is a right click, Option-drag selects a column in many editors,
 Command-drag moves files, and Shift-drag extends a selection, so the default
-holds two. It can't be `[drag] mouse-modifier` while `drag` is on, nor a
-switcher's `modifier`. Zoom's "Use scroll gesture with modifier keys to zoom",
-in System Settings, Accessibility, Zoom, Advanced, zooms with Control unless
-changed, and would zoom with this one too; `dinky doctor` says so. A mouse has
-nothing to tap, so it has no haptic.
+holds two. It can't be `[drag] mouse-modifier` while `drag` is on, nor the
+`modifier` of a switcher that shows as it is held; a switcher with
+`trigger = 'double-tap'` can share it, since held to scroll it is no tap, so
+`'alt'` can scroll the strip and double-tap the window switcher. Zoom's "Use
+scroll gesture with modifier keys to zoom", in System Settings, Accessibility,
+Zoom, Advanced, zooms with Control unless changed, and would zoom with this one
+too; `dinky doctor` says so. A mouse has nothing to tap, so it has no haptic.
 
 <div class="wide-table" markdown="1">
 
@@ -1099,7 +1101,7 @@ thumbnails = 'windows'          # windows (pictures, need Screen Recording) | ic
 # haptic-strength = 'medium'     # unset is the top-level haptic-strength
 # [gestures.mouse-scroll]       # the mouse scrolls a strip with a modifier held, off by default
 # enabled = true
-# modifier = 'ctrl-alt'         # held exactly; not [drag] mouse-modifier or a switcher's modifier
+# modifier = 'ctrl-alt'         # held exactly; not [drag] mouse-modifier or a held switcher's modifier (a double-tapped one's can be)
 # drag = true                   # press over a window and drag across
 # wheel = true                  # a stroke with scroll phases (Magic Mouse, trackpad) scrolls; other wheels step a column a notch
 # speed = 1                     # how far the strip goes for each point, 0.25 to 5; 1 follows the pointer

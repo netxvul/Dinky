@@ -171,7 +171,7 @@ extension Config {
     # haptic-strength = 'medium'     # unset is the top-level haptic-strength
     # [gestures.mouse-scroll]       # the mouse scrolls a strip with a modifier held, off by default
     # enabled = true
-    # modifier = 'ctrl-alt'         # held exactly; not [drag] mouse-modifier or a switcher's modifier
+    # modifier = 'ctrl-alt'         # held exactly; not [drag] mouse-modifier or a held switcher's modifier (a double-tapped one's can be)
     # drag = true                   # press over a window and drag across
     # wheel = true                  # a stroke with scroll phases (Magic Mouse, trackpad) scrolls; other wheels step a column a notch
     # speed = 1                     # how far the strip goes for each point, 0.25 to 5; 1 follows the pointer

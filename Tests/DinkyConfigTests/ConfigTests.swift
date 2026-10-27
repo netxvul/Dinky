@@ -563,6 +563,20 @@ struct ConfigTests {
                     path: "gestures.mouse-scroll.modifier", contains: "[drag] mouse-modifier already uses 'alt-ctrl'")
         assertError("[window-switcher]\nmodifier = 'cmd'\n[gestures.mouse-scroll]\nenabled = true\nmodifier = 'cmd'\n",
                     path: "gestures.mouse-scroll.modifier", contains: "[window-switcher] already uses 'cmd'")
+        // A switcher that double-taps it can share it: held to scroll, it is no tap.
+        #expect(throws: Never.self) {
+            try Config.parse("[window-switcher]\nmodifier = 'alt'\ntrigger = 'double-tap'\n[gestures.mouse-scroll]\nenabled = true\nmodifier = 'alt'\n")
+        }
+        #expect(throws: Never.self) {
+            try Config.parse("[workspace-switcher]\nmodifier = 'cmd'\ntrigger = 'double-tap'\n[gestures.mouse-scroll]\nenabled = true\nmodifier = 'cmd'\n")
+        }
+        #expect(throws: Never.self) {
+            try Config.parse("[switcher]\ntrigger = 'double-tap'\n[workspace-switcher]\nmodifier = 'hyper'\n[gestures.mouse-scroll]\nenabled = true\nmodifier = 'alt-ctrl-cmd-shift'\n")
+        }
+        assertError("[window-switcher]\nmodifier = 'alt'\ntrigger = 'hold'\n[gestures.mouse-scroll]\nenabled = true\nmodifier = 'alt'\n",
+                    path: "gestures.mouse-scroll.modifier", contains: "[window-switcher] already uses 'alt'")
+        assertError("[workspace-switcher]\nmodifier = 'ctrl'\n[gestures.mouse-scroll]\nenabled = true\nmodifier = 'ctrl'\n",
+                    path: "gestures.mouse-scroll.modifier", contains: "[workspace-switcher] already uses 'ctrl'")
         assertError("[workspace-switcher]\nmodifier = 'hyper'\n[gestures.mouse-scroll]\nenabled = true\nmodifier = 'alt-ctrl-cmd-shift'\n",
                     path: "gestures.mouse-scroll.modifier", contains: "[workspace-switcher] already uses 'hyper'")
         // Off, or with no drag to share a press with, nothing to clash.
