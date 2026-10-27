@@ -304,6 +304,108 @@ struct ScrollingCentringTests {
     }
 }
 
+struct ScrollingWallAlignTests {
+    /// The outer-gap edges of `strip` with gaps of 10.
+    private let edges = (left: CGFloat(-15), right: CGFloat(1015))
+
+    /// The widest stretch between the outer gaps that no window covers.
+    private func bare(_ ws: Workspace) -> CGFloat {
+        let spans = ws.layout().frames.values.map { (max($0.minX, edges.left), min($0.maxX, edges.right)) }
+            .filter { $0.0 < $0.1 }.sorted { $0.0 < $1.0 }
+        var reached = edges.left, widest: CGFloat = 0
+        for (minX, maxX) in spans {
+            widest = max(widest, minX - reached)
+            reached = max(reached, maxX)
+        }
+        return max(widest, edges.right - reached)
+    }
+
+    /// Whether a window of the strip, where it has them before parking, is part past a wall of `ws`.
+    private func straddles(_ ws: Workspace) -> Bool {
+        ws.stripFrames.values.contains { frame in
+            ws.walls.contains(.right) && frame.minX < edges.right - 0.5 && frame.maxX > edges.right + 0.5
+                || ws.walls.contains(.left) && frame.minX < edges.left - 0.5 && frame.maxX > edges.left + 0.5
+        }
+    }
+
+    @Test func `Centred at a wall, the column beside it lines up with the wall`() {
+        var ws = strip(4, gaps: Gaps(all: 10), walls: [.right])
+        ws.columnCentring = .alwaysFill
+        ws.focus(2)
+        let frames = ws.layout().frames
+        #expect(frames[3] == rect(515, 10, 500, 580), "whole, out to the outer gap at the wall")
+        #expect(frames[2] == rect(10, 10, 495, 580), "the focused column whole on the far half")
+        #expect(frames[4] == frames[3]!.insetBy(dx: reach, dy: reach), "the column beyond hidden behind it")
+        #expect(bare(ws) <= 10, "no room bare by more than a gap")
+    }
+
+    @Test func `At a left wall the column beside it lines up with the wall too`() {
+        var ws = strip(4, gaps: Gaps(all: 10), walls: [.left])
+        ws.columnCentring = .alwaysFill
+        ws.focus(3)
+        let frames = ws.layout().frames
+        #expect(frames[2] == rect(-15, 10, 500, 580), "whole, out to the outer gap at the wall")
+        #expect(frames[3] == rect(495, 10, 495, 580))
+        #expect(bare(ws) <= 10)
+    }
+
+    @Test func `A focused column too wide to show its neighbour whole ends at the wall`() {
+        var ws = strip(4, gaps: Gaps(all: 10), walls: [.right])
+        ws.columnCentring = .alwaysFill
+        ws.setWidth(ofColumn: 1, 0.75)
+        ws.focus(2)
+        let frames = ws.layout().frames
+        #expect(frames[2]!.maxX == 1015, "the focused column out to the wall")
+        #expect(frames[3] == frames[2]!.insetBy(dx: reach, dy: reach), "its neighbour wholly beyond, hidden")
+    }
+
+    @Test func `Scrolling as little as shows a column lines it up with a wall too`() {
+        var ws = strip(5, width: 0.4, gaps: Gaps(all: 10), walls: [.right])
+        for id: WindowID in [4, 3, 2] {
+            ws.focus(id)
+            #expect(!straddles(ws), "focus \(id)")
+            #expect(ws.layout().frames.values.map(\.maxX).max() == 1015, "focus \(id)")
+        }
+    }
+
+    @Test func `Without walls the strip centres as before`() {
+        var ws = strip(4)
+        ws.columnCentring = .alwaysFill
+        ws.focus(3)
+        #expect(lefts(ws) == [-750, -250, 250, 750])
+        ws.focus(2)
+        #expect(lefts(ws) == [-250, 250, 750, 1250])
+        ws.columnCentring = .always
+        ws.focus(4)
+        #expect(lefts(ws) == [-1250, -750, -250, 250])
+        let area = ws.stripArea, spans = ws.columnSpans(in: area)
+        #expect(ws.wallAligned(123, spans: spans, in: area) == 123)
+    }
+
+    @Test func `Scrolled freely at a wall the strip follows the fingers, and rests lined up`() {
+        var ws = strip(4, gaps: Gaps(all: 10), walls: [.right])
+        ws.columnCentring = .alwaysFill
+        ws.focus(2)
+        ws.beginFreeScroll()
+        let held = lefts(ws)
+        ws.scrollFreely(by: 37)
+        #expect(lefts(ws) == held.map { $0 - 37 }, "no lining up while held")
+        ws.endFreeScroll()
+        #expect(!straddles(ws))
+    }
+
+    @Test func `Between two walls nothing straddles either at rest`() {
+        var ws = strip(5, gaps: Gaps(all: 10), walls: [.left, .right])
+        ws.columnCentring = .alwaysFill
+        for id: WindowID in [1, 2, 3, 4, 5] {
+            ws.focus(id)
+            #expect(!straddles(ws), "focus \(id)")
+            let frame = ws.layout().frames[id]!
+            #expect(frame.minX >= edges.left && frame.maxX <= edges.right, "focus \(id) whole")
+        }
+    }
+}
+
 struct ScrollingClickHoldTests {
     /// The middle of the focused window as the strip lays it out: 500 is the middle of the screen.
     private func middle(_ ws: Workspace) -> CGFloat { ws.tiledLayout().frames[ws.focused!]!.midX }
