@@ -50,6 +50,9 @@ final class ModifierHold {
     private var swallowerTimedOutAt = -CFTimeInterval.infinity
     /// The press whose release `swallowUp` or `swallowRightUp` waits for, by type and timestamp.
     private var swallowedPress: (type: CGEventType, time: CGEventTimestamp)?
+    /// The last event the swallowing tap had, notices aside, by type and timestamp: the one a timeout notice comes
+    /// behind.
+    private var lastIntercepted: (type: CGEventType, time: CGEventTimestamp)?
 
     /// What the swallowing tap takes; everything else is only ever listened to.
     private static let swallowable: [CGEventType] = [.keyDown, .leftMouseDown, .leftMouseUp, .rightMouseDown,
@@ -350,6 +353,7 @@ final class ModifierHold {
         swallower?.remove()
         (listener, swallower, swallowing) = (nil, nil, false)
         passedOn = []
+        lastIntercepted = nil
         heardFirst = []
     }
 
@@ -375,8 +379,13 @@ final class ModifierHold {
         }
         if Self.swallowable.contains(type),
            let index = passedOn.firstIndex(where: { $0.type == type && $0.time == event.timestamp }) {
-            // The swallower had it already. Those it swallowed stay till newer push them out: the window server may
-            // still deliver one late.
+            // The swallower had it already. Where that was the press now waiting for its release, the window server
+            // delivered it after the swallower took it, timed out: the app had the press, and its release goes to the
+            // app too, whether or not the timeout notice came first.
+            if let press = swallowedPress, press.type == type, press.time == event.timestamp {
+                if type == .leftMouseDown, swallowUp { released() }
+                if type == .rightMouseDown, swallowRightUp { rightReleased() }
+            }
             passedOn.remove(at: index)
             return
         }
@@ -395,8 +404,9 @@ final class ModifierHold {
                 swallowerTimedOutAt = CACurrentMediaTime()
                 // The notice comes behind the event the tap timed out on, so that one was handled as swallowed before
                 // the timeout could be known: where it was the press now waiting for its release, the app had the press,
-                // and its release goes to the app too, or the app is left with a button down.
-                if let press = swallowedPress, let last = passedOn.last, last.type == press.type, last.time == press.time {
+                // and its release goes to the app too, or the app is left with a button down. The listener's copy of
+                // it, heard first, may have done so already (`heard`).
+                if let press = swallowedPress, let last = lastIntercepted, last.type == press.type, last.time == press.time {
                     if press.type == .leftMouseDown, swallowUp { released() }
                     if press.type == .rightMouseDown, swallowRightUp { rightReleased() }
                 }
@@ -407,6 +417,7 @@ final class ModifierHold {
         default:
             break
         }
+        lastIntercepted = (type, event.timestamp)
         // Held up past the tap's timeout, the listener has had it already: handled twice, a key would move the pick
         // twice.
         if let index = heardFirst.firstIndex(where: { $0.type == type && $0.time == event.timestamp }) {

@@ -432,8 +432,9 @@ extension Coordinator {
         }
         edit(key) { $0 = tree }
         for id in back {
-            // One floating only because a free workspace had it (`freed`) is tiled again, as `track` takes it back.
-            if placements[id]?.floating == true {
+            // One floating only because a free workspace had it (`freed`) is tiled again, as `track` takes it back; one
+            // with no placement yet gets one, so it is watched as it lands like the rest.
+            if placements[id]?.floating != false {
                 placements[id] = Placement(floating: false, space: key)
                 filledFrom[id] = nil
                 griddedFrom[id] = nil
