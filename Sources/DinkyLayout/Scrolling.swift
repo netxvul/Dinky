@@ -11,7 +11,9 @@ import CoreGraphics
 // `tuck` points left on, so a single shadow shows at the edge rather than one per parked window piled up. On an
 // edge with another display beyond it (a wall), nothing leaves the screen, which would put it on the other display:
 // the columns scrolled out past it hide behind the column in view nearest it, `shadowReach` inside it so their
-// shadows hide too, and that column reaches out to the outer gap over the room they leave.
+// shadows hide too, and that column reaches out to the outer gap over the room they leave. A column cannot show in
+// part there, so where the strip comes to rest a column lines up with the wall (`wallAligned`), rather than one
+// straddling it hiding whole and leaving its room bare.
 //
 // Fullscreen, with `fullscreenPushesStrip`, widens the fullscreen window's column to the whole width the columns
 // get, clear of the gutters, and scrolls to it, so its neighbours slide off and park in the gutters, a gap from it,
@@ -260,9 +262,10 @@ extension Workspace {
     }
 
     /// Scroll to the window's column as `columnCentring` says: as little as shows it whole, to the middle of the
-    /// screen, to the middle as near as the strip's ends allow, or to the middle only when it did not all show.
-    /// Columns that all fit stay centred as a whole. A strip a click held still (`holdsScroll`) is held no more, and
-    /// fingers scrolling it freely (`freeScrollFrom`) let go.
+    /// screen, to the middle as near as the strip's ends allow, or to the middle only when it did not all show; then
+    /// lined up with a wall, so no column straddles one (`wallAligned`). Columns that all fit stay centred as a whole.
+    /// A strip a click held still (`holdsScroll`) is held no more, and fingers scrolling it freely (`freeScrollFrom`)
+    /// let go.
     mutating func reveal(_ id: WindowID) {
         holdsScroll = false
         freeScrollFrom = nil
@@ -276,6 +279,66 @@ extension Workspace {
             let before = offset(for: spans, in: area, showingFocus: false)
             scrollOffset = showing(column, from: before, in: area) == before ? shown : centred(column, in: area)
         }
+        scrollOffset = wallAligned(scrollOffset, spans: spans, in: area)
+    }
+
+    /// The resting offset nearest in spirit to `offset` with no band column straddling a wall: at a wall nothing leaves
+    /// the screen, so a column part past it hides whole behind the column in view nearest it (`parked`), and its room
+    /// on screen would stay bare. For the column straddling a wall, the offset that shows it whole, ending at the wall;
+    /// failing that, the one that puts it wholly beyond, starting at the wall; failing both, `offset`. Either only with
+    /// the focused band column still whole on screen and within the ends (`heldLimits`). Showing comes first: the side
+    /// away from the wall can show a column in part, or peek, and the wall side cannot. With walls on both sides, the
+    /// right one's choice, then the left one's from there; should that make a column straddle the right one again, the
+    /// one of the three offsets leaving the least room bare at the walls. Not on a pinned side, nor for a strip that
+    /// fits, nor with no band column focused.
+    func wallAligned(_ offset: CGFloat, spans: [(start: CGFloat, width: CGFloat)], in area: CGRect) -> CGFloat {
+        let right = walls.contains(.right) && pinnedIndex(.right) == nil
+        let left = walls.contains(.left) && pinnedIndex(.left) == nil
+        let band = bandRange
+        guard right || left, let focusedColumn = focused.flatMap({ bandIndex(of: $0) }),
+              let limits = heldLimits(for: spans, in: area) else { return offset }
+        let slack: CGFloat = 0.5
+        func onScreen(_ i: Int, at c: CGFloat) -> (minX: CGFloat, maxX: CGFloat) {
+            let minX = area.minX + spans[i].start - c
+            return (minX, minX + spans[i].width)
+        }
+        func whole(_ i: Int, at c: CGFloat) -> Bool {
+            let span = onScreen(i, at: c)
+            return span.minX >= area.minX - slack && span.maxX <= area.maxX + slack
+        }
+        func valid(_ c: CGFloat) -> Bool { limits.contains(c) && whole(focusedColumn, at: c) }
+        func straddler(_ wall: Direction, at c: CGFloat) -> Int? {
+            let edge = wall == .right ? area.maxX : area.minX
+            return band.first { i in
+                let span = onScreen(i, at: c)
+                return span.minX < edge - slack && span.maxX > edge + slack
+            }
+        }
+        func aligned(_ wall: Direction, from c: CGFloat) -> CGFloat {
+            guard let j = straddler(wall, at: c) else { return c }
+            let (start, width) = spans[j]
+            let show = wall == .right ? start + width - area.width : start
+            let past = wall == .right ? start - area.width : start + width
+            return valid(show) ? show : valid(past) ? past : c
+        }
+        // The room bare between each wall and the nearest edge of a column shown whole on its half of the area.
+        func bare(at c: CGFloat) -> CGFloat {
+            let shown = band.filter { whole($0, at: c) }.map { onScreen($0, at: c) }
+            var room: CGFloat = 0
+            if right {
+                let near = shown.filter { ($0.minX + $0.maxX) / 2 > area.midX }.map(\.maxX).max()
+                room += area.maxX - (near ?? area.midX)
+            }
+            if left {
+                let near = shown.filter { ($0.minX + $0.maxX) / 2 < area.midX }.map(\.minX).min()
+                room += (near ?? area.midX) - area.minX
+            }
+            return room
+        }
+        guard right && left else { return aligned(right ? .right : .left, from: offset) }
+        let afterRight = aligned(.right, from: offset), afterBoth = aligned(.left, from: afterRight)
+        guard straddler(.right, at: afterBoth) != nil else { return afterBoth }
+        return [offset, afterRight, afterBoth].min { bare(at: $0) < bare(at: $1) }!
     }
 
     /// Scrolls to the focused column as focusing it would have, now that the click that focused it with

@@ -30,6 +30,8 @@ final class WorkspaceNumbers {
     /// Puts the once-a-second note off while dinky moves windows, a few seconds at most: its reads take the main
     /// thread from the frames.
     private var noteBackstop = Backstop(most: 4)
+    /// `displayGeneration` when the pending note was taken: one taken before a display came or went is not kept.
+    private var pendingGeneration = 0
     /// Each scrolling workspace's strip while the displays were settled, its order, widths and pins, to put back once a
     /// display change has poured its windows elsewhere and they return (`returnDisplaced`). Noted as `homes` is.
     private var strips: [Int: NotedStrip] = [:]
@@ -241,14 +243,19 @@ final class WorkspaceNumbers {
             pendingStrips = nil
             return
         }
-        if let pendingHomes { homes = pendingHomes }
-        if let pendingHomeDisplays { homeDisplays = pendingHomeDisplays }
-        if let pendingStrips { strips = pendingStrips }
+        // Only a note taken since the last display change: ticks put off by the backstop skip the guard above, so a
+        // change can come and be arranged between the note and now, which would note windows where it left them.
+        if pendingGeneration == displayGeneration {
+            if let pendingHomes { homes = pendingHomes }
+            if let pendingHomeDisplays { homeDisplays = pendingHomeDisplays }
+            if let pendingStrips { strips = pendingStrips }
+        }
         var noted: [UInt32: Int] = [:]
         for window in coordinator.model.windows.values where window.isNormal && !window.isMinimized {
             if let n = number(of: dinky_window_space_id(window.id)) { noted[window.id] = n }
         }
         pendingHomes = noted
+        pendingGeneration = displayGeneration
         let displays = AppState.shared.displays
         pendingHomeDisplays = binding.compactMapValues { displays.display(containingSpace: $0)?.uuid }
         pendingStrips = binding.compactMapValues { space in
