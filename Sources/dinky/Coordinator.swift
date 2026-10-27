@@ -1414,7 +1414,9 @@ final class Coordinator {
         let pids = Dictionary(uniqueKeysWithValues: strip.keys.compactMap { id in windows[id].map { (id, $0.pid) } })
         let targets = strip.filter { pids[$0.key] != nil }
         let starts = Dictionary(uniqueKeysWithValues: targets.map { id, target in (id, previous[id] ?? target) })
-        let place = { (frames: [WindowID: CGRect]) in workspace.placeStrip(strip.merging(frames) { $1 }) }
+        let place = { (frames: [WindowID: CGRect]) in
+            workspace.placeStrip(strip.merging(frames) { $1 }, resting: strip)
+        }
         if scroll.throughDock {
             animator.follow(scroll.key, from: starts, to: targets, pids: pids, sink: { ScriptingAddition.move(place($0)) })
         } else {
@@ -2086,7 +2088,7 @@ final class Coordinator {
                     input = ResizeOnce.guarded(input, lead: lead, left: beside.left, right: beside.right, gap: guardGap,
                                                shown: { $0 == lead ? frame : shown($0) })
                 }
-                var placed = workspace.placeStrip(input)
+                var placed = workspace.placeStrip(input, resting: strip)
                 // Placed as the guard has it: hanging past the screen edge at its size, such a window is no window
                 // scrolled out to be parked. Not past a wall, though: one coming back into view from behind the column
                 // at a wall starts where the strip had it, off the screen, which there is on the other display, and

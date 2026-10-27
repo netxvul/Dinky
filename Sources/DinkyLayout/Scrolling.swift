@@ -499,8 +499,11 @@ extension Workspace {
     public var stripColumns: [[WindowID]] { isScrolling ? root.children.map(\.windows) : [] }
 
     /// Where strip frames, such as `stripFrames` part way through a glide, go on screen: parked as `layout()` parks
-    /// them.
-    public func placeStrip(_ frames: [WindowID: CGRect]) -> [WindowID: CGRect] { parked(frames) }
+    /// them. With `resting`, the strip frames the glide ends at, a window hiding at a wall is sized by where the column
+    /// it hides behind rests, so it changes size once on the way rather than with every step of that column's.
+    public func placeStrip(_ frames: [WindowID: CGRect], resting: [WindowID: CGRect]? = nil) -> [WindowID: CGRect] {
+        parked(frames, resting: resting)
+    }
 
     /// `frame` moved back to a wall it would hang past, for one placed where the strip has it rather than parked: past
     /// the wall it would be on the other display, and macOS would take it to that display's Space. One wider than the
@@ -535,15 +538,17 @@ extension Workspace {
     /// its shadow shows in the outer gap, between the columns, or between the windows of a column of several. With
     /// no column in view it stays flush at the wall. While fullscreen pushes, the column in view is the fullscreen
     /// window's, so a window hiding behind it grows no bigger than it is rather than to the whole screen's size.
-    func parked(_ frames: [WindowID: CGRect]) -> [WindowID: CGRect] {
+    /// `resting`, the strip frames where a glide ends, sizes a window hiding at a wall (see `hiddenAtWall`).
+    func parked(_ frames: [WindowID: CGRect], resting: [WindowID: CGRect]? = nil) -> [WindowID: CGRect] {
         let keepsSize = !pushedColumns.isEmpty
         let columns = root.children.map { $0.windows.filter { frames[$0] != nil } }
-        let covers = columns.compactMap { ids -> CGRect? in
-            let rects = ids.map { frames[$0]! }
-            guard !rects.isEmpty, rects.allSatisfy({ $0.minX >= bounds.minX - 1 && $0.maxX <= bounds.maxX + 1 }) else { return nil }
-            return rects.max { $0.width * $0.height < $1.width * $1.height }
+        let covers = columns.compactMap { ids -> (id: WindowID, frame: CGRect)? in
+            let rects = ids.map { (id: $0, frame: frames[$0]!) }
+            let shown = rects.allSatisfy { $0.frame.minX >= bounds.minX - 1 && $0.frame.maxX <= bounds.maxX + 1 }
+            guard !rects.isEmpty, shown else { return nil }
+            return rects.max { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
         }
-        let left = covers.min { $0.minX < $1.minX }, right = covers.max { $0.maxX < $1.maxX }
+        let left = covers.min { $0.frame.minX < $1.frame.minX }, right = covers.max { $0.frame.maxX < $1.frame.maxX }
         // How much of each window must stay on screen at each edge, column by column from the screen outwards,
         // following how much the column in front shows. Rounded towards more of the window on screen, since part of
         // a point counts as none. A column stacked above the one in front of it (as on the far side of a long glide,
@@ -607,8 +612,9 @@ extension Workspace {
             if offLeft != offRight, walls.contains(offLeft ? .left : .right), let cover = offLeft ? left : right,
                !hanging.contains(id) {
                 let wall: Direction = offLeft ? .left : .right
-                if let curtain = curtain(frame, at: wall, under: cover), !keepsSize { return (id, curtain) }
-                return (id, hiddenAtWall(id, frame, behind: cover, wall: wall, keepsSize: keepsSize))
+                if let curtain = curtain(frame, at: wall, under: cover.frame), !keepsSize { return (id, curtain) }
+                return (id, hiddenAtWall(id, frame, behind: cover.frame, sizedBy: resting?[cover.id], wall: wall,
+                                         keepsSize: keepsSize))
             }
             var x = frame.minX
             x = min(x, walls.contains(.right) ? bounds.maxX - frame.width : rightLimit[id] ?? bounds.maxX - Self.peek)
@@ -640,10 +646,15 @@ extension Workspace {
     /// it fits, and past that hangs out away from the wall and downwards. While fullscreen pushes (`keepsSize`), the
     /// cover is the fullscreen window, and it grows no bigger than it is, but still keeps `shadowReach` inside: as tall
     /// as the fullscreen window, it would show its shadow above and below it, one more for each window behind.
-    func hiddenAtWall(_ id: WindowID, _ frame: CGRect, behind cover: CGRect, wall: Direction, keepsSize: Bool) -> CGRect {
+    /// Sized by `rest`, where the cover rests at the end of a glide, it keeps that size as the cover changes its own on
+    /// the way, only made smaller where the cover is smaller than that now, so it never shows past it.
+    func hiddenAtWall(_ id: WindowID, _ frame: CGRect, behind cover: CGRect, sizedBy rest: CGRect? = nil,
+                      wall: Direction, keepsSize: Bool) -> CGRect {
         let minimum = minimumSizes[id] ?? .zero, margins = Self.shadowReach * 2
-        let width = max(min(keepsSize ? frame.width : .infinity, cover.width - margins), minimum.width, 1)
-        let height = max(min(keepsSize ? frame.height : .infinity, cover.height - margins), minimum.height, 1)
+        let room = CGSize(width: min(rest?.width ?? cover.width, cover.width),
+                          height: min(rest?.height ?? cover.height, cover.height))
+        let width = max(min(keepsSize ? frame.width : .infinity, room.width - margins), minimum.width, 1)
+        let height = max(min(keepsSize ? frame.height : .infinity, room.height - margins), minimum.height, 1)
         let x = (cover.midX - width / 2).rounded(), y = (cover.midY - height / 2).rounded()
         let inside = wall == .left ? max(min(x, cover.maxX - width), cover.minX)
             : min(max(x, cover.minX), cover.maxX - width)

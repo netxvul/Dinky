@@ -546,6 +546,48 @@ struct ScrollingWallAlignTests {
         for id: WindowID in [1, 2, 3] { #expect(resized[id] == 1, "\(id) changes size once crossing the wall") }
     }
 
+    @Test func `Glided past a wall a window hiding there changes size once at most behind each column`() {
+        // A let-go's glide, a step at a time between where the strip was and where it rests, at whole points as the
+        // animator writes them: a window hiding behind the column in view at the wall keeps one size behind it, sized
+        // by where that column rests, as the column changes its own on the way: kept no bigger than the column is, it
+        // changes once at most there.
+        for (from, to): (WindowID, WindowID) in [(6, 3), (7, 4), (3, 6), (4, 7)] {
+            var ws = Workspace(bounds: rect(0, 0, 1800, 1169), gaps: Gaps(all: 8), algorithm: .scrolling)
+            ws.columnWidth = 0.5
+            ws.walls = [.right]
+            ws.columnCentring = .alwaysFill
+            for id in 1...7 { ws.insert(WindowID(id)) }
+            ws.setWidth(ofColumn: 4, 0.8)
+            ws.focus(from)
+            let starts = ws.stripFrames
+            ws.focus(to)
+            let targets = ws.stripFrames
+            var last: [WindowID: (cover: WindowID?, size: CGSize)] = [:], resized: [WindowID: Int] = [:]
+            let steps = 400
+            for step in 0...steps {
+                let t = CGFloat(step) / CGFloat(steps)
+                let frames = targets.merging(starts) { target, start in
+                    CGRect(x: (start.minX + (target.minX - start.minX) * t).rounded(), y: target.minY,
+                           width: (start.width + (target.width - start.width) * t).rounded(), height: target.height)
+                }
+                let placed = ws.placeStrip(frames, resting: targets)
+                // The column in view nearest the wall, which those hiding there hide behind.
+                let cover = frames.filter { $0.value.minX >= -1 && $0.value.maxX <= 1801 }
+                    .max { $0.value.maxX < $1.value.maxX }?.key
+                for (id, frame) in placed {
+                    // Hiding: smaller than its tile, behind the column in view at the wall.
+                    let hiding = frame.width < frames[id]!.width - 1
+                    if hiding, let was = last[id], was.cover == cover, was.size != frame.size {
+                        resized[id, default: 0] += 1
+                    }
+                    last[id] = hiding ? (cover, frame.size) : nil
+                }
+                if step == steps { #expect(placed == ws.layout().frames, "\(from) to \(to): rests as laid out") }
+            }
+            #expect(resized.values.allSatisfy { $0 <= 1 }, "\(from) to \(to): \(resized)")
+        }
+    }
+
     @Test func `A column part past the wall too wide to curtain under the column in view hides behind it`() {
         let ws = flipGo(shares: [0.5, 0.6, 0.25, 0.57])
         let frames = ws.layout().frames
