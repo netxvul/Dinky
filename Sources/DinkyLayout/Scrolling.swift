@@ -297,14 +297,16 @@ extension Workspace {
         let band = bandRange
         guard right || left, let focusedColumn = focused.flatMap({ bandIndex(of: $0) }),
               let limits = heldLimits(for: spans, in: area) else { return offset }
-        let slack: CGFloat = 0.5
+        // A column counts as whole a little past the area, as spans are rounded to the point: an area an odd number of
+        // points wide leaves two half-width spans one point over it. A straddler is one past a wall by more than half one.
+        let slack: CGFloat = 0.5, wholeSlack: CGFloat = 1.5
         func onScreen(_ i: Int, at c: CGFloat) -> (minX: CGFloat, maxX: CGFloat) {
             let minX = area.minX + spans[i].start - c
             return (minX, minX + spans[i].width)
         }
         func whole(_ i: Int, at c: CGFloat) -> Bool {
             let span = onScreen(i, at: c)
-            return span.minX >= area.minX - slack && span.maxX <= area.maxX + slack
+            return span.minX >= area.minX - wholeSlack && span.maxX <= area.maxX + wholeSlack
         }
         func valid(_ c: CGFloat) -> Bool { limits.contains(c) && whole(focusedColumn, at: c) }
         func straddler(_ wall: Direction, at c: CGFloat) -> Int? {

@@ -66,6 +66,8 @@ extension Workspace {
         guard let start = freeScrollFrom else { return }
         scrollOffset = start
         freeScrollFrom = nil
+        // Lined up with the walls it has now: a display can have come beside it while held.
+        alignToWalls()
     }
 
     /// While fingers hold the strip, whether it is at an end of where it can scroll, as near as a let-go takes for the
