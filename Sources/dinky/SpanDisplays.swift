@@ -150,10 +150,6 @@ extension Coordinator {
         return false
     }
 
-    /// The walls of a strip across two displays: none, two displays and no more having nothing beyond their outer
-    /// edges, unless `[scrolling] span-peek = false` has those edges hold windows as walls do, with no peeks.
-    private var spanWalls: Set<Direction> { config.scrolling.spanPeek ? [] : [.left, .right] }
-
     private func display(_ uuid: String) -> Display? { displays.displays.first { $0.uuid == uuid } }
 
     /// The strip running across the displays fitted to where they are, their gaps the left one's.
@@ -161,9 +157,12 @@ extension Coordinator {
         guard let span, let left = display(span.leftDisplay), let right = display(span.rightDisplay),
               var tree = workspaces[span.left] else { return }
         let seam = Seam(left: left.visibleArea, right: right.visibleArea)
-        guard tree.seam != seam || tree.gaps != gaps(on: left) || tree.walls != spanWalls else { return }
+        guard tree.seam != seam || tree.gaps != gaps(on: left) || !tree.walls.isEmpty
+                || tree.spanPeeks != config.scrolling.spanPeek else { return }
         tree.gaps = gaps(on: left)
-        tree.walls = spanWalls
+        // Two displays and no more: nothing beyond the outer edges.
+        tree.walls = []
+        tree.spanPeeks = config.scrolling.spanPeek
         tree.setSeam(seam)
         tree.alignToWalls()
         setWorkspace(span.left, tree)
@@ -175,7 +174,8 @@ extension Coordinator {
         guard let left = display(pair.leftDisplay), let right = display(pair.rightDisplay) else { return }
         makeWorkspace(pair.left, on: left)
         var tree = workspaces[pair.left]!
-        tree.walls = spanWalls
+        tree.walls = []
+        tree.spanPeeks = config.scrolling.spanPeek
         tree.setSeam(Seam(left: left.visibleArea, right: right.visibleArea))
         if let other = takeWorkspace(pair.right) { tree.takeColumns(of: other) }
         setWorkspace(pair.left, tree)

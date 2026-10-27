@@ -113,7 +113,7 @@
         "span-peek": {
           "type": "boolean",
           "default": true,
-          "description": "With span-displays, whether columns scrolled off the outer edges of the two displays peek out there, as on one display. false hides them behind the column in view nearest the edge, as beside another display, and leaves no gutter: the columns fill out to the outer gaps."
+          "description": "With span-displays, whether columns scrolled off the outer edges of the two displays peek out there, as on one display. false keeps no gutter for them: they tuck under the column in view with 2 points on, keeping their sizes, and the columns fill out to the outer gaps."
         },
         "span-displays": {
           "type": "boolean",

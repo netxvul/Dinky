@@ -122,9 +122,11 @@ extension Workspace {
     /// will do, on one display, or with no band column to show.
     /// With `onLeft`, only offsets showing it whole on that display, where there are any; with `stepping`, the way focus
     /// stepped along the strip, 1 right and -1 left, none scrolling it back from `near`, where there are any.
+    /// With `column`, that band column shown whole rather than the one that must show.
     func seamAligned(_ offset: CGFloat, spans: [(start: CGFloat, width: CGFloat)], in area: CGRect,
-                     inside: Bool = false, near: CGFloat? = nil, onLeft: Bool? = nil, stepping: Int = 0) -> CGFloat {
-        guard let x = seamLine, let focusedColumn = shownBandColumn else { return offset }
+                     inside: Bool = false, near: CGFloat? = nil, onLeft: Bool? = nil, stepping: Int = 0,
+                     column: Int? = nil) -> CGFloat {
+        guard let x = seamLine, let focusedColumn = column ?? shownBandColumn else { return offset }
         let band = bandRange
         var shown = seamOffsets(spans: spans, in: area).map(\.offset)
             .filter { showsWhole(focusedColumn, at: $0, spans: spans, in: area) }
@@ -161,6 +163,17 @@ extension Workspace {
             if !reachesOver(to - from - covered, in: area) { return true }
         }
         return false
+    }
+
+    /// Across a seam, how far fingers or the mouse scroll the strip: from where it rests with its first column shown,
+    /// as `limits` has that end, to where it rests with its last, both lined up with the seam. On one display, nil.
+    func seamEnds(_ limits: ClosedRange<CGFloat>, spans: [(start: CGFloat, width: CGFloat)], in area: CGRect)
+        -> ClosedRange<CGFloat>? {
+        let band = bandRange
+        guard spansDisplays, let first = band.first, let last = band.last else { return nil }
+        let lower = seamAligned(limits.lowerBound, spans: spans, in: area, column: first)
+        let upper = seamAligned(limits.upperBound, spans: spans, in: area, column: last)
+        return min(lower, upper)...max(lower, upper)
     }
 
     /// The display `spanCentring` centres `column` on, left (true) or right, as the strip shows at `offset`; nil to

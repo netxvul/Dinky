@@ -237,6 +237,62 @@ struct SpanTests {
         #expect(plain.endRunInto(by: ["focus left"], from: 1) == nil)
     }
 
+    @Test func `Without peeks parked columns show no more than the outer gap, keeping their size`() {
+        let seam = Seam(left: rect(-1920, 30, 1920, 1170), right: rect(0, 39, 1800, 1066))
+        var ws = spanning(8, gaps: Gaps(all: 8), seam: seam, centring: .alwaysFill)
+        ws.spanPeeks = false
+        for id in ws.windows {
+            ws.focus(id)
+            let frames = ws.layout().frames
+            #expect(straddling(ws).isEmpty)
+            let inView = ws.windows.map { frames[$0]! }.filter { $0.minX >= -1920 && $0.maxX <= 1800 }
+            for other in ws.windows {
+                let frame = frames[other]!
+                let shown = frame.minX >= -1920 && frame.maxX <= 1800
+                // Past an outer edge, it shows no further in than the outer gap: behind the column reaching out over it.
+                let covered = frame.maxX <= -1912 + 0.5 || frame.minX >= 1792 - 0.5
+                    || frame.minX < -1920 && inView.contains { $0.minX <= -1912 + 0.5 && $0.maxX >= frame.maxX }
+                    || frame.maxX > 1800 && inView.contains { $0.maxX >= 1792 - 0.5 && $0.minX <= frame.minX }
+                #expect(shown || covered, "\(other) at \(frame), \(id) focused")
+                #expect(frame.width >= 870, "\(other) keeps its size, \(id) focused")
+            }
+        }
+    }
+
+    @Test(arguments: [1, 8] as [WindowID]) func `Fullscreen fills the display its column is on, whichever it is`(_ id: WindowID) {
+        let seam = Seam(left: rect(-1920, 30, 1920, 1170), right: rect(0, 39, 1800, 1066))
+        var ws = spanning(8, gaps: Gaps(all: 8), seam: seam, centring: .alwaysFill)
+        ws.spanPeeks = false
+        ws.focus(id)
+        ws.toggleFullscreen()
+        let frames = ws.layout().frames, frame = frames[id]!
+        #expect(frame == (frame.midX < 0 ? rect(-1912, 38, 1904, 1154) : rect(8, 47, 1784, 1050)))
+        // The other display shows the strip out to its outer gap, no sliver of a parked column beyond.
+        let other = ws.windows.filter { $0 != id }.map { frames[$0]! }
+            .filter { $0.minX >= -1920 && $0.maxX <= 1800 && ($0.midX < 0) != (frame.midX < 0) }
+        #expect(frame.midX < 0 ? other.map(\.maxX).max() == 1792 : other.map(\.minX).min() == -1912)
+    }
+
+    @Test(arguments: [ColumnCentring.never, .always, .alwaysFill]) func `Fingers scroll no further than the strip rests at its ends`(
+        _ centring: ColumnCentring) {
+        let seam = Seam(left: rect(-1920, 30, 1920, 1170), right: rect(0, 39, 1800, 1066))
+        for peeks in [true, false] {
+            var ws = spanning(8, gaps: Gaps(all: 8), seam: seam, centring: centring)
+            ws.spanPeeks = peeks
+            for (id, push) in [(1, -5000), (8, 5000)] as [(WindowID, CGFloat)] {
+                ws.focus(id)
+                let rest = ws.shownOffset
+                let held = ws.beginFreeScroll()
+                #expect(held)
+                #expect(ws.shownOffset == rest, "taking hold moves nothing, \(centring), \(id)")
+                ws.scrollFreely(by: push)
+                #expect(ws.shownOffset == rest, "nowhere to go past the end, \(centring), \(id)")
+                ws.endFreeScroll()
+                #expect(ws.shownOffset == rest, "nothing to spring back from, \(centring), \(id)")
+            }
+        }
+    }
+
     @Test func `Two strips coming together meet at the seam`() {
         var left = Workspace(bounds: rect(0, 0, 1000, 600), algorithm: .scrolling)
         left.insert(1)

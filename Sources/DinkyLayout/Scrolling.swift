@@ -159,8 +159,10 @@ extension Workspace {
         if pushedColumns.isEmpty, let end = spans[safe: band.upperBound - 1],
            end.start + end.width <= area.width, fitsAcrossSeam(spans: spans, in: area) { return area }
         let clear = Self.peek + gaps.horizontal / 2
-        let left = walls.contains(.left) || pinnedIndex(.left) != nil ? 0 : max(clear - gaps.left, 0)
-        let right = walls.contains(.right) || pinnedIndex(.right) != nil ? 0 : max(clear - gaps.right, 0)
+        // Across a seam without peeks, the columns parked at the outer edges tuck under the one in view: no gutters.
+        let tucks = spansDisplays && !spanPeeks
+        let left = walls.contains(.left) || pinnedIndex(.left) != nil || tucks ? 0 : max(clear - gaps.left, 0)
+        let right = walls.contains(.right) || pinnedIndex(.right) != nil || tucks ? 0 : max(clear - gaps.right, 0)
         return CGRect(x: area.minX + left, y: area.minY, width: area.width - left - right, height: area.height)
     }
 
@@ -232,6 +234,9 @@ extension Workspace {
     /// What the offset, the fingers' scroll and a let-go keep to, so none of them jumps for it.
     func heldLimits(for spans: [(start: CGFloat, width: CGFloat)], in area: CGRect) -> ClosedRange<CGFloat>? {
         guard let limits = scrollLimits(for: spans, in: area) else { return nil }
+        // Across a seam, where the strip rests with its first or last column shown: past those, a let-go would only
+        // spring back.
+        if let ends = seamEnds(limits, spans: spans, in: area) { return ends }
         let shownColumn = focused.flatMap { bandIndex(of: $0) } ?? bandFocus.flatMap { bandIndex(of: $0) }
         let wide = hasPins ? shownColumn.flatMap { spans[$0].width > area.width ? spans[$0] : nil } : nil
         let upper = wide.map { max(limits.upperBound, showing($0, from: limits.upperBound, in: area)) } ?? limits.upperBound
@@ -446,8 +451,9 @@ extension Workspace {
             }
         }
         // Not with a column pinned: the system's Fill would cover it.
+        // Across a seam, the display it is on, inside the outer gaps, whichever display that is.
         let fills = { (i: Int, id: WindowID) in
-            pushedFullscreenFills && !self.hasPins && i == focusedColumn && pushed.contains(i)
+            (pushedFullscreenFills || self.spansDisplays) && !self.hasPins && i == focusedColumn && pushed.contains(i)
                 && fullscreenWindows.contains(id)
         }
         let unpushed = pushed.isEmpty ? spans : columnSpans(in: area)
@@ -458,8 +464,9 @@ extension Workspace {
                     (x + spans[i].width - (i < last || beside.right ? gap / 2 : 0)).rounded())
         }
         // Not while fingers scroll the strip freely: a column would change width under them as it came to the wall.
-        let reaching: (left: Int?, right: Int?) = pushed.isEmpty && freeScrollFrom == nil ? reachingWalls(edges, in: area)
-            : (nil, nil)
+        // Across a seam, while fullscreen pushes too: the other display shows the strip as ever.
+        let reaching: (left: Int?, right: Int?) = (pushed.isEmpty || spansDisplays) && freeScrollFrom == nil
+            ? reachingWalls(edges, in: area) : (nil, nil)
         result.containerRects[[]] = inset
         let reach = stripInset
         for i in stripStackingOrder {
@@ -611,7 +618,9 @@ extension Workspace {
         }
         // On a pinned side every parked column tucks: the pin covers them, and should it lose its place in front
         // only a sliver shows.
-        let tucked = (left: pinnedIndex(.left) != nil, right: pinnedIndex(.right) != nil)
+        // So does every one across a seam without peeks.
+        let tucks = spansDisplays && !spanPeeks
+        let tucked = (left: pinnedIndex(.left) != nil || tucks, right: pinnedIndex(.right) != nil || tucks)
         var leftLimit: [WindowID: CGFloat] = [:], rightLimit: [WindowID: CGFloat] = [:]
         var front = CGFloat.infinity, frontColumn: Int?
         for (column, ids) in columns.enumerated().reversed() where !ids.isEmpty {
