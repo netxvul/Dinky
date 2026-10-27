@@ -221,6 +221,22 @@ struct SpanTests {
         }
     }
 
+    @Test func `A step past an end of the strip runs into that end`() {
+        var ws = spanning(4)
+        ws.focus(1)
+        #expect(ws.endRunInto(by: ["focus left"], from: 1) == .left)
+        #expect(ws.endRunInto(by: ["move left"], from: 1) == .left)
+        #expect(ws.endRunInto(by: ["focus right"], from: 1) == nil, "a column beyond")
+        #expect(ws.endRunInto(by: ["focus right"], from: 4) == .right)
+        #expect(ws.endRunInto(by: ["join-with right"], from: 4) == .right)
+        #expect(ws.endRunInto(by: ["focus up"], from: 4) == nil)
+        #expect(ws.endRunInto(by: ["resize width +50", "focus left"], from: 1) == .left)
+        // On one display, none: the window's own edge glows there, as ever.
+        var plain = Workspace(bounds: rect(0, 0, 1000, 600), algorithm: .scrolling)
+        plain.insert(1)
+        #expect(plain.endRunInto(by: ["focus left"], from: 1) == nil)
+    }
+
     @Test func `Two strips coming together meet at the seam`() {
         var left = Workspace(bounds: rect(0, 0, 1000, 600), algorithm: .scrolling)
         left.insert(1)

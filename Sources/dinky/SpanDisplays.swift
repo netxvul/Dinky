@@ -49,6 +49,13 @@ extension Coordinator {
         }
     }
 
+    /// The display at the end of the strip running across two displays on tree `key`: the right one for its last column
+    /// (`last`), else the left one. Nil for any other tree.
+    func spanEndDisplay(_ key: UInt64, last: Bool) -> String? {
+        guard let span, span.left == key else { return nil }
+        return last ? span.rightDisplay : span.leftDisplay
+    }
+
     /// The two displays, left then right, when there are exactly two and they touch side by side, as `walls(of:)`
     /// tells a display beside another.
     func sideBySide() -> (left: Display, right: Display)? {

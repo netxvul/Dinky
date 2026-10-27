@@ -48,6 +48,18 @@ final class Coordinator {
     private lazy var edgeGlow = EdgeGlow()
     func isBorderWindow(_ id: WindowID) -> Bool { borders?.isBorder(id) == true || noopGlow.isBorder(id) }
 
+    /// For a binding that did nothing, `commands`: in a strip across two displays, a step past its left or right end
+    /// glows the outer edge of the display at that end, as fingers pushing past it do, rather than the window, which can
+    /// be on the other display; anything else `flashBorder`. Unless `[borders] noop-flash` is off.
+    func flashNoop(of id: WindowID, commands: [String]) {
+        if config.borders.noopFlash, let key = placements[id]?.space,
+           let side = workspaces[key]?.endRunInto(by: commands, from: id),
+           let uuid = spanEndDisplay(key, last: side == .right) {
+            return flashStripEnd(on: uuid, last: side == .right)
+        }
+        flashBorder(of: id)
+    }
+
     /// Makes a window's edge glow once, for a binding that did nothing, unless `[borders] noop-flash` is off.
     func flashBorder(of id: WindowID) {
         guard config.borders.noopFlash, let window = model.windows[id], window.isDocument else { return }
@@ -1622,7 +1634,10 @@ final class Coordinator {
         }
         let moved = workspace.scrollFreely(by: delta)
         // Pushed on past an end, some or all of the way.
-        if abs(delta - moved) >= 0.5, settings(of: scroll).edgeFlash { flashStripEnd(on: scroll.display, last: delta > 0) }
+        if abs(delta - moved) >= 0.5, settings(of: scroll).edgeFlash {
+            // Across two displays, the display at that end of the strip, whichever the fingers are over.
+            flashStripEnd(on: spanEndDisplay(scroll.key, last: delta > 0) ?? scroll.display, last: delta > 0)
+        }
         guard moved != 0 else { return }
         workspaces[scroll.key] = workspace
         followStrip(scroll, in: workspace)
