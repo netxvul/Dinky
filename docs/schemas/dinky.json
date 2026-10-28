@@ -116,6 +116,12 @@
           "default": "per-display",
           "description": "With span-displays, how tall the strip's columns are on displays of different heights: per-display as the display a column's middle is on, changing once as that crosses between them, on the way to a shorter display a little before; overlap as high as both displays have room, top edges lined up, so nothing changes size crossing; at-rest as the display a column rests on, keeping its size while fingers or the mouse hold the strip and changing once they let go."
         },
+        "span-width": {
+          "type": "string",
+          "enum": ["display", "merged"],
+          "default": "display",
+          "description": "With span-displays, what column-width is a share of while a strip runs across both displays: display, one display, as on one display, so 0.5 is half a display; merged, both together as one wide display, so 0.5 is a display. A column is never wider than a display."
+        },
         "span-height-animate": {
           "type": "boolean",
           "default": false,
