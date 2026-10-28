@@ -523,6 +523,26 @@ struct SpanTests {
         #expect(frames.values.filter { $0.minX >= -1920 && $0.maxX <= 1800 }.allSatisfy { $0.width < 1100 }, "\(frames)")
     }
 
+    @Test func `A column dragged to a width takes it, though it showed wider filling an edge`() {
+        let seam = Seam(left: rect(-1920, 30, 1920, 1170), right: rect(0, 39, 1800, 1066))
+        var ws = spanning(5, gaps: Gaps(all: 8), seam: seam, centring: .alwaysFill)
+        ws.spanPeeks = false
+        ws.focus(1)
+        for width in [630, 1100, 760] as [CGFloat] {
+            let taken = ws.resize(1, to: CGSize(width: width, height: 1154), moving: [.right])
+            #expect(taken)
+            #expect(ws.layout().frames[1]!.width == width, "\(width): \(ws.layout().frames[1]!)")
+            #expect(straddling(ws).isEmpty)
+        }
+        // One in the middle, on the other display.
+        ws.focus(4)
+        let shown = ws.layout().frames[4]!
+        let taken = ws.resize(4, to: CGSize(width: shown.width - 200, height: shown.height), moving: [.right])
+        #expect(taken)
+        #expect(abs(ws.layout().frames[4]!.width - (shown.width - 200)) <= 1, "\(ws.layout().frames[4]!) from \(shown)")
+        #expect(straddling(ws).isEmpty)
+    }
+
     @Test func `Two strips coming together meet at the seam`() {
         var left = Workspace(bounds: rect(0, 0, 1000, 600), algorithm: .scrolling)
         left.insert(1)

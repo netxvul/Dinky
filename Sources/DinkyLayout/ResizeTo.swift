@@ -26,8 +26,13 @@ extension Workspace {
                 // A lone band column beside a pin fills the band whatever its width.
                 continue
             } else if isScrolling, axis == .horizontal, let column = bandIndex(of: id), bandRange.count > 1 {
-                // The column takes the width; its neighbours keep theirs and move along.
-                let share = Double((columnSpans(in: stripArea)[column].width + delta) / shareWidth)
+                // The column takes the width; its neighbours keep theirs and move along. Across a seam, the width it was
+                // given, from its half gaps: it can show wider than that, reaching over room at an edge or an end.
+                let band = bandRange, half = gaps.horizontal / 2, beside = bandNeighbours
+                let insets = (column > band.lowerBound || beside.left ? half : 0)
+                    + (column < band.upperBound - 1 || beside.right ? half : 0)
+                let span = spansDisplays ? size.width + insets : columnSpans(in: stripArea)[column].width + delta
+                let share = Double(span / shareWidth)
                 setWidth(ofColumn: column, share)
                 reveal(id)
                 changed = true

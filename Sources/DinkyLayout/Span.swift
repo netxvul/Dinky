@@ -143,9 +143,15 @@ extension Workspace {
                 if shown.height < frame.height { placed[id] = shown }
                 continue
             }
-            if spanHeight == .perDisplay, let rest = resting?[id] {
+            if spanHeight == .perDisplay, let rest = resting?[id], let x = seamLine {
                 let there = displayInset(at: rest.midX)
-                if there.height < shown.height { shown = CGRect(x: frame.minX, y: there.minY, width: frame.width, height: there.height) }
+                if there.height < shown.height {
+                    shown = CGRect(x: frame.minX, y: there.minY, width: frame.width, height: there.height)
+                } else if (rest.midX < x) == (frame.midX < x) {
+                    // Resting on the display it is on: its height, however near the seam it passes on the way.
+                    let here = displayInset(at: frame.midX)
+                    shown = CGRect(x: frame.minX, y: here.minY, width: frame.width, height: here.height)
+                }
             }
             placed[id] = shown
         }
@@ -182,9 +188,9 @@ extension Workspace {
     /// on the two displays together, the display at that end filled
     /// to the outer margin as one display's strip at its end is: the columns from the end keep their widths at the
     /// margin, and the one that would reach over the seam narrows to the room left between them and it, so the seam still
-    /// falls between columns; where that one cannot go so narrow, the end column widens over the room instead. Only where
-    /// the room left is more than the column in view there reaches over anyway (`reachesOver`), and only while focus is
-    /// there: the widths the columns are given stand, and come back as focus leaves.
+    /// falls between columns; where that one cannot go so narrow, the end column widens over the room instead. Room less
+    /// than the column in view there reaches over (`reachesOver`) goes to the column beside the seam, not the end one.
+    /// Only while focus is there: the widths the columns are given stand, and come back as focus leaves.
     func fitEnds(_ widths: inout [CGFloat], narrowest: [Int: CGFloat], in area: CGRect) {
         let band = bandRange
         guard let x = seamLine, band.count >= 2, let focus = shownBandColumn else { return }
@@ -200,7 +206,13 @@ extension Workspace {
             // for the strip to rest there.
             let toFocus = stride(from: end, through: focus, by: step).reduce(CGFloat(0)) { $0 + widths[$1] }
             guard band.contains(i), !on.isEmpty, (focus - end) * step >= 0, toFocus <= area.width + 0.5 else { return }
-            guard !reachesOver(left - half, in: area) else { return }
+            // Room the column in view would reach over goes to the one beside the seam instead, so the end column keeps
+            // the width it was given, as one dragged to it does.
+            guard !reachesOver(left - half, in: area) else {
+                // Not the focused one, the one a drag resizes: it keeps what it was given.
+                if let other = on.reversed().first(where: { $0 != focus }) { widths[other] += left }
+                return
+            }
             if let floor = narrowest[i], floor <= left {
                 widths[i] = left
             } else {
