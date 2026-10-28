@@ -146,6 +146,8 @@ extension Config {
 
     # Swipes on the trackpad and a Magic Mouse, each running commands as a key binding does. A swipe that shows a
     # switcher goes on picking with the same fingers, a step every `step` millimetres; lift them to take the pick.
+    # [gestures]
+    # swallow-scroll = true         # what those fingers scroll, and its momentum, never reaches the app under the pointer
     # [gestures.trackpad]
     # enabled = true
     # fingers = 3                   # 2 to 5

@@ -26,6 +26,9 @@ import DinkyPrivate
 // `[gestures.trackpad]` binds them, soon after they land as ever. Fingers still landing within `gather` of the first
 // may pass through another count on the way, as three on the way to four, and land as the last: fingers that scroll,
 // where more may yet join them, wait till `gather` is up.
+//
+// Whichever they do, the fingers scroll too as far as macOS is concerned: while as many as swipe or scroll are down on
+// some device, `GestureScrollGuard` keeps what they scroll from the app under the pointer.
 
 /// A scroll of the strip by `[gestures.scroll]`'s fingers, in trackpad widths, to the right positive. Main thread.
 enum FingerScroll {
@@ -79,6 +82,10 @@ final class TrackpadGestures {
             if let scrollFingers { counts.append(scrollFingers) }
             return counts
         }
+
+        /// The fewest fingers that are a gesture here, and whose scrolls `GestureScrollGuard` keeps from the app: nil
+        /// for none.
+        var guarded: Int? { counts.min() }
     }
 
     private let lock = NSLock()
@@ -89,6 +96,8 @@ final class TrackpadGestures {
     private var generation = 0
     private var trackpad = Settings()
     private var mouse = Settings()
+    /// The devices with a gesture's fingers down (`Settings.guarded`). Under `lock`.
+    private var guarding: Set<UInt> = []
     /// Whether the trackpads are being read. Main thread.
     private var running = false
 
@@ -100,7 +109,7 @@ final class TrackpadGestures {
                                 scrollFingers: config.scroll.enabled ? config.scroll.fingers : nil)
         let mouse = Settings(fingers: config.mouse.fingers, distance: config.mouse.distance, step: config.mouse.step,
                              swipes: config.mouseSwipes)
-        let wasScrolling: Bool = lock.withLock {
+        let (wasScrolling, wasGuarding): (Bool, Bool) = lock.withLock {
             let scrolling = phases.values.contains { phase in
                 if case .scrolling = phase { return true }
                 return false
@@ -109,8 +118,11 @@ final class TrackpadGestures {
             self.mouse = mouse
             generation &+= 1
             phases = [:]
-            return scrolling
+            defer { guarding = [] }
+            return (scrolling, !guarding.isEmpty)
         }
+        // The next frame says again where the fingers are.
+        if wasGuarding { GestureScrollGuard.shared.fingers(down: false) }
         // A scroll cut short by a reload, or by dinky turning off, ends where it is.
         if wasScrolling { AppState.shared.coordinator?.fingersScrolled(.ended(velocity: 0)) }
         let wanted = enabled && !(trackpad.counts.isEmpty && mouse.counts.isEmpty)
@@ -140,9 +152,18 @@ final class TrackpadGestures {
     /// `width` is the surface's, in millimetres.
     private func frame(fingers down: Int, at point: CGPoint, time: Double, device: UInt, mouse: Bool, width: Double) {
         var made = 0
+        var guarded: Bool?
+        defer { if let guarded { GestureScrollGuard.shared.fingers(down: guarded) } }
         let action: Action? = lock.withLock {
             made = generation
             let settings = mouse ? self.mouse : trackpad
+            let was = !guarding.isEmpty
+            if let least = settings.guarded, down >= least {
+                guarding.insert(device)
+            } else {
+                guarding.remove(device)
+            }
+            if was != !guarding.isEmpty { guarded = !was }
             let counts = settings.counts
             guard let fewest = counts.min(), let most = counts.max() else { return nil }
             var phase = phases[device] ?? .idle

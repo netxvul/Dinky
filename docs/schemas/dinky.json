@@ -574,8 +574,13 @@
     "gestures": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Swipes on the trackpad and on a Magic Mouse, each running a command or commands as a key binding does, and fingers on the trackpad scrolling a strip. A swipe that shows a switcher goes on picking with the same fingers until they lift.",
+      "description": "Swipes on the trackpad and on a Magic Mouse, each running a command or commands as a key binding does, and fingers on the trackpad scrolling a strip. A swipe that shows a switcher goes on picking with the same fingers until they lift. With swallow-scroll, what those fingers scroll never reaches the app under the pointer.",
       "properties": {
+        "swallow-scroll": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether what the fingers that swipe or scroll the strip scroll, and the momentum after they lift, is kept from the app under the pointer: a stroke begun with them down is swallowed whole, and one they join ends there for the app."
+        },
         "trackpad": {
           "type": "object",
           "additionalProperties": false,

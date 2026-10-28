@@ -448,6 +448,14 @@ struct ConfigTests {
         assertError("[gestures]\no = 1\n", path: "gestures.o", line: 2, contains: "'trackpad'")
     }
 
+    @Test func `Gestures swallow their scrolls`() throws {
+        #expect(Config().gestures.swallowScroll)
+        let off = try Config.parse("[gestures]\nswallow-scroll = false\n[gestures.trackpad]\nswipe-up = 'window-switcher'\n")
+        #expect(!off.gestures.swallowScroll)
+        #expect(off.gestures.trackpad.swipes == [.swipeUp: ["window-switcher"]])
+        assertError("[gestures]\nswallow-scroll = 1\n", path: "gestures.swallow-scroll", line: 2, contains: "true or false")
+    }
+
     @Test func `Mouse gestures`() throws {
         let defaults = Config().gestures.mouse
         #expect(!defaults.enabled)

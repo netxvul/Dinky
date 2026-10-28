@@ -644,6 +644,21 @@ swipe-right = 'window-switcher'
 swipe-left = 'workspace-switcher'
 ```
 
+Fingers that swipe or scroll the strip also scroll, as far as macOS is
+concerned, and the app under the pointer would scroll with them. While as
+many fingers as a bound swipe or `[gestures.scroll]` uses are down on a
+trackpad, or on a Magic Mouse with `[gestures.mouse]` on, dinky keeps those
+scrolls from the app: a stroke begun with them down is swallowed whole, the
+momentum after they lift with it, and a stroke they join, as a third finger
+landing on two that scroll, ends there for the app, so a page pulled past its
+edge springs back. A wheel without phases is swallowed while they are down.
+Fewer fingers scroll as ever, and never pass through dinky. A stroke with
+`[gestures.mouse-scroll]`'s modifier held is that table's.
+
+| Key | Default | |
+|---|---|---|
+| `swallow-scroll` | `true` | `false` lets the app under the pointer scroll with the fingers. |
+
 ### `[gestures.trackpad]`
 
 Swipe on the trackpad with `fingers` fingers and the swipe's commands run, as
@@ -1164,6 +1179,8 @@ thumbnails = 'windows'          # windows (pictures, need Screen Recording) | ic
 
 # Swipes on the trackpad and a Magic Mouse, each running commands as a key binding does. A swipe that shows a
 # switcher goes on picking with the same fingers, a step every `step` millimetres; lift them to take the pick.
+# [gestures]
+# swallow-scroll = true         # what those fingers scroll, and its momentum, never reaches the app under the pointer
 # [gestures.trackpad]
 # enabled = true
 # fingers = 3                   # 2 to 5

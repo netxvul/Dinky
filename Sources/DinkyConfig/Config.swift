@@ -515,8 +515,11 @@ public enum GestureSwipe: String, CaseIterable {
 
 /// `[gestures]`: swipes on the trackpad in `[gestures.trackpad]` and on a Magic Mouse in `[gestures.mouse]`, each
 /// running commands as a key binding does, fingers on the trackpad scrolling a strip in `[gestures.scroll]`, and the
-/// mouse scrolling one with a modifier held in `[gestures.mouse-scroll]`.
+/// mouse scrolling one with a modifier held in `[gestures.mouse-scroll]`. With `swallow-scroll`, what those fingers
+/// scroll as they swipe or scroll the strip never reaches the app under the pointer.
 public struct Gestures: Equatable {
+    /// Whether the scrolls of fingers that swipe or scroll the strip, and their momentum, are kept from the app.
+    public var swallowScroll = true
     public var trackpad = TrackpadSwipes()
     public var mouse = MouseSwipes()
     public var scroll = ScrollGesture()
@@ -525,12 +528,13 @@ public struct Gestures: Equatable {
     public init() {}
 
     init(_ t: Table) throws {
-        for key in t.keys where !["trackpad", "mouse", "scroll", "mouse-scroll"].contains(key) {
+        for key in t.keys where !["swallow-scroll", "trackpad", "mouse", "scroll", "mouse-scroll"].contains(key) {
             guard key == "fingers" || key == "distance" || key == "step" || GestureSwipe(rawValue: key) != nil else {
-                throw ConfigError(path: t.path(key), "'\(key)' is not one of 'trackpad', 'mouse', 'scroll', 'mouse-scroll'")
+                throw ConfigError(path: t.path(key), "'\(key)' is not one of 'swallow-scroll', 'trackpad', 'mouse', 'scroll', 'mouse-scroll'")
             }
             throw ConfigError(path: t.path(key), "'\(key)' goes in [gestures.trackpad] now")
         }
+        swallowScroll = try t.bool("swallow-scroll") ?? swallowScroll
         trackpad = try t.table("trackpad").map(TrackpadSwipes.init) ?? trackpad
         mouse = try t.table("mouse").map(MouseSwipes.init) ?? mouse
         scroll = try t.table("scroll").map(ScrollGesture.init) ?? scroll

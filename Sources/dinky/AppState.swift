@@ -124,6 +124,8 @@ final class AppState {
         hotkeys.enabled = enabled
         coordinator?.enabled = enabled
         // Gestures run commands, so not before the coordinator is there to take them.
+        GestureScrollGuard.shared.update(config: config.gestures, modifiers: config.modifiers,
+                                         enabled: enabled && coordinator != nil)
         TrackpadGestures.shared.update(config: config.gestures, enabled: enabled && coordinator != nil)
     }
 }

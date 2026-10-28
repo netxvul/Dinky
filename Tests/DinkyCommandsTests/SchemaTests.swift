@@ -225,6 +225,9 @@ struct SchemaTests {
         letter-keys = true
         letters = 'zxcv'
 
+        [gestures]
+        swallow-scroll = true
+
         [gestures.trackpad]
         enabled = true
         fingers = 4
