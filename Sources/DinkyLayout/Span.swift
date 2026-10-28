@@ -181,6 +181,17 @@ extension Workspace {
         }) else { return false }
         if k == 1 { widths[band.lowerBound] = max(rooms.left, narrowest[band.lowerBound] ?? 0) }
         if band.count - k == 1 { widths[band.upperBound - 1] = max(rooms.right, narrowest[band.upperBound - 1] ?? 0) }
+        // A display of several: room at its edge the column in view would reach over goes to one beside the seam other
+        // than the focused one, so that keeps the width it was given, as one dragged to it does.
+        let focus = shownBandColumn
+        for (side, room) in [(Array(band.lowerBound..<band.lowerBound + k), rooms.left),
+                             (Array((band.lowerBound + k)..<band.upperBound).reversed(), rooms.right)] where side.count > 1 {
+            let left = room - side.reduce(0) { $0 + widths[$1] }
+            if left > 0.5, reachesOver(left - gaps.horizontal / 2, in: area),
+               let other = side.reversed().first(where: { $0 != focus }) {
+                widths[other] += left
+            }
+        }
         return true
     }
 

@@ -543,6 +543,21 @@ struct SpanTests {
         #expect(straddling(ws).isEmpty)
     }
 
+    @Test func `With three that fit, a column dragged to a width takes it`() {
+        let seam = Seam(left: rect(-1920, 30, 1920, 1170), right: rect(0, 39, 1800, 1066))
+        var ws = spanning(3, gaps: Gaps(all: 8), seam: seam, centring: .alwaysFill)
+        ws.spanPeeks = false
+        for id in ws.windows {
+            ws.focus(id)
+            let shown = ws.layout().frames[id]!
+            guard shown.width < 1500 else { continue }
+            let taken = ws.resize(id, to: CGSize(width: shown.width - 150, height: shown.height), moving: [.right])
+            #expect(taken)
+            #expect(abs(ws.layout().frames[id]!.width - (shown.width - 150)) <= 1, "\(id): \(ws.layout().frames[id]!) from \(shown)")
+            #expect(straddling(ws).isEmpty)
+        }
+    }
+
     @Test func `Two strips coming together meet at the seam`() {
         var left = Workspace(bounds: rect(0, 0, 1000, 600), algorithm: .scrolling)
         left.insert(1)
