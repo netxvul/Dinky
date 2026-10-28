@@ -469,16 +469,52 @@ public final class FrameScheduler: @unchecked Sendable {
         let misses = written.filter { i in results[i].got.map { !$0.isClose(to: results[i].target, within: 2) } ?? false }
         guard !misses.isEmpty, live(), !busy else { return results }
         var retried: [Int] = []
+        var missed: [Int: CGSize] = [:]
         for i in misses where !busy {
             results[i].retried = true
+            missed[i] = results[i].got?.size
             if write(results[i].job) { retried.append(i) } else { busy = true; results[i].busy = true; results[i].got = nil }
         }
         wait()
-        for i in retried {
-            readBack(&results[i])
-            if !results[i].busy { recordMinimum(results[i], stepSizes: stepSizes[results[i].job.id] ?? []) }
+        for i in retried { readBack(&results[i]) }
+        // An app that animates its own frame, as Claude does, is still resizing at both reads, and drops a position
+        // written while it does: once its frame holds still, it is moved there again.
+        for i in retried where !busy && live() {
+            guard let got = results[i].got, let before = missed[i], got.size != before,
+                  !got.isClose(to: results[i].target, within: 2) else { continue }
+            followAnimation(&results[i], readBack: readBack)
+            if results[i].busy { busy = true }
+        }
+        for i in retried where !results[i].busy {
+            recordMinimum(results[i], stepSizes: stepSizes[results[i].job.id] ?? [])
         }
         return results
+    }
+
+    /// How long a window animating its own frame is waited on, at most, to hold still, before and after it is moved
+    /// again, and how often it is read meanwhile: a few times the settle.
+    private var animationWait: TimeInterval { settle * 6 }
+    private var animationPoll: TimeInterval { settle / 2 }
+
+    /// Waits for a window still animating to a size it was written to hold still, then moves it to its place if it is
+    /// not there, and waits for that move to end too. Each wait gives up after `animationWait`.
+    private func followAnimation(_ result: inout FrameResult, readBack: (inout FrameResult) -> Void) {
+        func stilled() -> Bool {
+            let deadline = Date().addingTimeInterval(animationWait)
+            var last = result.got
+            while Date() < deadline {
+                Thread.sleep(forTimeInterval: animationPoll)
+                readBack(&result)
+                guard let got = result.got, !result.busy else { return false }
+                if got == last { return true }
+                last = got
+            }
+            return false
+        }
+        guard stilled(), let got = result.got, !got.isClose(to: result.target, within: 2),
+              abs(got.minX - result.target.minX) > 2 || abs(got.minY - result.target.minY) > 2 else { return }
+        guard move(result.job) else { result.busy = true; result.got = nil; return }
+        _ = stilled()
     }
 
     /// The job's frame grown to the window's recorded minimum size: as close as the window will come.

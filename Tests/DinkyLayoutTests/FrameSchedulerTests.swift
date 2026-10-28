@@ -271,6 +271,31 @@ struct FrameSchedulerTests {
         #expect(scheduler.unconfirmedMinimums.isEmpty)
     }
 
+    @Test func `A window animating its own resize is moved again once it holds still`() {
+        // As Claude does: a size is taken a step per read, and a position written while it is still resizing is dropped.
+        let lock = NSLock()
+        var frame = CGRect(x: 0, y: 0, width: 400, height: 100)
+        var size = frame.size
+        var moves = 0
+        let animated = { (job: FrameJob, sized: Bool) -> Bool in
+            lock.withLock {
+                if sized { size = job.frame.size }
+                if frame.size == size { frame.origin = job.frame.origin }
+                return true
+            }
+        }
+        let scheduler = FrameScheduler(settle: 0.02, read: { _ in
+            lock.withLock {
+                frame.size.width += max(-60, min(60, size.width - frame.width))
+                return .frame(frame)
+            }
+        }, write: { animated($0, true) }, move: { job in lock.withLock { moves += 1 }; return animated(job, false) })
+        let results = submitAndWait(scheduler, [job(1, 10, 150)])
+        #expect(results.map(\.got) == [CGRect(x: 150, y: 0, width: 100, height: 100)])
+        #expect(lock.withLock { moves } == 1)
+        #expect(scheduler.minimumSizes == [:])
+    }
+
     @Test func `An app that catches up shows no minimum`() {
         var lagging = true
         let scheduler = FrameScheduler(settle: 0, read: { job in
