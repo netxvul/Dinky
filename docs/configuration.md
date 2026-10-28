@@ -145,15 +145,16 @@ displays side by side, while both show a scrolling workspace, the two run one
 strip across both displays: the left one's columns, then the right one's. The
 Nth Space of one display is the partner of the Nth of the other: switching
 either display to a Space, from dinky or with a swipe, switches the other to
-its partner where both are scrolling, so with workspaces 1 to 3 on the left
+its partner, so with workspaces 1 to 3 on the left
 display and 4 to 6 on the right, 1 and 4 go together, 2 and 5, 3 and 6. A
 display with no workspaces of its own, as a second display usually is, gets
 an unnumbered companion Space for each scrolling workspace on the other, at
 its place, laid out as that workspace; dinky makes them as needed and keeps
 them while the option is on. Turned off, their windows go back to their
-workspaces. A display switched to a Space that is not scrolling, or a
-full-screen app's, leaves the other alone, and the two strips go their own
-ways again till both show scrolling workspaces.
+workspaces. Switched to a workspace that is not scrolling, the other display
+still goes to its companion, so it never shows another workspace's windows,
+and the two lay out on their own till both show scrolling workspaces again.
+A full-screen app's Space leaves the other display alone.
 
 Columns keep their widths as shares of one display, the narrower one if they
 differ, so none is wider than a display; a lone column fills the display it is

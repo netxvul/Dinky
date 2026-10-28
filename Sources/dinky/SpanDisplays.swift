@@ -6,7 +6,8 @@ import DinkyPrivate
 // While the two Spaces they show both lay out as scrolling, they are a pair: the right Space's tree is taken into the
 // left one's, which then lays out across both displays, and the right Space's windows belong to it (`treeKey`). The Nth
 // user Space of one display is the partner of the Nth of the other: a display switched to a Space, by dinky or a swipe,
-// takes the other display to its partner where both scroll (`followSpan`), so the two switch as one. Once the displays
+// takes the other display to its partner (`followSpan`), so the two switch as one: always to and from a companion, and
+// between two workspaces of their own where both scroll. Once the displays
 // show no pair, as one shows a Space that does not scroll or a full-screen app's, or the displays change, the strip
 // splits again, each window going back to the tree of the Space it is on, and comes together again as they show a pair.
 // Nothing changes while a switch is under way: the pair it ends on is taken as it lands. A window the strip takes over the seam is moved to the other display's Space by dinky as most of it crosses
@@ -79,9 +80,14 @@ extension Coordinator {
         return nil
     }
 
-    /// The Space a display switched to `space` takes the other display to: its partner, where both scroll.
+    /// The Space a display switched to `space` takes the other display to: its partner, where one of the two is a
+    /// companion, whatever their layouts, so the other display never goes on showing another workspace's half; between
+    /// two workspaces of their own, only where both scroll.
     func spanFollower(of space: UInt64) -> (space: UInt64, display: Display)? {
-        guard scrolls(space), let (partner, other) = partner(of: space), scrolls(partner) else { return nil }
+        guard let (partner, other) = partner(of: space) else { return nil }
+        let numbers = AppState.shared.numbers
+        let companion = numbers.number(of: space) == nil || numbers.number(of: partner) == nil
+        guard companion || scrolls(space) && scrolls(partner) else { return nil }
         return (partner, other)
     }
 
