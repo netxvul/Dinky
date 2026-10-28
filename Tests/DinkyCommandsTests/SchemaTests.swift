@@ -171,7 +171,6 @@ struct SchemaTests {
         span-peek = false
         span-height = 'overlap'
         span-height-animate = true
-        span-width = 'merged'
 
         [switcher]
         enabled = true

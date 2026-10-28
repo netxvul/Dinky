@@ -468,33 +468,6 @@ struct SpanTests {
         }
     }
 
-    @Test func `Merged widths make half a column a display, none wider than one`() {
-        let seam = Seam(left: rect(-1920, 30, 1920, 1170), right: rect(0, 39, 1800, 1066))
-        for n in [2, 4, 6] {
-            var ws = spanning(n, gaps: Gaps(all: 8), seam: seam, centring: .alwaysFill)
-            ws.spanPeeks = false
-            ws.spanWidthMerged = true
-            for id in ws.windows {
-                ws.focus(id)
-                let frames = ws.layout().frames
-                #expect(straddling(ws).isEmpty)
-                for frame in frames.values where frame.minX >= -1920 && frame.maxX <= 1800 {
-                    // Two to a display's room at 0.25 each, one at 0.5, give or take the edge filling.
-                    // From the outer gap to half a gap from the seam on the wider display, at most.
-                    #expect(frame.width <= 1908, "\(n): \(frame)")
-                }
-                let left = ws.windows.map { frames[$0]! }.filter { $0.minX >= -1920 && $0.maxX <= 0 }
-                let right = ws.windows.map { frames[$0]! }.filter { $0.minX >= 0 && $0.maxX <= 1800 }
-                #expect(left.map(\.minX).min() == -1912 && right.map(\.maxX).max() == 1792, "\(n), \(id): \(left) \(right)")
-            }
-        }
-        // Half a column is a display: two windows, one to each.
-        var two = spanning(2, gaps: Gaps(all: 8), seam: seam, centring: .alwaysFill)
-        two.spanWidthMerged = true
-        let frames = two.layout().frames
-        #expect(frames[1]!.width > 1700 && frames[2]!.width > 1700, "\(frames)")
-    }
-
     @Test func `Two columns are one to each display, filling it, three or more their widths`() {
         let seam = Seam(left: rect(-1920, 30, 1920, 1170), right: rect(0, 39, 1800, 1066))
         var two = spanning(2, gaps: Gaps(all: 8), seam: seam, centring: .alwaysFill)

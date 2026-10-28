@@ -106,12 +106,12 @@ extension Workspace {
     /// The width a column's share is of: the strip's area as it is with nothing pinned, so pinning leaves the other
     /// columns' widths alone. Across a seam, the narrower display's part of it (`shareBase`).
     var shareWidth: CGFloat {
-        guard hasPins else { return sharedWidth(of: stripArea) }
+        guard hasPins else { return shareBase(of: stripArea) }
         // Without the pins, and so without a pin's fullscreen, which would count as pushing the strip.
         var plain = self
         plain.fullscreenWindows.removeAll { pinSide(of: $0) != nil }
         plain.pins = [:]
-        return plain.sharedWidth(of: plain.stripArea)
+        return plain.shareBase(of: plain.stripArea)
     }
 
     /// Whether fullscreen here widens the window's column and pushes its neighbours off, rather than covering them.
@@ -175,7 +175,7 @@ extension Workspace {
         let band = bandRange, gap = gaps.horizontal, pinned = hasPins, beside = bandNeighbours
         // With a column pinned, the others keep the widths they have without: shares of the unpinned strip, as wide
         // as the band at most. Across a seam, shares of one display, as wide as one goes (`shareBase`).
-        let room = shareBase(of: area), base = pinned ? shareWidth : sharedWidth(of: area)
+        let room = shareBase(of: area), base = pinned ? shareWidth : room
         var narrowest: [Int: CGFloat] = [:]
         var widths = root.children.indices.map { i -> CGFloat in
             // A pinned column has a place of its own (`pinRect`), not along the band.
@@ -187,8 +187,7 @@ extension Workspace {
             let wide = (base * CGFloat(width(ofColumn: i))).rounded()
             let share = pushed.contains(i)
                 ? spansDisplays ? room : area.width + endGutters(of: i, area).left + endGutters(of: i, area).right
-                // Across a seam, no wider than a display, whatever it is a share of.
-                : pinned || spansDisplays ? min(wide, room) : wide
+                : pinned ? min(wide, room) : wide
             // A lone column fills the area, beside a pin no narrower than its windows take: it then hangs under the
             // pin, or is held off a wall (`parked`), rather than growing past it onto the next display. Across a seam,
             // only the display it is on, half an inner gap from the seam.

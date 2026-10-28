@@ -80,12 +80,6 @@ extension Workspace {
         return max(min(x - area.minX, area.maxX - x), 0)
     }
 
-    /// The width a column's share is of in `area`: across a seam, with `spanWidthMerged`, both displays' together, so a
-    /// half is a display; else `shareBase`.
-    func sharedWidth(of area: CGRect) -> CGFloat {
-        spansDisplays && spanWidthMerged ? area.width : shareBase(of: area)
-    }
-
     /// The width inside the outer gaps a pin's share is of: the narrower display's across a seam.
     var screenWidth: CGFloat { shareBase(of: gaps.inset(bounds)) }
 

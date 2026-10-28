@@ -305,8 +305,6 @@ public struct Scrolling: Equatable {
     /// With `spanHeight` `perDisplay`, whether a window's height eases between the displays' as it crosses, rather than
     /// stepping.
     public var spanHeightAnimate = false
-    /// With `spanDisplays`, what a column's share of `column-width` is of while the strip runs across both.
-    public var spanWidth = SpanWidthKind.display
     /// Whether the file still sets `glide`, which no longer does anything: the strip scrolls through the Dock
     /// scripting addition when top-level `scripting-addition` allows it and the addition answers, and moves its windows
     /// frame by frame otherwise. `dinky doctor` says the key can go.
@@ -323,7 +321,6 @@ public struct Scrolling: Equatable {
         spanPeek = try t.bool("span-peek") ?? spanPeek
         spanHeight = try t.choice("span-height") ?? spanHeight
         spanHeightAnimate = try t.bool("span-height-animate") ?? spanHeightAnimate
-        spanWidth = try t.choice("span-width") ?? spanWidth
         retiredGlide = t.retired("glide")
         try t.done()
     }
@@ -896,14 +893,6 @@ public enum FullscreenFocusChange: String, CaseIterable {
 }
 
 /// Where focusing a scrolling column scrolls it. The names match `DinkyLayout.ColumnCentring`.
-/// What `column-width` is a share of while a strip runs across two displays (`[scrolling] span-width`).
-public enum SpanWidthKind: String, CaseIterable {
-    /// One display, as on one display: 0.5 is half a display.
-    case display
-    /// Both together, as one wide display: 0.5 is a display. None wider than a display all the same.
-    case merged
-}
-
 /// How tall the columns of a strip across two displays of different heights are (`[scrolling] span-height`). The names
 /// match `DinkyLayout.SpanHeight`.
 public enum SpanHeightKind: String, CaseIterable {
