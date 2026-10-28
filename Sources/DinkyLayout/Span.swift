@@ -152,6 +152,32 @@ extension Workspace {
         return placed
     }
 
+    /// Across a seam, with every band column fitting on the two displays without scrolling, a display showing only one of
+    /// them has it fill that display, as a lone column fills one display: two columns are one to each display, and of
+    /// three, the one alone on its display fills it. Which columns go on which display, of the ways they fit: as evenly
+    /// as they can be shared, then as the strip shows now. The widths the columns are given stand; one more column that
+    /// does not fit and they lay out at them again. Whether they all fit.
+    func fillLoneColumns(_ widths: inout [CGFloat], narrowest: [Int: CGFloat], in area: CGRect) -> Bool {
+        let band = bandRange
+        guard let x = seamLine, band.count >= 2 else { return false }
+        let line = x - area.minX, rooms = (left: x - area.minX, right: area.maxX - x)
+        var starts: [CGFloat] = [], start: CGFloat = 0
+        for i in band { starts.append(start); start += widths[i] }
+        let total = start
+        // Boundary k: band columns before it on the left display, the rest on the right.
+        let splits = (0...band.count).filter { k in
+            starts[safe: k].map { $0 <= rooms.left + 0.5 && total - $0 <= rooms.right + 0.5 }
+                ?? (total <= rooms.left + 0.5)
+        }
+        guard let k = splits.min(by: { a, b in
+            let at = { (k: Int) in (k < band.count ? starts[k] : total) - line }
+            return (abs(2 * a - band.count), abs(at(a) - scrollOffset)) < (abs(2 * b - band.count), abs(at(b) - scrollOffset))
+        }) else { return false }
+        if k == 1 { widths[band.lowerBound] = max(rooms.left, narrowest[band.lowerBound] ?? 0) }
+        if band.count - k == 1 { widths[band.upperBound - 1] = max(rooms.right, narrowest[band.upperBound - 1] ?? 0) }
+        return true
+    }
+
     /// Across a seam, with focus near enough an end of the strip that it rests there, the columns from the end to it fitting
     /// on the two displays together, the display at that end filled
     /// to the outer margin as one display's strip at its end is: the columns from the end keep their widths at the

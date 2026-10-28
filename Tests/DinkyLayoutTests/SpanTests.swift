@@ -31,8 +31,11 @@ struct SpanTests {
     }
 
     @Test func `Column widths are shares of one display`() {
-        let frames = spanning(3).layout().frames
-        #expect([1, 2, 3].map { frames[$0]!.width } == [500, 500, 500])
+        // Five, which do not all fit on the two displays; no gutters for parked ones to peek in, to measure by.
+        var ws = spanning(5)
+        ws.spanPeeks = false
+        let frames = ws.layout().frames
+        #expect([2, 3, 4, 5].map { frames[$0]!.width } == [500, 500, 500, 500])
     }
 
     @Test func `No column straddles the seam wherever focus goes`() {
@@ -492,11 +495,32 @@ struct SpanTests {
         #expect(frames[1]!.width > 1700 && frames[2]!.width > 1700, "\(frames)")
     }
 
-    @Test func `By display, half a column stays half a display`() {
+    @Test func `Two columns are one to each display, filling it, three or more their widths`() {
         let seam = Seam(left: rect(-1920, 30, 1920, 1170), right: rect(0, 39, 1800, 1066))
-        let ws = spanning(2, gaps: Gaps(all: 8), seam: seam, centring: .alwaysFill)
-        // Half a display, give or take the room the column at an edge reaches over.
-        #expect(ws.layout().frames.values.allSatisfy { $0.width < 1100 })
+        var two = spanning(2, gaps: Gaps(all: 8), seam: seam, centring: .alwaysFill)
+        for id in two.windows {
+            two.focus(id)
+            let frames = two.layout().frames
+            #expect(frames[1] == rect(-1912, 38, 1908, 1154) && frames[2] == rect(4, 47, 1788, 1050), "\(frames)")
+        }
+        // Three: two on one display at their widths, the one alone on the other filling it.
+        var three = spanning(3, gaps: Gaps(all: 8), seam: seam, centring: .alwaysFill)
+        for id in three.windows {
+            three.focus(id)
+            let frames = three.layout().frames
+            let left = three.windows.map { frames[$0]! }.filter { $0.maxX <= 0 }
+            let right = three.windows.map { frames[$0]! }.filter { $0.minX >= 0 }
+            #expect(left.count + right.count == 3 && Set([left.count, right.count]) == [1, 2], "\(frames)")
+            let lone = left.count == 1 ? left[0] : right[0], pair = left.count == 1 ? right : left
+            #expect(lone.width >= 1788, "alone, filling its display: \(lone)")
+            #expect(pair.allSatisfy { $0.width < 1100 }, "two at their widths, give or take an edge reached over: \(pair)")
+            #expect(straddling(three).isEmpty)
+        }
+        // A fourth that does not fit with them: their widths again.
+        three.insert(4)
+        three.insert(5)
+        let frames = three.layout().frames
+        #expect(frames.values.filter { $0.minX >= -1920 && $0.maxX <= 1800 }.allSatisfy { $0.width < 1100 }, "\(frames)")
     }
 
     @Test func `Two strips coming together meet at the seam`() {

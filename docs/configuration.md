@@ -158,7 +158,9 @@ A full-screen app's Space leaves the other display alone.
 
 Columns keep their widths as shares of one display, the narrower one if they
 differ, or with `span-width = 'merged'` of both together, so none is wider than
-a display; a lone column fills the display it is
+a display. Where all the columns fit on the two displays, one alone on its
+display fills it, as a lone column fills one display: two columns are one to
+each display; a lone column fills the display it is
 on. A window shows on one display at a time, so where the strip rests, the
 line between the displays falls between two columns, half an inner gap either
 side; the focused column always shows whole. That line parks nothing: a column

@@ -196,7 +196,9 @@ extension Workspace {
             let lone = pinned ? max(alone, minimum + insets) : alone
             return band.count == 1 ? lone : max(share, minimum + insets)
         }
-        if spansDisplays, !pinned, pushed.isEmpty { fitEnds(&widths, narrowest: narrowest, in: area) }
+        if spansDisplays, !pinned, pushed.isEmpty, !fillLoneColumns(&widths, narrowest: narrowest, in: area) {
+            fitEnds(&widths, narrowest: narrowest, in: area)
+        }
         var start: CGFloat = 0
         return root.children.indices.map { i in
             guard band.contains(i) else { return (0, widths[i]) }
