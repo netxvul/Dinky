@@ -543,19 +543,46 @@ struct SpanTests {
         #expect(straddling(ws).isEmpty)
     }
 
-    @Test func `With three that fit, a column dragged to a width takes it`() {
+    /// Three columns that fit on a laptop beside a monitor: two on the left display, one on the right.
+    private func threeFitting() -> Workspace {
         let seam = Seam(left: rect(-1920, 30, 1920, 1170), right: rect(0, 39, 1800, 1066))
         var ws = spanning(3, gaps: Gaps(all: 8), seam: seam, centring: .alwaysFill)
         ws.spanPeeks = false
-        for id in ws.windows {
+        ws.focus(1)
+        return ws
+    }
+
+    @Test func `Focus moving between columns changes no window's size`() {
+        var ws = threeFitting()
+        let before = ws.layout().frames
+        for id in [2, 1, 3, 2] as [WindowID] {
             ws.focus(id)
-            let shown = ws.layout().frames[id]!
-            guard shown.width < 1500 else { continue }
-            let taken = ws.resize(id, to: CGSize(width: shown.width - 150, height: shown.height), moving: [.right])
-            #expect(taken)
-            #expect(abs(ws.layout().frames[id]!.width - (shown.width - 150)) <= 1, "\(id): \(ws.layout().frames[id]!) from \(shown)")
-            #expect(straddling(ws).isEmpty)
+            let frames = ws.layout().frames
+            for other in ws.windows { #expect(frames[other]!.size == before[other]!.size, "\(other) with \(id) focused") }
         }
+    }
+
+    @Test func `A column at the edge dragged to a width takes it, the one beside the seam filling`() {
+        var ws = threeFitting()
+        let shown = ws.layout().frames[1]!
+        let taken = ws.resize(1, to: CGSize(width: shown.width - 150, height: shown.height), moving: [.right])
+        #expect(taken)
+        let frames = ws.layout().frames
+        #expect(frames[1]!.width == shown.width - 150, "\(frames[1]!)")
+        #expect(frames[2]!.minX == frames[1]!.maxX + 8 && frames[2]!.maxX == -4, "\(frames[2]!)")
+        #expect(straddling(ws).isEmpty)
+    }
+
+    @Test func `The edge between two columns of a display moves as a divider`() {
+        var ws = threeFitting()
+        ws.focus(2)
+        let one = ws.layout().frames[1]!, two = ws.layout().frames[2]!
+        let taken = ws.resize(2, to: CGSize(width: two.width + 120, height: two.height), moving: [.left])
+        #expect(taken)
+        let frames = ws.layout().frames
+        #expect(frames[1]!.width == one.width - 120, "\(frames[1]!) from \(one)")
+        #expect(frames[2]!.width == two.width + 120 && frames[2]!.maxX == -4, "\(frames[2]!) from \(two)")
+        #expect(straddling(ws).isEmpty)
     }
 
     @Test func `Two strips coming together meet at the seam`() {

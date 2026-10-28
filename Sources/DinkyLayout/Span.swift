@@ -161,12 +161,12 @@ extension Workspace {
     /// Across a seam, with every band column fitting on the two displays without scrolling, a display showing only one of
     /// them has it fill that display, as a lone column fills one display: two columns are one to each display, and of
     /// three, the one alone on its display fills it. Which columns go on which display, of the ways they fit: as evenly
-    /// as they can be shared, then as the strip shows now. The widths the columns are given stand; one more column that
+    /// as they can be shared, then more on the display with more room. The widths the columns are given stand; one more column that
     /// does not fit and they lay out at them again. Whether they all fit.
     func fillLoneColumns(_ widths: inout [CGFloat], narrowest: [Int: CGFloat], in area: CGRect) -> Bool {
         let band = bandRange
         guard let x = seamLine, band.count >= 2 else { return false }
-        let line = x - area.minX, rooms = (left: x - area.minX, right: area.maxX - x)
+        let rooms = (left: x - area.minX, right: area.maxX - x)
         var starts: [CGFloat] = [], start: CGFloat = 0
         for i in band { starts.append(start); start += widths[i] }
         let total = start
@@ -175,22 +175,20 @@ extension Workspace {
             starts[safe: k].map { $0 <= rooms.left + 0.5 && total - $0 <= rooms.right + 0.5 }
                 ?? (total <= rooms.left + 0.5)
         }
+        // As evenly shared as they can be, then more on the display with more room: not by where the strip shows, which
+        // focus moves, so focus moving changes no window's size.
+        let wider = rooms.left >= rooms.right
         guard let k = splits.min(by: { a, b in
-            let at = { (k: Int) in (k < band.count ? starts[k] : total) - line }
-            return (abs(2 * a - band.count), abs(at(a) - scrollOffset)) < (abs(2 * b - band.count), abs(at(b) - scrollOffset))
+            (abs(2 * a - band.count), wider ? -a : a) < (abs(2 * b - band.count), wider ? -b : b)
         }) else { return false }
         if k == 1 { widths[band.lowerBound] = max(rooms.left, narrowest[band.lowerBound] ?? 0) }
         if band.count - k == 1 { widths[band.upperBound - 1] = max(rooms.right, narrowest[band.upperBound - 1] ?? 0) }
-        // A display of several: room at its edge the column in view would reach over goes to one beside the seam other
-        // than the focused one, so that keeps the width it was given, as one dragged to it does.
-        let focus = shownBandColumn
+        // A display of several: room at its edge the column in view would reach over goes to the one beside the seam, so
+        // the one at the edge keeps the width it was given, as one dragged to it does, whichever has focus.
         for (side, room) in [(Array(band.lowerBound..<band.lowerBound + k), rooms.left),
                              (Array((band.lowerBound + k)..<band.upperBound).reversed(), rooms.right)] where side.count > 1 {
             let left = room - side.reduce(0) { $0 + widths[$1] }
-            if left > 0.5, reachesOver(left - gaps.horizontal / 2, in: area),
-               let other = side.reversed().first(where: { $0 != focus }) {
-                widths[other] += left
-            }
+            if left > 0.5, reachesOver(left - gaps.horizontal / 2, in: area) { widths[side.last!] += left }
         }
         return true
     }
@@ -220,8 +218,7 @@ extension Workspace {
             // Room the column in view would reach over goes to the one beside the seam instead, so the end column keeps
             // the width it was given, as one dragged to it does.
             guard !reachesOver(left - half, in: area) else {
-                // Not the focused one, the one a drag resizes: it keeps what it was given.
-                if let other = on.reversed().first(where: { $0 != focus }) { widths[other] += left }
+                if on.count > 1 { widths[on.last!] += left }
                 return
             }
             if let floor = narrowest[i], floor <= left {
