@@ -129,7 +129,7 @@
         "span-displays": {
           "type": "boolean",
           "default": false,
-          "description": "Prototype: with exactly two displays side by side, each showing a scrolling workspace, run one strip across both. Switching one display to a Space switches the other to the Space at the same place among its own, where both are scrolling."
+          "description": "Prototype: with exactly two displays side by side, each showing a scrolling workspace, run one strip across both. Switching one display to a Space switches the other to the Space at the same place among its own, the companion dinky makes there for each workspace, whatever its layout."
         }
       }
     },
