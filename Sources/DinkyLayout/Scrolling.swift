@@ -443,6 +443,17 @@ extension Workspace {
     /// focused one's fullscreen windows fill the area inside the outer gaps, over the gutters. At a wall, the column in
     /// view nearest it may reach out to the outer gap there (see `reachingWalls`).
     func stripLayout(pushed: Set<Int> = []) -> Layout {
+        // Across a seam, the strip stays as it is and the focused column's fullscreen windows fill the display it is
+        // on, over its neighbours there: the other display goes on showing what it did, at the widths it had.
+        if spansDisplays, !hasPins, let column = focused.flatMap({ bandIndex(of: $0) }), pushed.contains(column) {
+            var result = stripLayout()
+            let filling = root.children[column].windows.filter { fullscreenWindows.contains($0) && result.frames[$0] != nil }
+            for id in filling {
+                result.frames[id] = displayInset(at: result.frames[id]!.midX)
+            }
+            result.order = filling + result.order.filter { !filling.contains($0) }
+            return result
+        }
         var result = Layout()
         let area = stripArea, spans = columnSpans(in: area, pushed: pushed), inset = gaps.inset(bounds)
         let gap = gaps.horizontal, band = bandRange, first = band.lowerBound, last = band.upperBound - 1

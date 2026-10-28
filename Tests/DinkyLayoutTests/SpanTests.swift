@@ -276,6 +276,24 @@ struct SpanTests {
         #expect(frame.midX < 0 ? other.map(\.maxX).max() == 1792 : other.map(\.minX).min() == -1912)
     }
 
+    @Test(arguments: [3, 4, 5] as [Int]) func `Fullscreen on one display leaves the other display's windows as they were`(_ count: Int) {
+        let seam = Seam(left: rect(-1920, 30, 1920, 1170), right: rect(0, 39, 1800, 1066))
+        var ws = spanning(count, gaps: Gaps(all: 8), seam: seam, centring: .alwaysFill)
+        ws.spanPeeks = false
+        for id in ws.windows {
+            ws.focus(id)
+            let before = ws.layout().frames, side = before[id]!.midX < 0
+            ws.toggleFullscreen()
+            let frames = ws.layout().frames
+            #expect(frames[id] == (side ? rect(-1912, 38, 1904, 1154) : rect(8, 47, 1784, 1050)), "\(count), \(id)")
+            for other in ws.windows where other != id && (before[other]!.midX < 0) != side {
+                #expect(frames[other] == before[other], "\(other) as it was, \(id) fullscreen, \(count)")
+            }
+            ws.toggleFullscreen()
+            #expect(ws.layout().frames == before, "back as it was, \(id), \(count)")
+        }
+    }
+
     @Test(arguments: [ColumnCentring.never, .always, .alwaysFill]) func `Fingers scroll no further than the strip rests at its ends`(
         _ centring: ColumnCentring) {
         let seam = Seam(left: rect(-1920, 30, 1920, 1170), right: rect(0, 39, 1800, 1066))
