@@ -150,5 +150,5 @@ func runBound(_ commands: [String]) {
     let displays = AppState.shared.displays
     // Focusing an empty display can leave the keyboard with a window on another, which the binding was not about.
     guard displays.focusOverride == nil || displays.display(ofWindow: id)?.uuid == displays.focusedDisplay()?.uuid else { return }
-    coordinator.flashBorder(of: id)
+    coordinator.flashNoop(of: id, commands: commands)
 }

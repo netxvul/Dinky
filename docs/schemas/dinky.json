@@ -103,6 +103,33 @@
           "enum": ["never", "always", "always-fill", "on-overflow"],
           "default": "never",
           "description": "Where focusing a column scrolls it, as niri's center-focused-column: never just far enough to show it whole, always to the middle of the display, end columns too, always-fill to the middle but never past the strip's ends, so end columns go only to the display's edge and it stays filled, on-overflow to the middle only when it did not all show. Columns that all fit stay centred as a whole."
+        },
+        "span-center-on": {
+          "type": "string",
+          "enum": ["both", "mouse", "focused"],
+          "default": "both",
+          "description": "With span-displays, which display center-focused-column centres a column on: both centres on the two together, so the column rests beside the line between them; mouse on the display under the pointer; focused on the display the column is on as focus comes to it. Focus stepping along the strip never scrolls it back."
+        },
+        "span-height": {
+          "type": "string",
+          "enum": ["per-display", "overlap", "at-rest"],
+          "default": "per-display",
+          "description": "With span-displays, how tall the strip's columns are on displays of different heights: per-display as the display a column's middle is on, changing once as that crosses between them, on the way to a shorter display a little before; overlap as high as both displays have room, top edges lined up, so nothing changes size crossing; at-rest as the display a column rests on, keeping its size while fingers or the mouse hold the strip and changing once they let go."
+        },
+        "span-height-animate": {
+          "type": "boolean",
+          "default": false,
+          "description": "With span-displays and span-height = 'per-display', ease a window's height between the displays' as it crosses: down to the shorter display's as it comes to it, finished just before it shows there, and up to the taller's along the glide, rather than stepping. Each step resizes the window, which slow apps follow less closely."
+        },
+        "span-peek": {
+          "type": "boolean",
+          "default": true,
+          "description": "With span-displays, whether columns scrolled off the outer edges of the two displays peek out there, as on one display. false keeps no gutter for them: they tuck under the column in view with 2 points on, keeping their sizes, and the columns fill out to the outer gaps."
+        },
+        "span-displays": {
+          "type": "boolean",
+          "default": false,
+          "description": "Prototype: with exactly two displays side by side, each showing a scrolling workspace, run one strip across both. Switching one display to a Space switches the other to the Space at the same place among its own, the companion dinky makes there for each workspace, whatever its layout."
         }
       }
     },

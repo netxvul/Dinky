@@ -106,6 +106,22 @@ public struct Workspace: Equatable, Sendable {
     var freeScrollFrom: CGFloat?
     /// Scrolling: the edges of `bounds` with another display beyond them, where a window cannot hang over.
     public var walls: Set<Direction> = []
+    /// Scrolling: the two displays side by side one strip runs across (`[scrolling] span-displays`), `bounds` being both;
+    /// nil on one display. See Span.swift.
+    public internal(set) var seam: Seam?
+    /// Scrolling across a seam: which display focusing a column centres it on, with `columnCentring` other than
+    /// `never`. See Span.swift.
+    public var spanCentring = SpanCentring.both
+    /// Scrolling across a seam: whether columns scrolled off the outer edges peek out there, in gutters kept for them, as
+    /// on one display; off, they tuck under the column in view with only `tuck` points on, and nothing keeps a gutter.
+    public var spanPeeks = true
+    /// Scrolling across a seam: how tall its columns are, by the display they are on or both's room. See Span.swift.
+    public var spanHeight = SpanHeight.perDisplay
+    /// Scrolling across a seam, per display: whether a column's height eases to the shorter display's as it comes to the
+    /// seam, and a glide's steps keep the heights between, rather than stepping at once. See Span.swift.
+    public var spanHeightAnimates = false
+    /// The band column focus moved from, for the `reveal` it is moving with: the way it steps along the strip.
+    var revealingFrom: Int?
     /// The algorithm a `layout` command switched to, kept over the config's. Nil follows the config.
     public var chosenAlgorithm: TilingAlgorithm?
 
@@ -412,6 +428,7 @@ public struct Workspace: Equatable, Sendable {
             case .keep: fullscreenWindows = [id] + fullscreenWindows.filter { $0 != id }
             }
         }
+        let previousColumn = focused.flatMap { bandIndex(of: $0) }
         focused = id
         if bandIndex(of: id) != nil { bandFocus = id }
         for depth in path.indices {
@@ -421,6 +438,7 @@ public struct Workspace: Equatable, Sendable {
             scrollOffset = held
             holdsScroll = true
         } else {
+            revealingFrom = previousColumn
             reveal(id)
         }
     }
@@ -618,7 +636,10 @@ public struct Workspace: Equatable, Sendable {
         if isScrolling { result.frames = parked(result.frames) }
         let shown = fullscreenWindows.filter { result.frames[$0] != nil }
         // A pinned window fullscreen covers the strip whether it pushes or not: it has no column in the band to widen.
-        for id in shown where !pushesFullscreen || pinSide(of: id) != nil { result.frames[id] = gaps.inset(bounds) }
+        // Across a seam, the display it is on.
+        for id in shown where !pushesFullscreen || pinSide(of: id) != nil {
+            result.frames[id] = spansDisplays ? displayInset(at: result.frames[id]!.midX) : gaps.inset(bounds)
+        }
         result.order = shown + result.order.filter { !shown.contains($0) }
         if isScrolling {
             result.screen = bounds

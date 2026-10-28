@@ -48,12 +48,39 @@ final class Coordinator {
     private lazy var edgeGlow = EdgeGlow()
     func isBorderWindow(_ id: WindowID) -> Bool { borders?.isBorder(id) == true || noopGlow.isBorder(id) }
 
+    /// For a binding that did nothing, `commands`: in a strip across two displays, a step past its left or right end
+    /// glows the outer edge of the display at that end, as fingers pushing past it do, rather than the window, which can
+    /// be on the other display; anything else `flashBorder`. Unless `[borders] noop-flash` is off.
+    func flashNoop(of id: WindowID, commands: [String]) {
+        if config.borders.noopFlash, let key = placements[id]?.space,
+           let side = workspaces[key]?.endRunInto(by: commands, from: id),
+           let uuid = spanEndDisplay(key, last: side == .right) {
+            return flashStripEnd(on: uuid, last: side == .right)
+        }
+        flashBorder(of: id)
+    }
+
     /// Makes a window's edge glow once, for a binding that did nothing, unless `[borders] noop-flash` is off.
     func flashBorder(of id: WindowID) {
         guard config.borders.noopFlash, let window = model.windows[id], window.isDocument else { return }
         noopGlow.flash(id, config: config.borders, model: model)
     }
     private(set) var workspaces: [UInt64: Workspace] = [:]
+    /// The two Spaces running one strip across two displays (`[scrolling] span-displays`), if any. See SpanDisplays.swift.
+    var span: SpanPair?
+    /// Each display's Space as `followSpan` last saw it, by UUID.
+    var spanShown: [String: UInt64] = [:]
+    var spanSettlePending = false
+    var spanSettleLater = false
+    /// The window `activate` last focused in a strip across two displays, and when: activating its app can hand focus
+    /// on to another of its windows, on the other display, which `syncFocus` takes back for a second.
+    var spanFocused: (id: WindowID, at: CFTimeInterval)?
+    var spanRetryPending = false
+    /// Whether `alignCompanion` has had its one look since launch or the option was turned on.
+    var spanAligned = false
+    /// The Space each window of a strip across two displays was last seen on, and when each last changed it.
+    var spanSpaces: [WindowID: UInt64] = [:]
+    var spanCrossedAt: [WindowID: CFTimeInterval] = [:]
     var placements: [WindowID: Placement] = [:]
     var dirty: Set<UInt64> = []
     /// Classification attempts for windows whose AX element has not appeared yet.
@@ -114,6 +141,30 @@ final class Coordinator {
     /// Trees `moveTree` took to a display with other walls, or of another size or other gaps, lined up with its walls
     /// once the move holds.
     private var pendingWallAlign: Set<UInt64> = []
+
+    /// Sets a Space's tree, for SpanDisplays.swift, which takes trees apart and puts them together.
+    func setWorkspace(_ key: UInt64, _ tree: Workspace) { workspaces[key] = tree }
+
+    /// Takes a Space's tree away, for SpanDisplays.swift.
+    func takeWorkspace(_ key: UInt64) -> Workspace? { workspaces.removeValue(forKey: key) }
+
+    /// Whether fingers or the mouse hold a strip.
+    var holdsStrip: Bool { stripScroll != nil }
+
+    /// Keeps focus on `id` as other windows of its app move to another Space (SpanDisplays.swift): macOS hands the app's
+    /// focus to one of them, which would read as the user focusing it and scroll the strip back to it. Its app is
+    /// activated on `id` again, focus read meanwhile left alone.
+    func keepFocus(on id: WindowID) {
+        focusing = (id, Date() + 1, true)
+        // Not while fingers or the mouse hold the strip: their let-go focuses as it will, and an activation landing
+        // after it would take that back.
+        guard !holdsStrip else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            guard let self, focusing?.id == id, !holdsStrip,
+                  let key = placements[id]?.space, workspaces[key]?.focused == id else { return }
+            activate(id)
+        }
+    }
     /// A raise of the pins of a strip fingers hold is under way.
     private var pinRaiseInFlight = false
     /// A pass of `raiseCoveredPins` is waiting to run after window events.
@@ -306,6 +357,7 @@ final class Coordinator {
                 DispatchQueue.main.asyncAfter(deadline: .now() + Self.displaySettle) { [weak self] in self?.reconcile() }
             }
             arrangement = arranged
+            followSpan()
             reconcile()
         }
         // A hidden app's windows can read as shown when their hide event arrives; re-read them once it is hidden.
@@ -322,7 +374,12 @@ final class Coordinator {
     }
 
     func update(config: Config) {
+        // Turned off, the strip across two displays splits, and what showed on a companion Space goes home.
+        let unspans = self.config.scrolling.spanDisplays && !config.scrolling.spanDisplays
+        if unspans, let span { unspan(span) }
         self.config = config
+        if unspans { returnCompanions() }
+        if !config.scrolling.spanDisplays { spanAligned = false }
         ScriptingAddition.enabled = config.scriptingAddition
         animator.configure(durationMs: config.animations.durationMs,
                            easing: Easing(rawValue: config.animations.curve.rawValue),
@@ -507,6 +564,7 @@ final class Coordinator {
             if moved, dragging != window.id { noteFrameChange(of: window.id, from: event.frameBefore) }
             if moved { noteSize(of: window.id) }
             if moved { ScriptingAddition.noteShown(window.id, at: window.frame.origin) }
+            if moved, let span, placements[window.id]?.space == span.left { spanWindowMoved(window.id) }
         }
         // An app come to the front or a new window: what it focuses is read afresh.
         if [.frontApp, .windowCreate].contains(event.kind) { forgetFrontRead() }
@@ -588,7 +646,8 @@ final class Coordinator {
     /// main, or be another display, as when macOS moves a disconnected display's Spaces. A tree whose Space is on
     /// no display is left as it is.
     private func fitToDisplays() {
-        for key in workspaces.keys {
+        updateSpan()
+        for key in workspaces.keys where key != span?.left {
             guard let display = displays.display(containingSpace: key) else { continue }
             let (bounds, gaps, walls) = (workspaces[key]!.bounds, workspaces[key]!.gaps, workspaces[key]!.walls)
             workspaces[key]!.bounds = display.visibleArea
@@ -614,7 +673,7 @@ final class Coordinator {
 
     /// The sides of a display with another display right against them, which a scrolled-out window must not
     /// hang over.
-    private func walls(of display: Display) -> Set<Direction> {
+    func walls(of display: Display) -> Set<Direction> {
         let frame = display.frame
         var walls: Set<Direction> = []
         for other in displays.displays where other.uuid != display.uuid
@@ -666,6 +725,7 @@ final class Coordinator {
             workspaces[key]!.autoOrientAccordions = config.accordion.orientation == .auto
             workspaces[key]!.columnWidth = config.scrolling.columnWidth
             workspaces[key]!.columnCentring = columnCentring
+            workspaces[key]!.spanCentring = spanCentring
             workspaces[key]!.fullscreenFocus = fullscreenFocus
             workspaces[key]!.fullscreenFollowsLater = config.fullscreen.followDelayMs > 0
             workspaces[key]!.fullscreenPushesStrip = config.fullscreen.scrolling == .push
@@ -679,7 +739,9 @@ final class Coordinator {
 
     /// The settings of the Space's workspace, by its current number.
     func settings(for space: UInt64) -> WorkspaceSettings {
-        config.settings(forWorkspace: AppState.shared.numbers.number(of: space))
+        let numbers = AppState.shared.numbers
+        // A companion Space a strip across two displays pairs with a workspace (SpanDisplays.swift) is laid out as it.
+        return config.settings(forWorkspace: numbers.number(of: space) ?? partner(of: space).flatMap { numbers.number(of: $0.space) })
     }
 
     func algorithm(_ settings: WorkspaceSettings) -> TilingAlgorithm {
@@ -1087,6 +1149,13 @@ final class Coordinator {
     /// Activates `id`'s app on it, now: `focus` without waiting for a glide.
     private func activate(_ id: WindowID) {
         guard let window = model.windows[id] else { return }
+        // Its second from the first activation, not from this one: taking focus back activates again.
+        let now = CACurrentMediaTime()
+        if span == nil || placements[id]?.space != span?.left {
+            spanFocused = nil
+        } else if spanFocused.map({ $0.id != id || now - $0.at >= 1 }) ?? true {
+            spanFocused = (id, now)
+        }
         applier.cancelActivationRaise()
         forgetFrontRead()
         readWhileMoving = nil
@@ -1141,6 +1210,22 @@ final class Coordinator {
     /// Follows focus into the trees, so new windows land beside the focused one and accordions show it.
     private func syncFocus(fresh: Bool = false, whileMoving: Bool = false) {
         let id = frontWindow(fresh: fresh, whileMoving: whileMoving)
+        // In a strip across two displays, activating an app on one window can make its window on the other display key
+        // just after: back to the one dinky focused, once.
+        if let (want, at) = spanFocused, want != id, id != 0, CACurrentMediaTime() - at < 1,
+           let key = placements[want]?.space, workspaces[key]?.focused == want,
+           let pid = model.windows[want]?.pid, model.windows[id]?.pid == pid {
+            print("\(stamp()) span: \(pid) put \(id) in front of \(want), which dinky focused: focused again")
+            focus(want)
+            return
+        }
+        // Nor does a window the strip carries over the seam take focus from another of its app's: macOS hands it the
+        // app's focus as it changes Space, while fingers or the mouse hold the strip or it glides.
+        if let want = spanCarried(id) {
+            print("\(stamp()) span: \(id) carried over the seam came in front of \(want), of its app: focus stays")
+            keepFocus(on: want)
+            return
+        }
         // Only what dinky had, answered while a strip moves: focus moves once the read after it says so, or as a
         // command read it meanwhile. Not even back to the window dinky had, which would undo a command's focus.
         if lastReadDeferred, id != readWhileMoving { return }
@@ -1192,6 +1277,8 @@ final class Coordinator {
 
     /// The tree of a user Space, numbered workspace or not, created on first use. Nil for full-screen Spaces.
     private func key(of window: Window) -> UInt64? {
+        // The right Space of a pair running across two displays is the left one's tree.
+        if let span, window.spaceID == span.right, workspaces[span.left] != nil { return span.left }
         guard let display = displays.display(containingSpace: window.spaceID),
               display.userSpaces.contains(window.spaceID) else { return nil }
         let settings = settings(for: window.spaceID)
@@ -1230,6 +1317,7 @@ final class Coordinator {
                                   algorithm: algorithm(settings))
         workspace.columnWidth = config.scrolling.columnWidth
         workspace.columnCentring = columnCentring
+        workspace.spanCentring = spanCentring
         workspace.fullscreenFocus = fullscreenFocus
         workspace.fullscreenFollowsLater = config.fullscreen.followDelayMs > 0
         workspace.fullscreenPushesStrip = config.fullscreen.scrolling == .push
@@ -1244,6 +1332,11 @@ final class Coordinator {
         ColumnCentring(rawValue: config.scrolling.centerFocusedColumn.rawValue) ?? .never
     }
 
+    /// Which display a strip across two centres on, from `[scrolling] span-center-on`; `mouse` is read as `edit` runs.
+    private var spanCentring: SpanCentring {
+        config.scrolling.spanCenterOn == .focused ? .focused : .both
+    }
+
     /// What focusing another window does to fullscreen, from `[fullscreen] focus-change`.
     private var fullscreenFocus: FullscreenFocus {
         FullscreenFocus(rawValue: config.fullscreen.focusChange.rawValue) ?? .exit
@@ -1253,6 +1346,11 @@ final class Coordinator {
     @discardableResult
     func edit<T>(_ key: UInt64, _ change: (inout Workspace) -> T) -> T? {
         guard var workspace = workspaces[key] else { return nil }
+        // Across two displays with `span-center-on = 'mouse'`, centring goes to the display under the pointer now.
+        workspace.spanCentring = spanCentring
+        if config.scrolling.spanCenterOn == .mouse, let x = workspace.seam?.x, let pointer = CGEvent(source: nil)?.location {
+            workspace.spanCentring = .display(left: pointer.x < x)
+        }
         let before = workspace.layout(), pending = workspace.pendingFullscreen
         let result = change(&workspace)
         workspaces[key] = workspace
@@ -1391,7 +1489,8 @@ final class Coordinator {
         guard dragging == nil, let display = mouseStripDisplay(at: point),
               !WindowSwitcher.shared.covers(point), !WorkspaceSwitcher.shared.covers(point) else { return nil }
         let info = onScreenWindowInfo()
-        guard let window = pressedWindow(at: point, in: info), placements[window.id]?.space == display.currentSpaceID else {
+        guard let window = pressedWindow(at: point, in: info),
+              placements[window.id]?.space == treeKey(display.currentSpaceID) else {
             return nil
         }
         // Another app's window in front of it, one that lets clicks through too, keeps the press and the hand away.
@@ -1409,7 +1508,7 @@ final class Coordinator {
               !SpaceSwitcher.shared.switching, let display = displays.displays.first(where: { $0.frame.contains(point) }),
               !dinky_display_is_animating(display.uuid as CFString),
               dinky_current_space_id(display.uuid as CFString) == display.currentSpaceID,
-              let workspace = workspaces[display.currentSpaceID], workspace.canScrollFreely else { return nil }
+              let workspace = workspaces[treeKey(display.currentSpaceID)], workspace.canScrollFreely else { return nil }
         return display
     }
 
@@ -1437,7 +1536,7 @@ final class Coordinator {
     func mouseStepped(left: Bool) {
         guard let pointer = CGEvent(source: nil)?.location, mouseCanStep(at: pointer),
               let display = displays.displays.first(where: { $0.frame.contains(pointer) }) else { return }
-        let key = display.currentSpaceID
+        let key = treeKey(display.currentSpaceID)
         guard let target = command(onSpace: key, { $0.focus(left ? .right : .left) ? $0.focused : nil }) ?? nil else { return }
         print("\(stamp()) mouse-scroll: wheel notch focuses \(target)")
         focus(target)
@@ -1466,7 +1565,7 @@ final class Coordinator {
               let display = displays.displays.first(where: { $0.frame.contains(pointer) }),
               !dinky_display_is_animating(display.uuid as CFString),
               dinky_current_space_id(display.uuid as CFString) == display.currentSpaceID else { return false }
-        let key = display.currentSpaceID
+        let key = treeKey(display.currentSpaceID)
         guard var workspace = workspaces[key], !snap.contains(key), pushes[key] == nil,
               !workspace.windows.contains(where: { stagingWindows[$0] != nil || systemTiling[$0] != nil }),
               workspace.beginFreeScroll() else { return false }
@@ -1478,6 +1577,7 @@ final class Coordinator {
         // Dock moves windows without resizing them: only a strip whose windows all have the sizes it gives them, with
         // no wall, behind which a window hides at another, can follow the fingers through it.
         let dock = ScriptingAddition.available && ScriptingAddition.moves && workspace.walls.isEmpty
+            && !workspace.spansDisplays
             && strip.allSatisfy { id, frame in
                 sizes[id].map { abs($0.width - frame.width) <= 1 && abs($0.height - frame.height) <= 1 } ?? false
             }
@@ -1519,7 +1619,8 @@ final class Coordinator {
     /// content going with them, and has its windows follow it there.
     private func scrollStrip(by dx: Double) {
         guard let scroll = stripScroll, let workspace = workspaces[scroll.key] else { return }
-        scrollStrip(points: -CGFloat(dx * config.gestures.scroll.speed) * workspace.bounds.width)
+        // Across two displays, screens of one of them.
+        scrollStrip(points: -CGFloat(dx * config.gestures.scroll.speed) * (workspace.seam?.left.width ?? workspace.bounds.width))
     }
 
     /// Scrolls the strip held by `delta` points, positive to show what is right of it, and has its windows follow.
@@ -1534,7 +1635,10 @@ final class Coordinator {
         }
         let moved = workspace.scrollFreely(by: delta)
         // Pushed on past an end, some or all of the way.
-        if abs(delta - moved) >= 0.5, settings(of: scroll).edgeFlash { flashStripEnd(on: scroll.display, last: delta > 0) }
+        if abs(delta - moved) >= 0.5, settings(of: scroll).edgeFlash {
+            // Across two displays, the display at that end of the strip, whichever the fingers are over.
+            flashStripEnd(on: spanEndDisplay(scroll.key, last: delta > 0) ?? scroll.display, last: delta > 0)
+        }
         guard moved != 0 else { return }
         workspaces[scroll.key] = workspace
         followStrip(scroll, in: workspace)
@@ -1780,8 +1884,9 @@ final class Coordinator {
     /// current one and not sliding away, as the window server has it now rather than the display model, which hears
     /// late.
     private func stripScrollShows(_ scroll: StripScroll) -> Bool {
+        // The display held on shows the strip's tree, for a strip across two displays either display's Space of it.
         enabled && !MissionControl.shared.active && !dinky_display_is_animating(scroll.display as CFString)
-            && dinky_current_space_id(scroll.display as CFString) == scroll.key
+            && treeKey(dinky_current_space_id(scroll.display as CFString)) == scroll.key
     }
 
     /// dinky turned off: the fingers hold nothing, and the strip they held forgets it was scrolled freely.
@@ -1802,6 +1907,8 @@ final class Coordinator {
     func flush() {
         // A click holds the passes, but not the first making room for a drop its press began to show.
         guard !clickHold || drag?.shown != nil else { return }
+        // A layout command can have taken a side of a strip across two displays off scrolling.
+        if enabled { updateSpan() }
         // Something ended the fingers' free scroll, as a command or a window focused, or left the strip nothing to
         // scroll, as fullscreen: it takes the strip over.
         if let key = stripScroll?.key, workspaces[key].map({ !$0.isScrollingFreely || !$0.canScrollFreely }) ?? true {
@@ -1816,6 +1923,8 @@ final class Coordinator {
             return
         }
         for key in keys where isVisible(key) { apply(key) }
+        // Windows of a strip across two displays on the other display's side once its glide is done.
+        if let span, keys.contains(span.left) { settleSpanSpacesSoon(after: 0.6) }
         // The pins shown now get their rings; those gone, hidden or on a Space not shown lose them.
         if let borders {
             borders.setPinned(Set(workspaces.filter { isVisible($0.key) }.flatMap { $0.value.ringedPins }))
@@ -1826,7 +1935,7 @@ final class Coordinator {
     /// where. None on a workspace without a strip.
     private func notePeeks(_ key: UInt64, frames: [WindowID: CGRect], strip: [WindowID: CGRect],
                            fullscreen: Set<WindowID> = []) {
-        guard !strip.isEmpty, let screen = displays.display(containingSpace: key)?.frame else {
+        guard !strip.isEmpty, let screen = spanScreen(key) ?? displays.display(containingSpace: key)?.frame else {
             return PeekClicks.shared.update([], space: key)
         }
         // A band window partly under a pin counts as peeking with the part beside it in the band: clicked there, macOS
@@ -2081,7 +2190,8 @@ final class Coordinator {
             let fits = (strip[id] == nil || workspace.isInView(id) && workspace.columns(around: id).own.count == 1)
                 && ResizeOnce.applies(from: frame, to: target,
                                       edge: besidePin(id) ? rightPin!.minX - workspace.gaps.horizontal : edge,
-                                      wall: workspace.walls.contains(.right) || besidePin(id), dock: dock)
+                                      wall: workspace.walls.contains(.right) || workspace.spansDisplays || besidePin(id),
+                                      dock: dock)
             if fits, pushing || ResizeOnce.movesAndResizes(frame, target) { return .once }
             return pushing ? .whole : .none
         }
@@ -2091,7 +2201,8 @@ final class Coordinator {
         }
         let growsLeft = { (id: WindowID) -> Bool in
             guard let frame = frameOf(id), let target = layout.frames[id] else { return false }
-            return ResizeOnce.growsLeft(frame, target) && !workspace.walls.contains(.right) && !dock && !besidePin(id)
+            return ResizeOnce.growsLeft(frame, target) && !workspace.walls.contains(.right) && !workspace.spansDisplays
+                && !dock && !besidePin(id)
         }
         let changing = Dictionary(uniqueKeysWithValues: fullscreenNow.map { ($0, change($0, pushed.contains($0))) })
         let leavingChange = Dictionary(uniqueKeysWithValues: wasFullscreen.subtracting(fullscreenNow).map {
@@ -2387,7 +2498,8 @@ final class Coordinator {
             }
             // Fingers that moved the windows through Accessibility hand them on to the window glide below, at their
             // speed.
-            if fullscreen.isEmpty, !saResizing, fling != false, ScriptingAddition.available {
+            // Not across two displays: a window Dock moves over the seam would not show on the other one.
+            if fullscreen.isEmpty, !saResizing, fling != false, ScriptingAddition.available, !workspace.spansDisplays {
                 let stripIDs = Array(strip.keys)
                 // The glide this pass takes over carries on into it: its windows keep their steps, and their transforms if
                 // they have them, and head for the new targets from there. One it moved that is no longer in the strip

@@ -26,8 +26,28 @@ extension Workspace {
                 // A lone band column beside a pin fills the band whatever its width.
                 continue
             } else if isScrolling, axis == .horizontal, let column = bandIndex(of: id), bandRange.count > 1 {
-                // The column takes the width; its neighbours keep theirs and move along.
-                let share = Double((columnSpans(in: stripArea)[column].width + delta) / shareWidth)
+                // The column takes the width; its neighbours keep theirs and move along. Across a seam, the width it was
+                // given, from its half gaps: it can show wider than that, reaching over room at an edge or an end.
+                let band = bandRange, half = gaps.horizontal / 2, beside = bandNeighbours
+                let insets = (column > band.lowerBound || beside.left ? half : 0)
+                    + (column < band.upperBound - 1 || beside.right ? half : 0)
+                let span = spansDisplays ? size.width + insets : columnSpans(in: stripArea)[column].width + delta
+                // Across a seam, the edge between two columns of a display, of one beside the seam, which takes what room
+                // the display has left: as a divider, the other column on that edge takes the change.
+                if let x = seamLine, let edge = edges.first(where: { $0.orientation == .horizontal }),
+                   let neighbour = Optional(column + (edge == .right ? 1 : -1)), band.contains(neighbour),
+                   let shown = tiledLayout().frames[id], let beside = root.children[neighbour].windows.first,
+                   let besideFrame = tiledLayout().frames[beside],
+                   (besideFrame.midX < x) == (shown.midX < x),
+                   shown.midX < x ? shown.maxX >= x - gaps.horizontal : shown.minX <= x + gaps.horizontal {
+                    let other = Double((besideFrame.width - delta + (column + (edge == .right ? 1 : -1) == band.lowerBound
+                        || neighbour == band.upperBound - 1 ? half : 2 * half)) / shareWidth)
+                    setWidth(ofColumn: neighbour, other)
+                    reveal(id)
+                    changed = true
+                    continue
+                }
+                let share = Double(span / shareWidth)
                 setWidth(ofColumn: column, share)
                 reveal(id)
                 changed = true

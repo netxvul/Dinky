@@ -291,6 +291,20 @@ public struct Scrolling: Equatable {
     public var columnWidth = 0.49
     /// Where focusing a column scrolls it, as niri's `center-focused-column`.
     public var centerFocusedColumn = CenterFocusedColumn.never
+    /// Whether two displays side by side run one strip across both, while each shows a scrolling workspace: a prototype,
+    /// off by default.
+    public var spanDisplays = false
+    /// With `spanDisplays`, which display focusing a column centres it on, with `centerFocusedColumn` other than `never`.
+    public var spanCenterOn = SpanCenterOn.both
+    /// With `spanDisplays`, whether columns scrolled off the strip's outer edges peek out there, as on one display;
+    /// off, they hide behind the column in view nearest the edge, as at a display beside another, and the columns fill
+    /// to the outer gaps.
+    public var spanPeek = true
+    /// With `spanDisplays`, how tall the strip's columns are on displays of different heights.
+    public var spanHeight = SpanHeightKind.perDisplay
+    /// With `spanHeight` `perDisplay`, whether a window's height eases between the displays' as it crosses, rather than
+    /// stepping.
+    public var spanHeightAnimate = false
     /// Whether the file still sets `glide`, which no longer does anything: the strip scrolls through the Dock
     /// scripting addition when top-level `scripting-addition` allows it and the addition answers, and moves its windows
     /// frame by frame otherwise. `dinky doctor` says the key can go.
@@ -302,6 +316,11 @@ public struct Scrolling: Equatable {
         columnWidth = try t.double("column-width") ?? columnWidth
         guard (0.1...1).contains(columnWidth) else { throw ConfigError(path: t.path("column-width"), "must be 0.1 to 1") }
         centerFocusedColumn = try t.choice("center-focused-column") ?? centerFocusedColumn
+        spanDisplays = try t.bool("span-displays") ?? spanDisplays
+        spanCenterOn = try t.choice("span-center-on") ?? spanCenterOn
+        spanPeek = try t.bool("span-peek") ?? spanPeek
+        spanHeight = try t.choice("span-height") ?? spanHeight
+        spanHeightAnimate = try t.bool("span-height-animate") ?? spanHeightAnimate
         retiredGlide = t.retired("glide")
         try t.done()
     }
@@ -874,6 +893,28 @@ public enum FullscreenFocusChange: String, CaseIterable {
 }
 
 /// Where focusing a scrolling column scrolls it. The names match `DinkyLayout.ColumnCentring`.
+/// How tall the columns of a strip across two displays of different heights are (`[scrolling] span-height`). The names
+/// match `DinkyLayout.SpanHeight`.
+public enum SpanHeightKind: String, CaseIterable {
+    /// As the display a column's middle is on: it changes size once as that crosses between them, a little before on its
+    /// way to a shorter display.
+    case perDisplay = "per-display"
+    /// As high as both displays have room, top edges lined up: nothing changes size crossing between them.
+    case overlap
+    /// As the display a column rests on: held or gliding, it keeps the size it had, changing once as the strip rests.
+    case atRest = "at-rest"
+}
+
+/// Which display focusing a column centres it on while a strip runs across two (`[scrolling] span-center-on`).
+public enum SpanCenterOn: String, CaseIterable {
+    /// Both together: the column rests beside the line between them, on the side nearer where the strip shows.
+    case both
+    /// The display under the pointer.
+    case mouse
+    /// The display the column is on as focus comes to it.
+    case focused
+}
+
 public enum CenterFocusedColumn: String, CaseIterable {
     /// Just far enough to show it whole.
     case never

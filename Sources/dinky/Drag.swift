@@ -484,7 +484,7 @@ extension Coordinator {
                     continue
                 }
                 let on = dinky_window_space_id(id)
-                if on != 0, on != space {
+                if on != 0, on != spaceOf(id, inTree: space) {
                     astray[id] = space
                     continue
                 }
@@ -518,6 +518,8 @@ extension Coordinator {
     /// the model read them again: every one with `refreshing`, so the model has the Space macOS moved it to on the way.
     /// A window on its Space is no longer arriving.
     private func bring(_ moves: [WindowID: UInt64], refreshing: Bool = false) {
+        // In a strip across two displays, the Space of the display its tile is on.
+        let moves = Dictionary(uniqueKeysWithValues: moves.map { id, key in (id, spaceOf(id, inTree: key)) })
         var away: [WindowID: UInt64] = [:]
         for (id, space) in moves {
             let now = dinky_window_space_id(id)
@@ -805,9 +807,10 @@ extension Coordinator {
     /// The Space shown on the display under `point`, and the display, if dinky tiles it.
     private func tiledSpace(at point: CGPoint) -> (key: UInt64, display: Display)? {
         guard let display = displays.displays.first(where: { $0.frame.contains(point) }) else { return nil }
-        let key = display.currentSpaceID, settings = settings(for: key)
-        guard display.userSpaces.contains(key), settings.tiling, !settings.isFree else { return nil }
-        return (key, display)
+        let space = display.currentSpaceID, settings = settings(for: space)
+        guard display.userSpaces.contains(space), settings.tiling, !settings.isFree else { return nil }
+        // Over either display of a strip running across two, its tree.
+        return (treeKey(space), display)
     }
 
     /// The edges a resize moved, going from the tile to the dropped frame: on each axis, one edge moved more than

@@ -138,6 +138,58 @@ until you switch again. To cycle all three on one key:
 ctrl-alt-cmd-s = 'layout tiles accordion scrolling'
 ```
 
+### Across two displays
+
+A prototype, off unless `[scrolling] span-displays = true`. With exactly two
+displays side by side, while both show a scrolling workspace, the two run one
+strip across both displays: the left one's columns, then the right one's. The
+Nth Space of one display is the partner of the Nth of the other: switching
+either display to a Space, from dinky or with a swipe, switches the other to
+its partner, so with workspaces 1 to 3 on the left
+display and 4 to 6 on the right, 1 and 4 go together, 2 and 5, 3 and 6. A
+display with no workspaces of its own, as a second display usually is, gets
+an unnumbered companion Space for each scrolling workspace on the other, at
+its place, laid out as that workspace; dinky makes them as needed and keeps
+them while the option is on. Turned off, their windows go back to their
+workspaces. Switched to a workspace that is not scrolling, the other display
+still goes to its companion, so it never shows another workspace's windows,
+and the two lay out on their own till both show scrolling workspaces again.
+A full-screen app's Space leaves the other display alone.
+
+Columns keep their widths as shares of one display, the narrower one if they
+differ, so none is wider than a display. Where all the columns fit on the two displays, one alone on its
+display fills it, as a lone column fills one display: two columns are one to
+each display; a lone column fills the display it is
+on. A window shows on one display at a time, so where the strip rests, the
+line between the displays falls between two columns, half an inner gap either
+side; the focused column always shows whole. That line parks nothing: a column
+scrolled over it goes on to the other display, its windows moved to that
+display's Space as most of them crosses, and only the outer edges of the two
+displays park and peek. Each column is as tall as the display it is on, or
+with `span-height` as both have room. Where
+the wider display has room left at its outer edge, less than a column, the
+column in view nearest that edge reaches over it to the outer gap. With focus
+at an end of the strip, the display there fills as one display's strip does at
+its end: the columns from the end keep their widths at the outer margin, and the
+one before them narrows to the room left up to the line between the displays,
+or where it cannot, the end column widens over it; as focus leaves, the widths
+come back. With
+`span-peek = false`, columns scrolled past the outer edges tuck under the
+column in view there rather than peek, and the columns fill out to the outer
+gaps. Fullscreen fills the whole display its column is on, inside the outer
+gaps, whichever display that is.
+`focus`, `move` and `join-with` left and right go on across it, and a window
+dragged over it drops into the same strip by the same zones,
+`center-focused-column` centres on both displays together, so the focused
+column rests beside the line between them, or with `span-center-on` on the
+display under the pointer or the one the column is on, and
+fullscreen with `[fullscreen] scrolling = 'push'` fills that display only.
+
+```toml
+[scrolling]
+span-displays = true
+```
+
 ## `[scrolling]`
 
 <div class="wide-table" markdown="1">
@@ -146,6 +198,11 @@ ctrl-alt-cmd-s = 'layout tiles accordion scrolling'
 |---|---|---|
 | `column-width` | `0.49` | A new column's width, as a share of the display inside the outer gaps, from `0.1` to `1`. Omarchy's `0.49` fits two columns side by side. Once the columns no longer all fit and some park at the edges, it is a share of that width less the gutters they peek out in, 25 points and half an inner gap on each side with no other display beyond it. |
 | `center-focused-column` | `'never'` | Where focusing a column scrolls it. `'never'` scrolls just far enough to show it whole; `'always'` puts it in the middle of the display, the first and last columns too, leaving the display bare beyond them; `'always-fill'` puts it in the middle too, but never scrolls past the strip's ends: the first and last columns, and with narrow columns the ones next to them, go only as far as the display's edge, the columns beside them filling the rest; `'on-overflow'` puts it in the middle only when it did not all show, and leaves one already in view where it is. Columns that all fit stay centred as a whole. |
+| `span-center-on` | `'both'` | With `span-displays`, which display `center-focused-column` centres a column on: `'both'` centres on the two together, so the column rests beside the line between them; `'mouse'` on the display under the pointer; `'focused'` on the display the column is on as focus comes to it. Whichever it is, focus stepping along the strip never scrolls it back. |
+| `span-height` | `'per-display'` | With `span-displays`, how tall the strip's columns are on displays of different heights. `'per-display'`: as the display a column's middle is on, changing size once as that crosses between them; on its way to a shorter display, a little before, so it shows there at its height. `'overlap'`: as high as both displays have room, top edges lined up, so nothing changes size crossing, at the cost of the taller display's room below. `'at-rest'`: as the display a column rests on, keeping its size while fingers or the mouse hold the strip and changing once they let go. |
+| `span-height-animate` | `false` | With `span-displays` and `span-height = 'per-display'`, ease a window's height between the displays' as it crosses rather than stepping: down to the shorter display's as it comes to it, done just before it shows there, and up to the taller's along the glide. Each step resizes the window, which slow apps follow less closely. |
+| `span-peek` | `true` | With `span-displays`, whether columns scrolled off the outer edges of the two displays peek out there, as on one display. `false` keeps no gutter for them: they tuck under the column in view with 2 points on, as beside a pin, keeping their sizes, and the columns fill out to the outer gaps, but a parked column has no sliver to click. |
+| `span-displays` | `false` | A prototype. With exactly two displays side by side, each showing a scrolling workspace, one strip runs across both, as if they were one wide display: see [Across two displays](#across-two-displays). |
 
 </div>
 

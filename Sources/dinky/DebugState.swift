@@ -36,6 +36,12 @@ extension Coordinator {
                     "fullscreen": workspace.fullscreen ?? 0,
                     "pins": Dictionary(uniqueKeysWithValues: workspace.pins.map { ($0.key.rawValue, $0.value) }),
                     "band-focus": workspace.bandFocus ?? 0,
+                    "strip": workspace.isScrolling ? [
+                        "columns": workspace.stripColumns, "scroll-offset": workspace.scrollDebug.offset,
+                        "shown-offset": workspace.shownOffset, "limits": workspace.scrollDebug.limits.map { [$0.lowerBound, $0.upperBound] } ?? [],
+                        "keeps-scroll": workspace.keepsScroll, "holds-scroll": workspace.holdsScroll,
+                        "spans-displays": workspace.spansDisplays,
+                    ] as [String: Any] : [:],
                     "expected": Dictionary(uniqueKeysWithValues: layout.frames.map { ("\($0.key)", json($0.value)) }),
                 ] as [String: Any]
             },
