@@ -207,6 +207,8 @@ extension Workspace {
     /// `id` is gone for good, from any layout: a mark of it whose column is not where it is now, as one asleep outside
     /// the scrolling layout, is dropped, and so is its place in a pin's origin, a departed pin's record and the band's
     /// focus. A mark of a column it shares with others is passed on by `rekeyPins` as it leaves.
+    /// Note: departedColumnWidths is NOT cleared here - it's cleared separately when a window truly closes,
+    /// not when it temporarily leaves via depart/remove.
     public mutating func forgetPinned(_ id: WindowID) {
         for side in PinSide.allCases {
             if pins[side] == id, pinnedIndex(side) == nil {
@@ -224,6 +226,12 @@ extension Workspace {
             if origin.after == id { departedOrigins[departed]?.after = nil }
         }
         if bandFocus == id { bandFocus = nil }
+    }
+
+    /// Clear departed column width for a window that is truly gone (closed, moved to another workspace).
+    /// Called separately from forgetPinned when we know the window won't be coming back.
+    public mutating func clearDepartedWidth(_ id: WindowID) {
+        departedColumnWidths[id] = nil
     }
 
     /// After an edit: a mark whose window is no longer in its end column is dropped, the columns left where they are; a
@@ -268,7 +276,13 @@ extension Workspace {
         let side = pinSide(of: id) ?? dormant
         let lone = dormant != nil
             || side.flatMap { pinnedIndex($0) }.map { root.children[$0].windows.count == 1 } ?? false
+        // Save column width BEFORE remove() clears it.
         let share = columnWidths[id], origin = side.flatMap { pinOrigins[$0] }
+        // Save column width for all departing windows in scrolling layout, not just pinned ones.
+        // This preserves user-adjusted widths (via resize, cycle-size, or drag) through minimize/restore cycles.
+        if let share, isScrolling {
+            departedColumnWidths[id] = share
+        }
         remove(id)
         if let side, lone {
             departedPins[side] = id

@@ -90,6 +90,9 @@ public struct Workspace: Equatable, Sendable {
     var departedWidths: [WindowID: Double] = [:]
     /// Scrolling: where each departed pin was pinned from, which unpinning it goes back to once it is pinned again.
     var departedOrigins: [WindowID: PinOrigin] = [:]
+    /// Scrolling: each departed window's column width, restored when it comes back. Preserves user-adjusted widths
+    /// through minimize/restore, hide/show, and float/tile cycles.
+    var departedColumnWidths: [WindowID: Double] = [:]
     /// Scrolling: the side pinned last, whose pin narrows first where the band needs room (see `fitBand`).
     var lastPinned: PinSide?
     /// Scrolling: how far the strip is scrolled, in points from its start. The layout clamps it.
