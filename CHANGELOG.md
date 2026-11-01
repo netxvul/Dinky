@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixes
+
+- Scrolling layouts now preserve column widths when windows are minimized and restored. Previously, manually adjusted column widths (via `resize`, `cycle-size`, or drag operations) were lost when a window was minimized and later restored, reverting to the default width. This fix also preserves widths through hide/show and float/tile cycles.
+
 ### HUD
 
 - A capsule of Liquid Glass names the new layout, such as `h_accordion` or `scrolling`, after the `layout` command, and the new binding mode when it changes, for a moment on the focused display. The new `[hud]` table places it above the Dock (`position = 'bottom'`, the default) or below the menu bar (`'top'`), `offset` points away, keeps it up for `duration-ms` (1200 by default), and turns it off for either change with `on-layout-change` or `on-mode-change`, or entirely with `enabled = false`.

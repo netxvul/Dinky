@@ -136,7 +136,9 @@ extension Workspace {
         let index = anchor.map { $0 + 1 }
             ?? (focused.flatMap { pinSide(of: $0) } == .left ? band.lowerBound : band.upperBound)
         root.insert(.window(id), at: min(max(index, band.lowerBound), band.upperBound))
-        columnWidths[id] = columnWidth
+        // Restore saved width for windows coming back (minimized, hidden, floated), otherwise use default.
+        // This preserves user-adjusted widths from resize, cycle-size, or drag operations.
+        columnWidths[id] = departedColumnWidths.removeValue(forKey: id) ?? columnWidth
     }
 
     /// The width of column `index` as a share: its windows all have it.
