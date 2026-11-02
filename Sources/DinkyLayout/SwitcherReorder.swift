@@ -1,4 +1,5 @@
 import CoreGraphics
+import QuartzCore
 
 /// Where a card of the window switcher's row, dragged, would go: a gap between the strip's columns, onto another card by
 /// the zone of it, as a window dragged onto that window's tile goes, or past the line among the floating windows.
@@ -85,6 +86,17 @@ public struct SwitcherReorder: Equatable, Sendable {
     public static func changes(_ tree: Workspace, moving id: WindowID, onto target: WindowID, _ zone: DropZone) -> Bool {
         var dropped = tree
         return dropped.drop(id, onto: target, zone) && dropped.root != tree.root
+    }
+
+    /// The corners of `part` of `card` that are the card's own, to round as it is; those inside it stay square. In the
+    /// coordinates the two frames are in.
+    public static func outerCorners(of part: CGRect, in card: CGRect) -> CACornerMask {
+        var corners: CACornerMask = []
+        if part.minX == card.minX, part.minY == card.minY { corners.insert(.layerMinXMinYCorner) }
+        if part.maxX == card.maxX, part.minY == card.minY { corners.insert(.layerMaxXMinYCorner) }
+        if part.minX == card.minX, part.maxY == card.maxY { corners.insert(.layerMinXMaxYCorner) }
+        if part.maxX == card.maxX, part.maxY == card.maxY { corners.insert(.layerMaxXMaxYCorner) }
+        return corners
     }
 
     /// What of `card` a drop in `zone` of it takes: the half on that side, or for a swap all of it.

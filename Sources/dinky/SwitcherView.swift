@@ -91,6 +91,7 @@ final class SwitcherView: NSView {
     /// Of a picture's height, how far its frost blurs.
     private static let frostRadius: CGFloat = 0.06
     private static let frostContext = CIContext()
+    private static let allCorners: CACornerMask = [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
     /// What a dragged card fits in, its longest side at most that, and how much of it shows.
     private static let liftBox = CGSize(width: 64, height: 64)
     private static let liftOpacity: Float = 0.7
@@ -274,11 +275,13 @@ final class SwitcherView: NSView {
                 marker.frame = frame
                 marker.backgroundColor = border.cgColor
                 marker.cornerRadius = Self.markerWidth / 2
-            case .card(_, let part, let swap):
+                marker.maskedCorners = Self.allCorners
+            case .card(let index, let part, let swap):
                 let fill = dropLook.fill?.nsColor ?? border.fading(to: 0.3)
                 marker.frame = part
                 marker.backgroundColor = (swap ? fill.swapFill : fill).cgColor
                 marker.cornerRadius = style.cardRadius
+                marker.maskedCorners = SwitcherReorder.outerCorners(of: part, in: frames[index])
             }
         }
         marker.isHidden = false
@@ -297,6 +300,7 @@ final class SwitcherView: NSView {
         CATransaction.begin()
         // Moved within a card it slides with the mark; to another, straight there.
         CATransaction.setDisableActions(true)
+        frostPart.maskedCorners = SwitcherReorder.outerCorners(of: part, in: frame)
         if frostCard != index {
             frost.contents = image
             frost.frame = frame

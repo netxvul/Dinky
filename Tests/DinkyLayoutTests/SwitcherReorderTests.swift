@@ -1,4 +1,5 @@
 import CoreGraphics
+import QuartzCore
 import Testing
 @testable import DinkyLayout
 
@@ -148,6 +149,16 @@ struct SwitcherReorderTests {
         #expect(SwitcherReorder.marked(card, .split(.up)) == rect(10, 20, 100, 30))
         #expect(SwitcherReorder.marked(card, .split(.down)) == rect(10, 50, 100, 30))
         #expect(SwitcherReorder.marked(card, .swap) == card)
+    }
+
+    @Test func `A marked part rounds only the corners on the card's own outline`() {
+        let card = rect(10, 20, 100, 60)
+        func corners(_ zone: DropZone) -> CACornerMask { SwitcherReorder.outerCorners(of: SwitcherReorder.marked(card, zone), in: card) }
+        #expect(corners(.split(.left)) == [.layerMinXMinYCorner, .layerMinXMaxYCorner])
+        #expect(corners(.split(.right)) == [.layerMaxXMinYCorner, .layerMaxXMaxYCorner])
+        #expect(corners(.split(.up)) == [.layerMinXMinYCorner, .layerMaxXMinYCorner])
+        #expect(corners(.split(.down)) == [.layerMinXMaxYCorner, .layerMaxXMaxYCorner])
+        #expect(corners(.swap) == [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner])
     }
 
     @Test func `A drop changes a tree unless the window is just there already`() {
