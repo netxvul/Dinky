@@ -315,6 +315,32 @@ final class FrameApplier {
         }
     }
 
+    /// Order the windows of a strip (`strip`) on screen in front of every other window of their level through Dock, back
+    /// to front as they stack, where any of `floats` at the normal level over `bounds` is in front of one of them: so they
+    /// keep their order among themselves, the pins in front still, and those floating windows end behind them all. On the
+    /// raise queue, in turn with the other orderings, and judged on the stack as it is then. Left out, the other windows of
+    /// the app in front, its focused one not: Dock orders one at a time, so one of them would be in front of the focused
+    /// one for a moment, which Finder takes for focus, ending the hold. `done` hears, on the main thread, the floating
+    /// windows it went over; nothing where it ordered none.
+    func orderOverFloats(strip: Set<WindowID>, floats: Set<WindowID>, bounds: CGRect,
+                         done: @escaping ([WindowID]) -> Void) {
+        raiseQueue.async {
+            let normal = Int(CGWindowLevelForKey(.normalWindow))
+            let stack = othersOnScreen().filter { $0.layer == normal }
+            let focused = dinky_border_focused_window()
+            let owner = focused != 0 ? dinky_window_info(focused).pid : 0
+            let ordered = stack.map(\.id).filter { id in
+                strip.contains(id) && (id == focused || owner == 0 || dinky_window_info(id).pid != owner)
+            }
+            guard let back = stack.lastIndex(where: { ordered.contains($0.id) }) else { return }
+            let over = stack[..<back].filter { floats.contains($0.id) && $0.frame?.intersects(bounds) == true }.map(\.id)
+            guard !over.isEmpty else { return }
+            let ids = Array(ordered.reversed())
+            dinky_sa_order_batch(ids, Int32(ids.count))
+            DispatchQueue.main.async { done(over) }
+        }
+    }
+
     /// Raise pinned windows to the front, back to front, so the last is frontmost: they overlap nothing in view, only
     /// the band's windows sliding under them. Not when that could move focus (see `raisingKeepsFocus`). `ordering`, they
     /// are ordered through Dock's scripting addition instead, which also puts them in front of the active app's windows,
@@ -440,9 +466,23 @@ final class FrameApplier {
             unanswered.insert(pid)
             self.unansweredRaises[pid] = CACurrentMediaTime() + 2
         }
+        // Through Dock where an Accessibility raise would show (`RaiseThroughDock`), in turn with the others back to front.
+        let ordered = throughDock(ids, pids: pids, front: front, focused: focused)
+        var batch: [WindowID] = []
+        let flush = {
+            guard !batch.isEmpty else { return }
+            dinky_sa_order_batch(batch, Int32(batch.count))
+            raised += batch
+            batch = []
+        }
         for id in ids {
             guard let pid = pids[id], !unanswered.contains(pid), !scheduler.isBusy(pid), unansweredRaises[pid] == nil
             else { continue }
+            if ordered.contains(id) {
+                batch.append(id)
+                continue
+            }
+            flush()
             let (asked, slow) = withElement(pid: pid, id: id, busy: (false, true), gone: (false, false)) { element, key in
                 let started = Date()
                 let error = AXUIElementPerformAction(element, kAXRaiseAction as CFString)
@@ -452,7 +492,18 @@ final class FrameApplier {
             if asked { raised.append(id) }
             if slow { giveUp(pid) }
         }
+        flush()
         return raised
+    }
+
+    /// The windows of `ids` a raise orders through Dock, none without Dock's ordering (`RaiseThroughDock`).
+    private func throughDock(_ ids: [WindowID], pids: [WindowID: pid_t], front: WindowID?, focused: WindowID) -> Set<WindowID> {
+        guard !ids.isEmpty, focused != 0, ScriptingAddition.available, ScriptingAddition.orders else { return [] }
+        let stack = othersOnScreen()
+        guard let layer = stack.first(where: { $0.id == focused })?.layer else { return [] }
+        return RaiseThroughDock.windows(ids, front: front, owners: pids, focused: focused,
+                                        focusedOwner: dinky_window_info(focused).pid,
+                                        stack: stack.filter { $0.layer == layer }.map(\.id))
     }
 
     /// Ends the raise under way: its windows settle for `RaiseEchoes.settle`, and then focus is read again, a little
