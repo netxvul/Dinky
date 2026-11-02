@@ -21,8 +21,9 @@ struct SwitcherItem {
 // over a column's lower window. A window with a letter has it drawn as a key (`Keycap`) at the title's right: under
 // the card, the title and the key centred together; on a band, the key at its right end; with no title, the key alone
 // in its place. The picked card's key takes the highlight colour. A line of the separator colour parts a row's tiled
-// windows from the floating ones after them. A card being dragged lifts off the row and follows the pointer, the ring
-// and glow put away, and a line of the highlight colour marks the gap it would go to. Layers, in the frames the caller
+// windows from the floating ones after them. A card being dragged lifts off the row, small and see-through so it hides
+// little of what it is dragged over, and follows the pointer, the ring and glow put away, and a mark of the highlight
+// colour over it shows where it would go. Layers, in the frames the caller
 // gives. Main thread only.
 final class SwitcherView: NSView {
     /// How the cards sit: a row has room around each card, a map's cells only a narrow gap.
@@ -66,7 +67,9 @@ final class SwitcherView: NSView {
     /// The card being dragged, and where on it the pointer took it, from its middle.
     private var dragged: (index: Int, grab: CGPoint)?
     private static let markerWidth: CGFloat = 3
-    private static let liftScale: CGFloat = 1.06
+    /// What a dragged card fits in, its longest side at most that, and how much of it shows.
+    private static let liftBox = CGSize(width: 64, height: 64)
+    private static let liftOpacity: Float = 0.7
     private(set) var picked = 0
     /// The cards whose pick changed since they were last placed, and whether placing them is due.
     private var repicked: Set<Int> = []
@@ -91,7 +94,8 @@ final class SwitcherView: NSView {
         ring.borderWidth = Self.ringWidth
         ring.zPosition = 2
         marker.cornerRadius = Self.markerWidth / 2
-        marker.zPosition = 4
+        // Over a dragged card too.
+        marker.zPosition = 6
         marker.isHidden = true
         layer?.addSublayer(marker)
         wellLine.isHidden = true
@@ -173,13 +177,15 @@ final class SwitcherView: NSView {
             applyColors(only: Array(repicked))
             repicked = []
         }
-        dragged = (index, CGPoint(x: point.x - frames[index].midX, y: point.y - frames[index].midY))
+        // The pointer keeps its place on the card as it shrinks.
+        let scale = SwitcherReorder.dragScale(of: frames[index].size, in: Self.liftBox)
+        dragged = (index, CGPoint(x: (point.x - frames[index].midX) * scale, y: (point.y - frames[index].midY) * scale))
         CATransaction.begin()
         CATransaction.setDisableActions(!animates)
         CATransaction.setAnimationDuration(0.15)
         for (i, card) in cards.enumerated() {
-            card.root.opacity = i == index ? 0.95 : Self.dimmed
-            card.root.transform = i == index ? CATransform3DMakeScale(Self.liftScale, Self.liftScale, 1) : CATransform3DIdentity
+            card.root.opacity = i == index ? Self.liftOpacity : Self.dimmed
+            card.root.transform = i == index ? CATransform3DMakeScale(scale, scale, 1) : CATransform3DIdentity
             card.root.zPosition = i == index ? 5 : 0
         }
         let lifted = cards[index].root

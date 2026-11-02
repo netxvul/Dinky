@@ -123,6 +123,13 @@ public struct SwitcherReorder: Equatable, Sendable {
         return first...(last + 1)
     }
 
+    /// What a card of `size` is scaled by while it is dragged, to fit in `box`, keeping its shape, so it hides little of
+    /// the cards it is dragged over; one that fits as it is stays as it is.
+    public static func dragScale(of size: CGSize, in box: CGSize) -> CGFloat {
+        guard size.width > 0, size.height > 0 else { return 1 }
+        return min(1, box.width / size.width, box.height / size.height)
+    }
+
     /// Where the line marking `slot` goes among `spans`, `gap` apart, the middle of the gap or that far past an end, in
     /// the row's coordinates across.
     public static func markerX(_ slot: Int, spans: [ClosedRange<CGFloat>], gap: CGFloat) -> CGFloat? {

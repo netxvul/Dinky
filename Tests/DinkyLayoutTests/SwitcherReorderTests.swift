@@ -173,6 +173,14 @@ struct SwitcherReorderTests {
         #expect(frames[9]!.minY > frames[2]!.minY)
     }
 
+    @Test func `A dragged card fits in its box, keeping its shape, and never grows`() {
+        let box = CGSize(width: 72, height: 48)
+        #expect(SwitcherReorder.dragScale(of: CGSize(width: 220, height: 100), in: box) == 72.0 / 220)
+        #expect(SwitcherReorder.dragScale(of: CGSize(width: 64, height: 100), in: box) == 0.48)
+        #expect(SwitcherReorder.dragScale(of: CGSize(width: 40, height: 30), in: box) == 1)
+        #expect(SwitcherReorder.dragScale(of: .zero, in: box) == 1)
+    }
+
     @Test func `The marker sits in the middle of a gap, or past an end`() {
         let spans: [ClosedRange<CGFloat>] = [10...110, 122...222]
         #expect(SwitcherReorder.markerX(0, spans: spans, gap: 12) == 4)
