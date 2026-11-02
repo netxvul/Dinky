@@ -442,6 +442,7 @@ extension Coordinator {
             // with no placement yet gets one, so it is watched as it lands like the rest.
             if placements[id]?.floating != false {
                 placements[id] = Placement(floating: false, space: key)
+                chosenFloating[id] = false
                 filledFrom[id] = nil
                 griddedFrom[id] = nil
                 heldTabs[id] = nil

@@ -104,6 +104,13 @@ final class Coordinator {
     var adoptTargets: [WindowID: String] = [:]
     /// New windows on their way to the focused display, kept out of the trees until they arrive.
     var adopting: Set<WindowID> = []
+    /// What the last session left, by Space, and the windows yet to go back into it. See Session.swift.
+    var rememberedStrips: [UInt64: StripMemory] = [:]
+    var rememberedPending: [UInt64: Set<WindowID>] = [:]
+    /// Windows floated or tiled by hand, over what `classify` says of them, kept across a restart.
+    var chosenFloating: [WindowID: Bool] = [:]
+    var sessionSaveScheduled = false
+    var sessionWritten: Data?
     /// The tiled window being dragged with the mouse, until the button is released. See Drag.swift.
     var drag: DragSession? {
         didSet { if drag != nil, oldValue == nil { mouseCursorInterrupted() } }
@@ -371,6 +378,7 @@ final class Coordinator {
             fputs("coordinator: no WindowServer events\n", stderr)
             return
         }
+        loadSession()
         update(config: config)
         reconcile()
     }
@@ -400,7 +408,8 @@ final class Coordinator {
         }
         configureWorkspaces()
         // A workspace switched to/from free or untiled must release/acquire its existing windows too.
-        for window in model.windows.values { track(window) }
+        // In a set order: a dictionary's changes with each launch, and new windows go in beside the last.
+        for window in model.windows.values.sorted(by: { $0.id < $1.id }) { track(window) }
         fitToDisplays()
         dirty.formUnion(workspaces.keys)
         flush()
@@ -771,7 +780,9 @@ final class Coordinator {
             // Once, on the first classification attempt, not again on its retries.
             if attempts[window.id] == nil { noteFirstShowing(window) }
             guard let classification = classify(window) else { return }
-            placements[window.id] = Placement(floating: classification.floating, space: nil)
+            // One dinky could not reach floats whatever was chosen, as it cannot be moved.
+            let chosen = unreachable[window.id] == nil ? chosenFloating[window.id] : nil
+            placements[window.id] = Placement(floating: chosen ?? classification.floating, space: nil)
             if !classification.runsRules, adopt(window) { return }
         }
         // A dragged window keeps its tree till the drop, which decides where it goes (Drag.swift): macOS moves one
@@ -829,10 +840,11 @@ final class Coordinator {
             }
             // Pinned again only with room for it, judged with the minimums the next pass lays out with, its own too.
             let own = applier.minimumSize(of: window.id, app: window.bundleID)
+            let memory = rememberedStrip(of: window.id, on: new)
             edit(new) { workspace in
                 workspace.minimumSizes = minimumSizes(in: workspace)
                 workspace.minimumSizes[window.id] = own
-                workspace.arrive(window.id)
+                if let memory { workspace.arrive(window.id, remembering: memory) } else { workspace.arrive(window.id) }
             }
             telemetry.member(new, workspaces[new], window.id, joined: true, old.map { "from Space \($0)" } ?? "shown")
         }
@@ -905,6 +917,8 @@ final class Coordinator {
         attempts[id] = nil
         adoptTargets[id] = nil
         adopting.remove(id)
+        chosenFloating[id] = nil
+        forgetRemembered(id)
         applier.forget(id)
         animator.forget(id)
         landedWidths[id] = nil
@@ -1966,6 +1980,7 @@ final class Coordinator {
     // MARK: Applying
 
     func flush() {
+        saveSessionSoon()
         // A click holds the passes, but not the first making room for a drop its press began to show.
         guard !clickHold || drag?.shown != nil else { return }
         // A layout command can have taken a side of a strip across two displays off scrolling.
