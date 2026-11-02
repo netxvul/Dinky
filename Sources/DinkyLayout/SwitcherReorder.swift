@@ -1,10 +1,10 @@
 import CoreGraphics
 
-/// Where a card of the window switcher's row, dragged, would go: a gap between the strip's columns, a side of a tree's
-/// tile, which it splits, or past the line among the floating windows.
+/// Where a card of the window switcher's row, dragged, would go: a gap between the strip's columns, onto another card by
+/// the zone of it, as a window dragged onto that window's tile goes, or past the line among the floating windows.
 public enum SwitcherDropTarget: Equatable, Sendable {
     case column(Int)
-    case card(WindowID, Direction)
+    case card(WindowID, DropZone)
     case float
 }
 
@@ -54,28 +54,43 @@ public struct SwitcherReorder: Equatable, Sendable {
         return .column(slot(at: x, spans: spans, allowed: allowed))
     }
 
+    /// Where a pointer at `point`, in the row's coordinates, aims a tiled card over a strip's: among the floating windows
+    /// at or past `divider`; on one of `cards`, those it can go onto, in its top or bottom band or the strip down its
+    /// middle, that card's zone, as a window dragged over that column; anywhere else, as between the cards or at a side of
+    /// one, the gap `slot(at:spans:allowed:)` says.
+    public static func target(at point: CGPoint, cards: [(id: WindowID, frame: CGRect)], spans: [ClosedRange<CGFloat>],
+                              allowed: ClosedRange<Int>, divider: CGFloat?) -> SwitcherDropTarget {
+        if let divider, point.x >= divider { return .float }
+        if let card = cards.first(where: { $0.frame.contains(point) }) {
+            let zone = DropZone(scrollingAt: point, in: card.frame)
+            if zone != .split(.left), zone != .split(.right) { return .card(card.id, zone) }
+        }
+        return .column(slot(at: point.x, spans: spans, allowed: allowed))
+    }
+
     /// Where a pointer at `point`, in the row's coordinates, aims over a tree's tiled `cards`: among the floating windows
-    /// at or past `divider`, where there is one; else the side of the nearest card it is nearest, none swapping. Nil with
-    /// no card.
-    public static func target(at point: CGPoint, cards: [(id: WindowID, frame: CGRect)],
+    /// at or past `divider`, where there is one; else the nearest card's zone, as a window dragged over that tile, with
+    /// `swaps`, or without, its nearest side. Nil with no card.
+    public static func target(at point: CGPoint, cards: [(id: WindowID, frame: CGRect)], swaps: Bool,
                               divider: CGFloat?) -> SwitcherDropTarget? {
         if let divider, point.x >= divider { return .float }
         func distance(_ r: CGRect) -> CGFloat {
             hypot(max(r.minX - point.x, 0, point.x - r.maxX), max(r.minY - point.y, 0, point.y - r.maxY))
         }
         guard let card = cards.min(by: { distance($0.frame) < distance($1.frame) }) else { return nil }
-        return .card(card.id, side(at: point, of: card.frame))
+        return .card(card.id, swaps ? DropZone(at: point, in: card.frame) : DropZone(at: point, in: card.frame, center: 0))
     }
 
-    /// The side of `card` that `point` is nearest, by the card's own diagonals.
-    public static func side(at point: CGPoint, of card: CGRect) -> Direction {
-        guard case .split(let side) = DropZone(at: point, in: card, center: 0) else { return .right }
-        return side
+    /// Whether `id` dropped in `zone` of `target` changes `tree`: not one refused, nor one where it is already.
+    public static func changes(_ tree: Workspace, moving id: WindowID, onto target: WindowID, _ zone: DropZone) -> Bool {
+        var dropped = tree
+        return dropped.drop(id, onto: target, zone) && dropped.root != tree.root
     }
 
-    /// The half of `card` on `side`.
-    public static func half(of card: CGRect, _ side: Direction) -> CGRect {
-        switch side {
+    /// What of `card` a drop in `zone` of it takes: the half on that side, or for a swap all of it.
+    public static func marked(_ card: CGRect, _ zone: DropZone) -> CGRect {
+        guard case .split(let side) = zone else { return card }
+        return switch side {
         case .left: CGRect(x: card.minX, y: card.minY, width: card.width / 2, height: card.height)
         case .right: CGRect(x: card.midX, y: card.minY, width: card.width / 2, height: card.height)
         case .up: CGRect(x: card.minX, y: card.minY, width: card.width, height: card.height / 2)

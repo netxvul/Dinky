@@ -12,9 +12,10 @@ import DinkyPrivate
 // they stand. Releasing the modifier focuses the window picked, which scrolls a strip to it. With `drag-to-reorder`, a
 // scrolling workspace's card dragged to another gap between the cards moves its window's column there in the strip as
 // it is let go, and Shift with left or right, h or l, moves the picked one a column; a floating window's card dragged
-// to such a gap tiles it there, and a tiled window's dragged past the line floats it where it stands. On a tiles workspace's
-// row a floating window's card dragged onto a side of a tiled one tiles it there, splitting that tile, and a tiled one's
-// floats past the line, as on a fixed workspace's, which tiles nothing by dragging. With no floating window to show the
+// to such a gap tiles it there, and a tiled window's dragged past the line floats it where it stands. Dropped onto another
+// tiled card it goes as a window dragged onto that window's tile does: on a strip, stacked in the card's column at its top
+// or bottom, or swapped in the middle; on a tiles workspace, swapped in the middle or splitting the tile at an edge, a
+// floating window's card always splitting it. A fixed workspace only floats, past the line. With no floating window to show the
 // line, the capsule opens a well at its right for the drag, with a line of its own. The capsule stays up, filled afresh,
 // the window still picked, and the pointer is a closed hand for as long as a card is held. A click on a card takes it then, held up by the modifier too. While it is up,
 // h, j, k, l and the arrows move the pick (`navigate`) and Return or Space focuses it at once, swallowed. Esc closes the
@@ -71,6 +72,8 @@ final class WindowSwitcher {
     /// fixed template taking no drop.
     private enum ReorderKind { case columns, splits, floatsOnly }
     private var reorderKind: ReorderKind?
+    /// The tree as the row shows it, to try drops on.
+    private var reorderTree: Workspace?
     /// Whether a tiled window dragged away can show among floating ones.
     private var reorderFloatable = false
     /// The tiled cards, each window's frame in the capsule.
@@ -622,6 +625,7 @@ final class WindowSwitcher {
         default: return
         }
         reorderFloatable = showsFloats(for: workspace)
+        reorderTree = workspace
         reorderable = columns
         reorderKey = coordinator.treeKey(display.currentSpaceID)
         reorderAllowed = SwitcherReorder.allowed(columns) { workspace.pinSide(of: columns[$0][0]) != nil }
@@ -653,7 +657,7 @@ final class WindowSwitcher {
               items.indices.contains(index) else { return false }
         let id = items[index].id
         if shownFloats.contains(id) { return kind != .floatsOnly }
-        if kind != .columns, !reorderFloatable { return false }
+        if kind == .floatsOnly, !reorderFloatable { return false }
         guard let group = reorderable.firstIndex(where: { $0.contains(id) }) else { return false }
         return group >= allowed.lowerBound && group < allowed.upperBound
     }
@@ -713,24 +717,32 @@ final class WindowSwitcher {
         return CGRect(x: origin.x, y: primary - origin.y - size.height, width: size.width, height: size.height)
     }
 
-    /// Where a pointer at `point`, in the capsule, aims a card; nil over nowhere it can go.
-    private func aim(at point: CGPoint) -> SwitcherDropTarget? {
+    /// Where a pointer at `point`, in the capsule, aims the card of `id`; nil over nowhere it can go.
+    private func aim(_ id: WindowID, at point: CGPoint) -> SwitcherDropTarget? {
         guard let allowed = reorderAllowed else { return nil }
+        let floating = shownFloats.contains(id)
         switch reorderKind {
-        case .columns: return SwitcherReorder.target(at: point.x, spans: reorderSpans, allowed: allowed, divider: reorderDivider)
-        case .splits: return SwitcherReorder.target(at: point, cards: reorderCards, divider: reorderDivider)
+        case .columns where floating:
+            return SwitcherReorder.target(at: point.x, spans: reorderSpans, allowed: allowed, divider: reorderDivider)
+        case .columns:
+            // Only beside a pinned column: onto it would change what is pinned.
+            let cards = reorderCards.filter { reorderTree?.pinSide(of: $0.id) == nil }
+            return SwitcherReorder.target(at: point, cards: cards, spans: reorderSpans, allowed: allowed, divider: reorderDivider)
+        case .splits: return SwitcherReorder.target(at: point, cards: reorderCards, swaps: !floating, divider: reorderDivider)
         case .floatsOnly: return reorderDivider.flatMap { point.x >= $0 ? .float : nil }
         case nil: return nil
         }
     }
 
-    /// Whether a drop on `target` moves `id`: not where it is already, as a floating window among the floating ones, nor
-    /// a tiled window of a tree onto another, whose place a drag does not change.
+    /// Whether a drop on `target` moves `id`: not where it is already, as a floating window among the floating ones or a
+    /// tiled one just there in a stack, nor where the tree refuses.
     private func moves(_ id: WindowID, to target: SwitcherDropTarget) -> Bool {
         let floating = shownFloats.contains(id)
         switch target {
         case .float: return !floating
-        case .card(let onto, _): return floating && onto != id
+        case .card(let onto, let zone):
+            guard onto != id else { return false }
+            return floating || reorderTree.map { SwitcherReorder.changes($0, moving: id, onto: onto, zone) } == true
         case .column(let slot):
             return floating ? SwitcherReorder(inserting: id, among: reorderable, at: slot) != nil
                 : SwitcherReorder(moving: id, in: reorderable, to: slot) != nil
@@ -742,7 +754,8 @@ final class WindowSwitcher {
     private func dragMoved(to point: CGPoint) {
         guard let drag = dragging else { return }
         let local = CGPoint(x: point.x - origin.x, y: point.y - origin.y)
-        let target = aim(at: local).flatMap { moves(items[drag.index].id, to: $0) ? $0 : nil }
+        let id = items[drag.index].id
+        let target = aim(id, at: local).flatMap { moves(id, to: $0) ? $0 : nil }
         if let target, target != drag.target, config.haptic {
             tapTrackpad("window switcher drop gap", actuation: config.hapticStrength.actuation)
         }
@@ -753,8 +766,8 @@ final class WindowSwitcher {
         let marker: CGRect? = switch target {
         case .column(let slot):
             SwitcherReorder.markerX(slot, spans: reorderSpans, gap: gap).map { SwitcherView.markerLine(x: $0, span: span) }
-        case .card(let onto, let side):
-            reorderCards.first { $0.id == onto }.map { SwitcherReorder.half(of: $0.frame, side) }
+        case .card(let onto, let zone):
+            reorderCards.first { $0.id == onto }.map { SwitcherReorder.marked($0.frame, zone) }
         case .float: reorderFloatsEnd.map { SwitcherView.markerLine(x: $0 + gap / 2, span: span) }
         case nil: nil
         }
@@ -769,7 +782,7 @@ final class WindowSwitcher {
         let id = items[drag.index].id
         let moved = switch drag.target {
         case .column(let slot): shownFloats.contains(id) ? tile(id, at: slot) : reorder(id, to: slot)
-        case .card(let onto, let side): tile(id, beside: onto, side)
+        case .card(let onto, let zone): shownFloats.contains(id) ? tile(id, onto: onto, zone) : drop(id, onto: onto, zone)
         case .float: float(id)
         case nil: false
         }
@@ -795,20 +808,28 @@ final class WindowSwitcher {
     private func reorder(_ id: WindowID, to slot: Int) -> Bool {
         guard let move = SwitcherReorder(moving: id, in: reorderable, to: slot),
               let coordinator = AppState.shared.coordinator,
-              coordinator.reorder(id, beside: move.target, move.after ? .right : .left, in: reorderKey) else { return false }
+              coordinator.reorder(id, onto: move.target, .split(move.after ? .right : .left), in: reorderKey) else { return false }
         return refill(picking: id, coordinator)
     }
 
-    /// Tiles floating `id` in a column of its own at gap `slot` of the row's groups, as `tile(_:beside:_:)` does.
-    private func tile(_ id: WindowID, at slot: Int) -> Bool {
-        guard let move = SwitcherReorder(inserting: id, among: reorderable, at: slot) else { return false }
-        return tile(id, beside: move.target, move.after ? .right : .left)
+    /// Drops tiled `id` into `zone` of `target`, then fills the capsule afresh as `reorder` does. False where the tree
+    /// refuses.
+    private func drop(_ id: WindowID, onto target: WindowID, _ zone: DropZone) -> Bool {
+        guard let coordinator = AppState.shared.coordinator,
+              coordinator.reorder(id, onto: target, zone, in: reorderKey) else { return false }
+        return refill(picking: id, coordinator)
     }
 
-    /// Tiles floating `id` to `side` of `target`, then fills the capsule afresh as `reorder` does. False where it cannot.
-    private func tile(_ id: WindowID, beside target: WindowID, _ side: Direction) -> Bool {
+    /// Tiles floating `id` in a column of its own at gap `slot` of the row's groups, as `tile(_:onto:_:)` does.
+    private func tile(_ id: WindowID, at slot: Int) -> Bool {
+        guard let move = SwitcherReorder(inserting: id, among: reorderable, at: slot) else { return false }
+        return tile(id, onto: move.target, .split(move.after ? .right : .left))
+    }
+
+    /// Tiles floating `id` into `zone` of `target`, then fills the capsule afresh as `reorder` does. False where it cannot.
+    private func tile(_ id: WindowID, onto target: WindowID, _ zone: DropZone) -> Bool {
         guard let coordinator = AppState.shared.coordinator,
-              coordinator.tile(id, beside: target, side, in: reorderKey) else { return false }
+              coordinator.tile(id, onto: target, zone, in: reorderKey) else { return false }
         return refill(picking: id, coordinator)
     }
 

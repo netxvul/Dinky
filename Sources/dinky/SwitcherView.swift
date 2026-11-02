@@ -59,7 +59,7 @@ final class SwitcherView: NSView {
     private var dividers: [CALayer] = []
     private let glow = CALayer()
     private let ring = CALayer()
-    /// Where a dragged card would go: a line in a gap, or the half of a card it would take.
+    /// Where a dragged card would go: a line in a gap, or what of a card it would take.
     private let marker = CALayer()
     /// The line of a well opened for a drag with no floating window to show one (`openWell`).
     private let wellLine = CALayer()
@@ -209,8 +209,8 @@ final class SwitcherView: NSView {
         CGRect(x: (x - markerWidth / 2).rounded(), y: span.lowerBound, width: markerWidth, height: span.upperBound - span.lowerBound)
     }
 
-    /// The dragged card follows the pointer to `point`, and the marker goes to `marker`: `markerLine`, or a card's half
-    /// washed with its colour; none where nil, as over the place it came from.
+    /// The dragged card follows the pointer to `point`, and the marker goes to `marker`: `markerLine`, or what of a card
+    /// a drop takes, washed with its colour; none where nil, as over the place it came from.
     func drag(to point: CGPoint, marker frame: CGRect?) {
         guard let dragged else { return }
         CATransaction.begin()
