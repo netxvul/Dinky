@@ -462,6 +462,8 @@ public struct Switcher: Equatable {
     /// Whether the capsule shows for a workspace with a lone tiled window (on a free workspace, a lone window), the
     /// modifier held or the binding pressed.
     public var showSingle = true
+    /// Whether a row shows the floating windows over a tiled workspace after its tiled ones, past a line.
+    public var showFloating = true
     /// Whether each window's title shows under its card, or along its foot where another card sits below it.
     public var showTitles = true
     /// Whether each window has a letter key beside its title that jumps to it, and the letters, in reading order.
@@ -504,6 +506,7 @@ public struct Switcher: Equatable {
         }
         tilesStyle = try t.choice("tiles-style") ?? tilesStyle
         showSingle = try t.bool("show-single") ?? showSingle
+        showFloating = try t.bool("show-floating") ?? showFloating
         try t.done()
     }
 }

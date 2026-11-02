@@ -5,13 +5,16 @@ import CoreGraphics
 /// tiles do on screen, so a column of two stacked shows one over the other; the same padding on every side, as the
 /// map's grows with the corner radius. Each thumbnail is `thumbHeight` tall and as wide as its window's aspect gives,
 /// within `minThumbWidth` and `maxThumbWidth`, and a group shown as its tiles takes the room its tiles' bounding box
-/// would; a row too wide for `maxWidth` is scaled down whole.
+/// would; a row too wide for `maxWidth` is scaled down whole. The floating windows over a tiled workspace come last,
+/// `dividerGap` from its tiles with a line down the middle, as the workspace switcher parts its displays.
 public struct SwitcherLayout: Equatable {
     public static let thumbHeight: CGFloat = 100
     public static let minThumbWidth: CGFloat = 64
     public static let maxThumbWidth: CGFloat = 220
     public static let columnGap: CGFloat = 12
     public static let stackGap: CGFloat = 4
+    /// Between the tiled windows and the floating ones, a line down the middle.
+    public static let dividerGap: CGFloat = 29
     /// Points under the row for its windows' titles, when they show.
     public static let titleHeight: CGFloat = 18
     /// Points kept between the capsule and the screen's edges.
@@ -22,6 +25,8 @@ public struct SwitcherLayout: Equatable {
     public let size: CGSize
     /// Each window's thumbnail, in the order given.
     public let frames: [CGRect]
+    /// The lines between the tiled windows and the floating ones, a point wide and as tall as the thumbnails.
+    public let dividers: [CGRect]
 
     /// One group of the row: a strip's column, or a part of a tree's root.
     public enum Group: Equatable, Sendable {
@@ -45,13 +50,18 @@ public struct SwitcherLayout: Equatable {
     }
 
     /// `columns` holds each group's windows' width-to-height ratios, left to right, side by side.
-    public init(columns: [[CGFloat]], cornerRadius: CGFloat = 0, maxWidth: CGFloat, titles: Bool = false) {
-        self.init(groups: columns.map(Group.sideBySide), cornerRadius: cornerRadius, maxWidth: maxWidth, titles: titles)
+    public init(columns: [[CGFloat]], cornerRadius: CGFloat = 0, maxWidth: CGFloat, titles: Bool = false,
+                divideBefore: Int? = nil) {
+        self.init(groups: columns.map(Group.sideBySide), cornerRadius: cornerRadius, maxWidth: maxWidth, titles: titles,
+                  divideBefore: divideBefore)
     }
 
     /// `groups` left to right: a strip's columns, or the parts of a tree's root. With `titles`, the capsule is
-    /// `titleHeight` taller, for the titles under the thumbnails.
-    public init(groups: [Group], cornerRadius: CGFloat = 0, maxWidth: CGFloat, titles: Bool = false) {
+    /// `titleHeight` taller, for the titles under the thumbnails. `divideBefore` is the group the floating windows
+    /// start at, a line before it; nil, or at either end, for none.
+    public init(groups: [Group], cornerRadius: CGFloat = 0, maxWidth: CGFloat, titles: Bool = false,
+                divideBefore: Int? = nil) {
+        let divide = divideBefore.flatMap { $0 > 0 && $0 < groups.count ? $0 : nil }
         let padding = SwitcherMap.padding(cornerRadius: cornerRadius)
         func thumbWidth(_ aspect: CGFloat) -> CGFloat { min(max(Self.thumbHeight * aspect, Self.minThumbWidth), Self.maxThumbWidth) }
         // A thumbnail's width for each window side by side, or one for the slot a group's tiles share.
@@ -65,14 +75,20 @@ public struct SwitcherLayout: Equatable {
         }
         let gaps = CGFloat(max(groups.count - 1, 0)) * Self.columnGap
             + widths.reduce(0) { $0 + CGFloat(max($1.count - 1, 0)) } * Self.stackGap
+            + (divide == nil ? 0 : Self.dividerGap - Self.columnGap)
         let natural = widths.joined().reduce(0, +)
         let room = maxWidth - padding * 2 - gaps
         let scale = natural > room && natural > 0 ? max(room, 0) / natural : 1
         let height = (Self.thumbHeight * scale).rounded()
-        var frames: [CGRect] = []
+        var frames: [CGRect] = [], dividers: [CGRect] = []
         var x = padding
         for (c, column) in widths.enumerated() {
-            if c > 0 { x += Self.columnGap }
+            if c > 0, c == divide {
+                dividers.append(CGRect(x: (x + Self.dividerGap / 2).rounded() - 0.5, y: padding, width: 1, height: height))
+                x += Self.dividerGap
+            } else if c > 0 {
+                x += Self.columnGap
+            }
             for (w, width) in column.enumerated() {
                 if w > 0 { x += Self.stackGap }
                 // Down, so a row scaled to fit stays inside `maxWidth`.
@@ -86,6 +102,7 @@ public struct SwitcherLayout: Equatable {
         let tall = padding * 2 + height + (titles ? Self.titleHeight : 0)
         size = CGSize(width: max(total, tall), height: tall)
         self.frames = frames
+        self.dividers = dividers
     }
 
     /// `tiles` scaled from their bounding box into `slot`, `stackGap` apart where one meets another: an edge inside the

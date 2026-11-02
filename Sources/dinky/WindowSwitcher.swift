@@ -7,7 +7,9 @@ import DinkyPrivate
 // glass capsule of the workspace's windows shows over the pointer, with the focused one under it. A row for a
 // scrolling or accordion workspace, in strip or tree order, the windows of a column or a part of the root together,
 // picked by moving across; for a tiles or fixed workspace, with `tiles-style = 'map'`, a map of its tiles, picked by
-// moving onto one; for a free workspace, a row of the windows on it, left to right as they stand. Releasing the modifier focuses the window picked, which scrolls a strip to it. While it is up,
+// moving onto one; for a free workspace, a row of the windows on it, left to right as they stand. In a row, with
+// `show-floating`, the floating windows over the workspace come after its tiled ones, past a line, left to right as
+// they stand. Releasing the modifier focuses the window picked, which scrolls a strip to it. While it is up,
 // h, j, k, l and the arrows move the pick (`navigate`) and Return or Space focuses it at once, swallowed. Esc closes the
 // capsule without focusing anything. With `letter-keys`, each window carries a letter of `letters`, handed out as the
 // cards read left to right, drawn as a key beside its title, and its key focuses that window at once, swallowed, held
@@ -31,6 +33,8 @@ final class WindowSwitcher {
     /// nothing, as on a tree's focused tile.
     private var shownFree = false
     private var shownPick: WindowID = 0
+    /// The floating windows the capsule shows after a tiled workspace's own.
+    private var shownFloats: Set<WindowID> = []
     /// The display the capsule shows a workspace of.
     private var shownDisplay = ""
     private var observingSpaces = false
@@ -223,9 +227,13 @@ final class WindowSwitcher {
               let coordinator = AppState.shared.coordinator, let placement = coordinator.placements[id] else { return }
         if let workspace = placement.space.flatMap({ coordinator.workspaces[$0] }) {
             guard shows(for: workspace), !glancesOnly || kind(of: workspace) == .scrolling else { return }
+        } else if let window = coordinator.model.windows[id], isFreeUserSpace(window.spaceID, coordinator) {
+            guard !glancesOnly, config.layouts.contains(.free) else { return }
         } else {
-            guard !glancesOnly, config.layouts.contains(.free), let window = coordinator.model.windows[id],
-                  isFreeUserSpace(window.spaceID, coordinator) else { return }
+            // A floating window over a tiled workspace, which shows after its tiles; a glance shows none.
+            guard placement.floating, !glancesOnly, let window = coordinator.model.windows[id],
+                  let workspace = coordinator.workspaces[coordinator.treeKey(window.spaceID)],
+                  showsFloats(for: workspace) else { return }
         }
         Thumbnails.shared.refreshSoon(id, scale: NSScreen.main?.backingScaleFactor ?? 2)
     }
@@ -237,15 +245,31 @@ final class WindowSwitcher {
         config.layouts.contains(kind(of: workspace))
     }
 
+    /// Whether the workspace shows as a map, its tiles where they are, not a row.
+    private func showsMap(of workspace: Workspace) -> Bool {
+        config.tilesStyle == .map && [.tiles, .fixed].contains(kind(of: workspace))
+    }
+
+    /// Whether the capsule for the workspace, held or from a binding, shows the floating windows over it after its
+    /// own: with `show-floating`, in a row. A map has no end to put them at.
+    private func showsFloats(for workspace: Workspace) -> Bool {
+        config.showFloating && shows(for: workspace) && !showsMap(of: workspace)
+    }
+
     /// Whether the Space is a free workspace: a display's user Space, a native full-screen one being no workspace.
     private func isFreeUserSpace(_ space: UInt64, _ coordinator: Coordinator) -> Bool {
         coordinator.displays.display(containingSpace: space)?.userSpaces.contains(space) == true && coordinator.isFree(space)
     }
 
-    /// The windows a free Space shows, left to right by their middles, then top to bottom.
-    private func freeWindows(on space: UInt64, _ coordinator: Coordinator) -> [WindowID] {
+    /// The windows a free Space shows, left to right by their middles, then top to bottom; with `floating`, only
+    /// those dinky floats, as over a tiled workspace.
+    private func freeWindows(on space: UInt64, floating: Bool = false, _ coordinator: Coordinator) -> [WindowID] {
         coordinator.model.windows.values
-            .filter { $0.spaceID == space && $0.isNormal && !$0.isMinimized && coordinator.placements[$0.id] != nil }
+            .filter { window in
+                guard window.spaceID == space, window.isNormal, !window.isMinimized,
+                      let placement = coordinator.placements[window.id] else { return false }
+                return !floating || placement.floating
+            }
             .sorted { ($0.frame.midX, $0.frame.minY, $0.id) < ($1.frame.midX, $1.frame.minY, $1.id) }
             .map(\.id)
     }
@@ -347,15 +371,24 @@ final class WindowSwitcher {
         let free = isFreeUserSpace(display.currentSpaceID, coordinator)
         let workspace = free ? nil : coordinator.workspace(on: display)
         let tiles = workspace?.tileFrames ?? [:]
-        let columns: [[WindowID]]
+        var columns: [[WindowID]]
+        // The floating windows over a tiled workspace, after its own past a line; none in a glance, which is of where
+        // the strip went.
+        var floats: [WindowID] = []
         if let workspace {
             guard shows(for: workspace) else { return false }
             columns = workspace.root.children.map { $0.windows.filter { coordinator.model.windows[$0] != nil && tiles[$0] != nil } }
                 .filter { !$0.isEmpty }
+            if !glancing, showsFloats(for: workspace) {
+                let tiled = Set(columns.joined())
+                floats = freeWindows(on: display.currentSpaceID, floating: true, coordinator).filter { !tiled.contains($0) }
+            }
         } else {
             guard free, config.layouts.contains(.free) else { return false }
             columns = freeWindows(on: display.currentSpaceID, coordinator).map { [$0] }
         }
+        let divideBefore = floats.isEmpty ? nil : columns.count
+        columns += floats.map { [$0] }
         let ids = columns.flatMap { $0 }
         guard ids.count >= (config.showSingle ? 1 : 2) else { return false }
         let titles = config.showTitles ? WindowTitles.known(ids) : [:]
@@ -365,11 +398,14 @@ final class WindowSwitcher {
             return SwitcherItem(id: id, app: window.appName ?? running.name, icon: running.icon, title: titles[id] ?? "")
         }
         let visible = display.visibleArea, maxWidth = (visible.width * 0.8).rounded()
-        // On a free workspace, the focused window, else the frontmost one there.
-        let focused = workspace.map(\.focused) ?? (ids.contains(coordinator.focusedWindow) ? coordinator.focusedWindow
-            : dinky_space_window_ids(display.currentSpaceID, false).lazy.map(\.uint32Value).first(where: ids.contains))
+        // On a free workspace, the focused window, else the frontmost one there; on a tiled one, a floating window
+        // focused over it, else its own focused one.
+        let focusedFloat = floats.isEmpty ? nil : Optional(coordinator.focusedWindow).flatMap { floats.contains($0) ? $0 : nil }
+        let focused = focusedFloat ?? workspace.map(\.focused)
+            ?? (ids.contains(coordinator.focusedWindow) ? coordinator.focusedWindow
+                : dinky_space_window_ids(display.currentSpaceID, false).lazy.map(\.uint32Value).first(where: ids.contains))
         let picked = pick.flatMap { ids.firstIndex(of: $0) } ?? focused.flatMap { ids.firstIndex(of: $0) } ?? 0
-        let mapped = config.tilesStyle == .map && workspace.map { [.tiles, .fixed].contains(kind(of: $0)) } == true
+        let mapped = workspace.map { showsMap(of: $0) } == true
         if mapped, let workspace {
             let map = SwitcherMap(tiles: ids.map { tiles[$0]! }, bounds: workspace.bounds,
                                   cornerRadius: CGFloat(config.cornerRadius), maxWidth: maxWidth)
@@ -384,7 +420,7 @@ final class WindowSwitcher {
                 }, tiles: ids.compactMap { tiles[$0] })
             }
             let row = SwitcherLayout(groups: groups, cornerRadius: CGFloat(config.cornerRadius), maxWidth: maxWidth,
-                                     titles: config.showTitles || config.letterKeys)
+                                     titles: config.showTitles || config.letterKeys, divideBefore: divideBefore)
             arrangement = .row(row)
             place(row.size, visible: visible, atPointer: row.origin(anchor: picked, pointer: pointer, visible: visible))
         }
@@ -401,8 +437,10 @@ final class WindowSwitcher {
         view.animates = animates
         view.highlight = config.highlightColor
         view.frame = CGRect(origin: .zero, size: arrangement.size)
+        let dividers: [CGRect]
+        if case .row(let row) = arrangement { dividers = row.dividers } else { dividers = [] }
         view.show(items, frames: arrangement.frames, style: mapped ? .map : .row, picked: picked, scale: scale,
-                  titles: config.showTitles, roomUnder: !mapped)
+                  titles: config.showTitles, roomUnder: !mapped, dividers: dividers)
         present()
         if config.showTitles { askTitles() }
 
@@ -417,6 +455,7 @@ final class WindowSwitcher {
         shownSpace = display.currentSpaceID
         shownFree = free
         shownPick = ids[picked]
+        shownFloats = Set(floats)
         shownDisplay = display.uuid
         return true
     }
@@ -474,10 +513,16 @@ final class WindowSwitcher {
         let id = items[view.picked].id
         if shownFree {
             guard id != shownPick, coordinator.model.windows[id]?.spaceID == space, coordinator.commandFocusedWindow != id else { return }
+        } else if shownFloats.contains(id) {
+            // A floating window over the workspace, still floating there.
+            guard coordinator.placements[id]?.floating == true, coordinator.model.windows[id]?.spaceID == space,
+                  coordinator.commandFocusedWindow != id else { return }
         } else {
             // A strip across two displays is the tree of either display's Space of it.
             let tree = coordinator.workspaces[coordinator.treeKey(space)]
-            guard tree?.contains(id) == true, tree?.focused != id else { return }
+            // Its focused window too while a floating window over it has focus.
+            guard tree?.contains(id) == true,
+                  tree?.focused != id || (!shownFloats.isEmpty && coordinator.commandFocusedWindow != id) else { return }
         }
         coordinator.focus(id)
     }

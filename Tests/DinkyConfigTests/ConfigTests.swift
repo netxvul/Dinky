@@ -212,6 +212,7 @@ struct ConfigTests {
         #expect(defaults.cornerRadius == 52)
         #expect(defaults.tilesStyle == .map)
         #expect(defaults.showSingle)
+        #expect(defaults.showFloating)
         #expect(defaults.showTitles)
         #expect(defaults.position == .auto)
         let switcher = try Config.parse("""
@@ -223,6 +224,7 @@ struct ConfigTests {
             corner-radius = 12
             tiles-style = 'row'
             show-single = false
+            show-floating = false
             show-titles = false
             position = 'bottom'
             """).windowSwitcher
@@ -233,6 +235,7 @@ struct ConfigTests {
         #expect(switcher.cornerRadius == 12)
         #expect(switcher.tilesStyle == .row)
         #expect(!switcher.showSingle)
+        #expect(!switcher.showFloating)
         #expect(!switcher.showTitles)
         #expect(switcher.position == .bottom)
         assertError("[window-switcher]\nposition = 'left'\n", path: "window-switcher.position", line: 2, contains: "'auto', 'center', 'top', 'bottom', 'mouse'")

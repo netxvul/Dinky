@@ -20,8 +20,8 @@ struct SwitcherItem {
 // window title sits under it, or along its foot on a dark band where another card sits right below it, as on a map or
 // over a column's lower window. A window with a letter has it drawn as a key (`Keycap`) at the title's right: under
 // the card, the title and the key centred together; on a band, the key at its right end; with no title, the key alone
-// in its place. The picked card's key takes the highlight colour. Layers, in the frames the caller gives. Main thread
-// only.
+// in its place. The picked card's key takes the highlight colour. A line of the separator colour parts a row's tiled
+// windows from the floating ones after them. Layers, in the frames the caller gives. Main thread only.
 final class SwitcherView: NSView {
     /// How the cards sit: a row has room around each card, a map's cells only a narrow gap.
     struct Style {
@@ -53,6 +53,8 @@ final class SwitcherView: NSView {
     private var frames: [CGRect] = []
     private var style = Style.row
     private var cards: [Card] = []
+    /// The lines between a row's tiled windows and its floating ones.
+    private var dividers: [CALayer] = []
     private let glow = CALayer()
     private let ring = CALayer()
     private(set) var picked = 0
@@ -85,9 +87,10 @@ final class SwitcherView: NSView {
 
     /// Lays out `items` in `frames` for a new showing, with `picked` picked and no animation. With `titles`, a card
     /// with no other card right below it has its title under it where there is `roomUnder` the cards, the others on a
-    /// band along their foot; an item's letter goes with its title, or alone in its place.
+    /// band along their foot; an item's letter goes with its title, or alone in its place. A line goes in each of
+    /// `dividers`.
     func show(_ items: [SwitcherItem], frames: [CGRect], style: Style, picked: Int, scale: CGFloat, titles: Bool,
-              roomUnder: Bool) {
+              roomUnder: Bool, dividers: [CGRect] = []) {
         self.items = items
         self.frames = frames
         self.style = style
@@ -97,6 +100,13 @@ final class SwitcherView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         cards.forEach { $0.root.removeFromSuperlayer() }
+        self.dividers.forEach { $0.removeFromSuperlayer() }
+        self.dividers = dividers.map { frame in
+            let line = CALayer()
+            line.frame = frame
+            layer?.addSublayer(line)
+            return line
+        }
         let radius = style.cardRadius * style.pickedScale + Self.ringOutset
         glow.cornerRadius = radius
         ring.cornerRadius = radius
@@ -212,6 +222,7 @@ final class SwitcherView: NSView {
             let highlight = highlight.nsColor
             glow.backgroundColor = highlight.fading(to: 0.22).cgColor
             ring.borderColor = highlight.cgColor
+            for line in dividers where only == nil { line.backgroundColor = NSColor.separatorColor.cgColor }
             for (i, card) in cards.enumerated() where only?.contains(i) ?? true {
                 card.thumb.backgroundColor = NSColor.labelColor.withAlphaComponent(0.1).cgColor
                 card.thumb.borderColor = NSColor.separatorColor.cgColor

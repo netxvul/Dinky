@@ -199,6 +199,7 @@ struct SchemaTests {
         corner-radius = 20
         tiles-style = 'row'
         show-single = false
+        show-floating = false
         show-titles = false
         letter-keys = false
         letters = 'qwerty'
