@@ -21,7 +21,9 @@ struct SwitcherItem {
 // over a column's lower window. A window with a letter has it drawn as a key (`Keycap`) at the title's right: under
 // the card, the title and the key centred together; on a band, the key at its right end; with no title, the key alone
 // in its place. The picked card's key takes the highlight colour. A line of the separator colour parts a row's tiled
-// windows from the floating ones after them. Layers, in the frames the caller gives. Main thread only.
+// windows from the floating ones after them. A card being dragged lifts off the row and follows the pointer, the ring
+// and glow put away, and a line of the highlight colour marks the gap it would go to. Layers, in the frames the caller
+// gives. Main thread only.
 final class SwitcherView: NSView {
     /// How the cards sit: a row has room around each card, a map's cells only a narrow gap.
     struct Style {
@@ -57,6 +59,12 @@ final class SwitcherView: NSView {
     private var dividers: [CALayer] = []
     private let glow = CALayer()
     private let ring = CALayer()
+    /// The gap a dragged card would go to.
+    private let marker = CALayer()
+    /// The card being dragged, and where on it the pointer took it, from its middle.
+    private var dragged: (index: Int, grab: CGPoint)?
+    private static let markerWidth: CGFloat = 3
+    private static let liftScale: CGFloat = 1.06
     private(set) var picked = 0
     /// The cards whose pick changed since they were last placed, and whether placing them is due.
     private var repicked: Set<Int> = []
@@ -80,6 +88,10 @@ final class SwitcherView: NSView {
         }
         ring.borderWidth = Self.ringWidth
         ring.zPosition = 2
+        marker.cornerRadius = Self.markerWidth / 2
+        marker.zPosition = 4
+        marker.isHidden = true
+        layer?.addSublayer(marker)
     }
 
     @available(*, unavailable)
@@ -88,17 +100,21 @@ final class SwitcherView: NSView {
     /// Lays out `items` in `frames` for a new showing, with `picked` picked and no animation. With `titles`, a card
     /// with no other card right below it has its title under it where there is `roomUnder` the cards, the others on a
     /// band along their foot; an item's letter goes with its title, or alone in its place. A line goes in each of
-    /// `dividers`.
+    /// `dividers`. A window in `slidingFrom` slides from that frame to its own, as after its column moved.
     func show(_ items: [SwitcherItem], frames: [CGRect], style: Style, picked: Int, scale: CGFloat, titles: Bool,
-              roomUnder: Bool, dividers: [CGRect] = []) {
+              roomUnder: Bool, dividers: [CGRect] = [], slidingFrom: [WindowID: CGRect] = [:]) {
         self.items = items
         self.frames = frames
         self.style = style
         self.picked = picked
         repicked = []
         placing = false
+        dragged = nil
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+        marker.isHidden = true
+        glow.opacity = 1
+        ring.opacity = 1
         cards.forEach { $0.root.removeFromSuperlayer() }
         self.dividers.forEach { $0.removeFromSuperlayer() }
         self.dividers = dividers.map { frame in
@@ -124,11 +140,113 @@ final class SwitcherView: NSView {
         applyColors()
         place(animated: false)
         CATransaction.commit()
+        guard animates else { return }
+        for (item, card) in zip(items, cards) {
+            guard let from = slidingFrom[item.id] else { continue }
+            Self.spring(card.root, "position", from: CGPoint(x: from.midX, y: from.midY), to: card.root.position)
+        }
     }
 
-    /// Picks another card, springing the ring over to it.
+    /// Every card's frame as it shows now, by its window: a dragged one where the pointer has it.
+    func shownFrames() -> [WindowID: CGRect] {
+        var frames: [WindowID: CGRect] = [:]
+        for (item, card) in zip(items, cards) {
+            let layer = card.root.presentation() ?? card.root
+            let size = card.root.bounds.size
+            frames[item.id] = CGRect(x: layer.position.x - size.width / 2, y: layer.position.y - size.height / 2,
+                                     width: size.width, height: size.height)
+        }
+        return frames
+    }
+
+    /// Lifts card `index` off the row to follow the pointer, taken at `point`, picked; the ring and glow go.
+    func beginDrag(_ index: Int, at point: CGPoint) {
+        guard cards.indices.contains(index) else { return }
+        if index != picked {
+            repicked.formUnion([picked, index])
+            picked = index
+            applyColors(only: Array(repicked))
+            repicked = []
+        }
+        dragged = (index, CGPoint(x: point.x - frames[index].midX, y: point.y - frames[index].midY))
+        CATransaction.begin()
+        CATransaction.setDisableActions(!animates)
+        CATransaction.setAnimationDuration(0.15)
+        for (i, card) in cards.enumerated() {
+            card.root.opacity = i == index ? 0.95 : Self.dimmed
+            card.root.transform = i == index ? CATransform3DMakeScale(Self.liftScale, Self.liftScale, 1) : CATransform3DIdentity
+            card.root.zPosition = i == index ? 5 : 0
+        }
+        let lifted = cards[index].root
+        lifted.shadowColor = NSColor.black.cgColor
+        lifted.shadowOpacity = 0.35
+        lifted.shadowRadius = 10
+        lifted.shadowOffset = CGSize(width: 0, height: 6)
+        glow.opacity = 0
+        ring.opacity = 0
+        CATransaction.commit()
+    }
+
+    /// The dragged card follows the pointer to `point`, and the line goes to `markerX` across, between the cards in
+    /// `span` up and down; none where nil, as over the gap it came from.
+    func drag(to point: CGPoint, markerX: CGFloat?, span: ClosedRange<CGFloat>) {
+        guard let dragged else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        cards[dragged.index].root.position = CGPoint(x: point.x - dragged.grab.x, y: point.y - dragged.grab.y)
+        CATransaction.commit()
+        guard let x = markerX else {
+            marker.isHidden = true
+            return
+        }
+        let frame = CGRect(x: (x - Self.markerWidth / 2).rounded(), y: span.lowerBound, width: Self.markerWidth,
+                           height: span.upperBound - span.lowerBound)
+        CATransaction.begin()
+        // Straight there when it shows, sliding from gap to gap after.
+        CATransaction.setDisableActions(marker.isHidden || !animates)
+        CATransaction.setAnimationDuration(0.12)
+        marker.frame = frame
+        marker.isHidden = false
+        CATransaction.commit()
+    }
+
+    /// The dragged card goes back to its place in the row, the ring and glow with it.
+    func endDrag() {
+        guard let dragged else { return }
+        self.dragged = nil
+        let card = cards[dragged.index].root
+        let to = CGPoint(x: frames[dragged.index].midX, y: frames[dragged.index].midY)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        marker.isHidden = true
+        let from = card.position
+        card.position = to
+        card.shadowOpacity = 0
+        glow.opacity = 1
+        ring.opacity = 1
+        CATransaction.commit()
+        if animates { Self.spring(card, "position", from: from, to: to) }
+        CATransaction.begin()
+        place(animated: animates)
+        CATransaction.commit()
+    }
+
+    /// Springs `layer`'s point `key` from `from` to `to`, where it is set already.
+    private static func spring(_ layer: CALayer, _ key: String, from: CGPoint, to: CGPoint) {
+        guard from != to else { return }
+        let spring = CASpringAnimation(keyPath: key)
+        spring.mass = 1
+        spring.stiffness = 320
+        spring.damping = 26
+        spring.fromValue = NSValue(point: from)
+        spring.toValue = NSValue(point: to)
+        spring.duration = spring.settlingDuration
+        layer.add(spring, forKey: key)
+    }
+
+    /// Picks another card, springing the ring over to it. Not while a card is dragged, which is the one picked.
     func pick(_ index: Int) {
-        guard index != picked, cards.indices.contains(index) else { return }
+        guard dragged == nil, index != picked, cards.indices.contains(index) else { return }
         repicked.formUnion([picked, index])
         picked = index
         guard !placing else { return }
@@ -222,6 +340,7 @@ final class SwitcherView: NSView {
             let highlight = highlight.nsColor
             glow.backgroundColor = highlight.fading(to: 0.22).cgColor
             ring.borderColor = highlight.cgColor
+            marker.backgroundColor = highlight.cgColor
             for line in dividers where only == nil { line.backgroundColor = NSColor.separatorColor.cgColor }
             for (i, card) in cards.enumerated() where only?.contains(i) ?? true {
                 card.thumb.backgroundColor = NSColor.labelColor.withAlphaComponent(0.1).cgColor

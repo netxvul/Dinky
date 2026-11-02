@@ -200,6 +200,7 @@ struct SchemaTests {
         tiles-style = 'row'
         show-single = false
         show-floating = false
+        drag-to-reorder = false
         show-titles = false
         letter-keys = false
         letters = 'qwerty'

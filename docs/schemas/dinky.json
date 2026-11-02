@@ -444,6 +444,11 @@
           "default": true,
           "description": "Whether a row shows the floating windows over a tiled workspace after its tiled ones, past a line. Not on a map, nor in a glance."
         },
+        "drag-to-reorder": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether a scrolling workspace's row reorders its strip: drag a card to another gap, or press Shift with h or l, and its window's column moves there."
+        },
         "show-titles": {
           "type": "boolean",
           "description": "Whether each window's title shows under its card, as [switcher]'s show-titles; [switcher]'s when left out."

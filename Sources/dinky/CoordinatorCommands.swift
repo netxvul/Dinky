@@ -200,6 +200,23 @@ extension Coordinator {
         return result
     }
 
+    /// The window switcher's reorder: `id` into a column of its own beside `target`'s, after it or before, in the tree
+    /// of `key`, at the width its column had, as a drop there puts it, and applied; focus stays where it was, and the
+    /// strip with it. False where the strip refuses, or either window is not in that tree.
+    func reorder(_ id: WindowID, beside target: WindowID, after: Bool, in key: UInt64) -> Bool {
+        guard let tree = workspaces[key], tree.contains(id), tree.contains(target) else { return false }
+        let pinned = Set(tree.pinnedWindows)
+        let moved = command(onSpace: key) { workspace -> Bool in
+            let focused = workspace.focused
+            guard workspace.drop(id, onto: target, .split(after ? .right : .left)) else { return false }
+            if let focused, focused != id { workspace.focus(focused) }
+            return true
+        } ?? false
+        // A pin the move took apart was unpinned by hand: its rule leaves it so.
+        unpinnedByHand.formUnion(pinned.subtracting(workspaces[key]?.pinnedWindows ?? []))
+        return moved
+    }
+
     /// Moves a window dinky just moved to another Space into that Space's tree now, rather than on the next event.
     /// macOS leaves keyboard focus with the moved window, so unless we are about to follow it, focus the window
     /// that took its place in the tree it left.

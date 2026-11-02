@@ -2,12 +2,15 @@
 /// Shift-Tab step through everything, the arrows and h, j, k, l move the pick as vim's do (h left, j down, k up, l
 /// right; along a row, h and k the one before, j and l the one after), a digit picks what it numbers, 0 being 10, and
 /// any other letter jumps to the window it is drawn on, by the key's place on a US keyboard as bindings go.
-/// With Command, the arrows and h, j, k, l are left alone, for whatever they do there.
+/// With Shift, left and right, h and l, move the picked window itself (`reorder`), where the switcher can; up and down
+/// still move the pick. With Command, the arrows and h, j, k, l are left alone, for whatever they do there.
 public enum SwitcherKey: Equatable, Sendable {
     case dismiss
     case confirm
     case cycle(forward: Bool)
     case move(Direction)
+    /// Shift with left or right: the picked window moves that way, forward being right.
+    case reorder(forward: Bool)
     case number(Int)
     case letter(Character)
 
@@ -20,7 +23,7 @@ public enum SwitcherKey: Equatable, Sendable {
         } else if keyCode == 48 {
             self = .cycle(forward: !shift)
         } else if let direction = Self.directions[keyCode], !command {
-            self = .move(direction)
+            self = shift && direction.orientation == .horizontal ? .reorder(forward: direction == .right) : .move(direction)
         } else if let n = Self.digits[keyCode] {
             self = .number(n)
         } else if let letter = Self.letters[keyCode] {

@@ -9,7 +9,10 @@ import DinkyPrivate
 // picked by moving across; for a tiles or fixed workspace, with `tiles-style = 'map'`, a map of its tiles, picked by
 // moving onto one; for a free workspace, a row of the windows on it, left to right as they stand. In a row, with
 // `show-floating`, the floating windows over the workspace come after its tiled ones, past a line, left to right as
-// they stand. Releasing the modifier focuses the window picked, which scrolls a strip to it. While it is up,
+// they stand. Releasing the modifier focuses the window picked, which scrolls a strip to it. With `drag-to-reorder`, a
+// scrolling workspace's card dragged to another gap between the cards moves its window's column there in the strip as
+// it is let go, and Shift with left or right, h or l, moves the picked one a column; the capsule stays up, filled
+// afresh, the window still picked. A click on a card takes it then, held up by the modifier too. While it is up,
 // h, j, k, l and the arrows move the pick (`navigate`) and Return or Space focuses it at once, swallowed. Esc closes the
 // capsule without focusing anything. With `letter-keys`, each window carries a letter of `letters`, handed out as the
 // cards read left to right, drawn as a key beside its title, and its key focuses that window at once, swallowed, held
@@ -50,6 +53,15 @@ final class WindowSwitcher {
     private static let longestWait: UInt64 = 1_500_000_000
 
     private var items: [SwitcherItem] = []
+    /// The row's tiled groups, a scrolling workspace's columns left to right, while `drag-to-reorder` can move them:
+    /// the tree they are in, the gaps a window can go to between them (`SwitcherReorder.allowed`), and each group's
+    /// extent across the capsule. None for any other workspace.
+    private var reorderable: [[WindowID]] = []
+    private var reorderKey: UInt64 = 0
+    private var reorderAllowed: ClosedRange<Int>?
+    private var reorderSpans: [ClosedRange<CGFloat>] = []
+    /// The card being dragged, and the gap it aims at; nil over its own place.
+    private var dragging: (index: Int, slot: Int?)?
     /// How the capsule shows the windows: a row, picked across, or a map, picked in two dimensions.
     private enum Arrangement {
         case row(SwitcherLayout)
@@ -120,6 +132,16 @@ final class WindowSwitcher {
         hold.cycle = { [unowned self] forward in
             view.pick(SwitcherLayout.step(view.picked, count: items.count, toward: forward ? .right : .left))
         }
+        hold.pressable = { [unowned self] in config.dragToReorder && waiting == nil && glanceEnd == nil }
+        hold.canDrag = { [unowned self] in draggableGroup(at: $0) != nil }
+        hold.dragBegan = { [unowned self] in dragBegan(at: $0) }
+        hold.dragMoved = { [unowned self] in dragMoved(to: $0) }
+        hold.dropped = { [unowned self] in dropped(at: $0) }
+        hold.dragCancelled = { [unowned self] in
+            dragging = nil
+            view.endDrag()
+        }
+        hold.reorder = { [unowned self] in reorderPicked(forward: $0) }
     }
 
     var isShowing: Bool { hold.isShowing }
@@ -365,7 +387,8 @@ final class WindowSwitcher {
     /// else only one without a picture yet. False, and nothing shown, when the workspace's layout is not in `layouts`
     /// or it has too few windows. See `show()`.
     private func fill(_ display: Display, pointer: CGPoint, pick: WindowID?, fresh: Bool,
-                      _ coordinator: Coordinator) -> Bool {
+                      _ coordinator: Coordinator, keeping kept: (origin: CGPoint, size: CGSize)? = nil,
+                      slidingFrom: [WindowID: CGRect] = [:]) -> Bool {
         guard let screen = screen(of: display.id) else { return false }
         // A free workspace has no tree, or one kept from before it was free.
         let free = isFreeUserSpace(display.currentSpaceID, coordinator)
@@ -388,6 +411,7 @@ final class WindowSwitcher {
             columns = freeWindows(on: display.currentSpaceID, coordinator).map { [$0] }
         }
         let divideBefore = floats.isEmpty ? nil : columns.count
+        let tiledColumns = workspace == nil ? [] : columns
         columns += floats.map { [$0] }
         let ids = columns.flatMap { $0 }
         guard ids.count >= (config.showSingle ? 1 : 2) else { return false }
@@ -424,8 +448,21 @@ final class WindowSwitcher {
             arrangement = .row(row)
             place(row.size, visible: visible, atPointer: row.origin(anchor: picked, pointer: pointer, visible: visible))
         }
+        // Filled afresh in place, as after a reorder: where it was, kept about its middle should it have grown or
+        // shrunk, and inside the display.
+        var slidingFrom = slidingFrom
+        if let kept {
+            let size = arrangement.size, margin = SwitcherLayout.screenMargin
+            let x = kept.origin.x + (kept.size.width - size.width) / 2
+            origin = CGPoint(x: min(max(x, visible.minX + margin), max(visible.maxX - size.width - margin, visible.minX + margin)).rounded(),
+                             y: kept.origin.y)
+            let dx = kept.origin.x - origin.x, dy = kept.origin.y - origin.y
+            slidingFrom = slidingFrom.mapValues { $0.offsetBy(dx: dx, dy: dy) }
+        }
         startPointer = pointer
         pointerMoved = false
+        dragging = nil
+        noteReorderable(workspace, tiledColumns, mapped: mapped, display: display, coordinator)
 
         if config.letterKeys {
             // As the cards read, left to right.
@@ -440,7 +477,7 @@ final class WindowSwitcher {
         let dividers: [CGRect]
         if case .row(let row) = arrangement { dividers = row.dividers } else { dividers = [] }
         view.show(items, frames: arrangement.frames, style: mapped ? .map : .row, picked: picked, scale: scale,
-                  titles: config.showTitles, roomUnder: !mapped, dividers: dividers)
+                  titles: config.showTitles, roomUnder: !mapped, dividers: dividers, slidingFrom: slidingFrom)
         present()
         if config.showTitles { askTitles() }
 
@@ -527,6 +564,106 @@ final class WindowSwitcher {
         if !coordinator.focusStripOverFloats(id) { coordinator.focus(id) }
     }
 
+    // MARK: Reordering
+
+    /// Notes what the row just filled can reorder: a scrolling workspace's columns, `columns`, shown as a row and not
+    /// in a glance, with `drag-to-reorder`; nothing for any other.
+    private func noteReorderable(_ workspace: Workspace?, _ columns: [[WindowID]], mapped: Bool, display: Display,
+                                 _ coordinator: Coordinator) {
+        reorderable = []
+        reorderAllowed = nil
+        reorderSpans = []
+        guard config.dragToReorder, !glancing, !mapped, let workspace, kind(of: workspace) == .scrolling,
+              !columns.isEmpty else { return }
+        reorderable = columns
+        reorderKey = coordinator.treeKey(display.currentSpaceID)
+        reorderAllowed = SwitcherReorder.allowed(columns) { workspace.pinSide(of: columns[$0][0]) != nil }
+        // The tiled groups come first among the cards, each group's together.
+        let frames = arrangement.frames
+        var index = 0
+        reorderSpans = columns.map { group in
+            let box = frames[index..<(index + group.count)].reduce(CGRect.null) { $0.union($1) }
+            index += group.count
+            return box.minX...box.maxX
+        }
+    }
+
+    /// The card at `point`, in global coordinates with a top-left origin.
+    private func card(at point: CGPoint) -> Int? {
+        arrangement.index(at: CGPoint(x: point.x - origin.x, y: point.y - origin.y))
+    }
+
+    /// The group of the card at `point` where dragging it can move it: a column of the band, not pinned, nor a
+    /// floating window.
+    private func draggableGroup(at point: CGPoint) -> Int? {
+        guard let allowed = reorderAllowed, let index = card(at: point), items.indices.contains(index) else { return nil }
+        let id = items[index].id
+        guard let group = reorderable.firstIndex(where: { $0.contains(id) }),
+              group >= allowed.lowerBound, group < allowed.upperBound else { return nil }
+        return group
+    }
+
+    private func dragBegan(at point: CGPoint) {
+        guard let index = card(at: point), items.indices.contains(index) else { return }
+        dragging = (index, nil)
+        view.beginDrag(index, at: CGPoint(x: point.x - origin.x, y: point.y - origin.y))
+        if config.haptic { tapTrackpad("window switcher card lifted", actuation: config.hapticStrength.actuation) }
+    }
+
+    /// The dragged card goes with the pointer, and the line to the gap it aims at, none over its own place.
+    private func dragMoved(to point: CGPoint) {
+        guard let drag = dragging, let allowed = reorderAllowed else { return }
+        let local = CGPoint(x: point.x - origin.x, y: point.y - origin.y)
+        let slot = SwitcherReorder.slot(at: local.x, spans: reorderSpans, allowed: allowed)
+        let moves = SwitcherReorder(moving: items[drag.index].id, in: reorderable, to: slot) != nil
+        if moves, slot != drag.slot, config.haptic {
+            tapTrackpad("window switcher drop gap", actuation: config.hapticStrength.actuation)
+        }
+        dragging = (drag.index, moves ? slot : nil)
+        let frames = arrangement.frames
+        let top = frames.map(\.minY).min() ?? 0, bottom = frames.map(\.maxY).max() ?? 0
+        view.drag(to: local, markerX: moves ? SwitcherReorder.markerX(slot, spans: reorderSpans, gap: SwitcherLayout.columnGap) : nil,
+                  span: top...max(bottom, top))
+    }
+
+    /// The dragged card let go: its window's column goes to the gap it aimed at, or the card back to its place.
+    private func dropped(at point: CGPoint) {
+        dragMoved(to: point)
+        guard let drag = dragging else { return }
+        dragging = nil
+        guard let slot = drag.slot, reorder(items[drag.index].id, to: slot) else { return view.endDrag() }
+    }
+
+    /// Shift with left or right: the picked window a column that way, as `move` would. True for a window of a strip
+    /// shown, moved or not; false for anything else, whose pick moves instead.
+    private func reorderPicked(forward: Bool) -> Bool {
+        guard dragging == nil, let allowed = reorderAllowed, items.indices.contains(view.picked) else { return false }
+        let id = items[view.picked].id
+        guard let group = reorderable.firstIndex(where: { $0.contains(id) }) else { return false }
+        if group >= allowed.lowerBound, group < allowed.upperBound,
+           let slot = SwitcherReorder.step(id, in: reorderable, forward: forward, allowed: allowed) {
+            _ = reorder(id, to: slot)
+        }
+        return true
+    }
+
+    /// Moves `id` into a column of its own at gap `slot` of the row's groups, then fills the capsule afresh where it
+    /// is, `id` picked, the cards sliding from where they were. False where it is there already or the strip refuses.
+    private func reorder(_ id: WindowID, to slot: Int) -> Bool {
+        guard let move = SwitcherReorder(moving: id, in: reorderable, to: slot),
+              let coordinator = AppState.shared.coordinator,
+              coordinator.reorder(id, beside: move.target, after: move.after, in: reorderKey),
+              let display = AppState.shared.displays.displays.first(where: { $0.uuid == shownDisplay }) else { return false }
+        let before = view.shownFrames(), kept = (origin: origin, size: arrangement.size)
+        let pointer = CGEvent(source: nil)?.location ?? startPointer
+        showing = true
+        defer { showing = false }
+        if !fill(display, pointer: pointer, pick: id, fresh: false, coordinator, keeping: kept, slidingFrom: before) {
+            hold.dismiss()
+        }
+        return true
+    }
+
     /// Fades the capsule in, rising a few points, where `origin` says.
     private func present() {
         // No hand of the mouse's over the capsule; a glance after a let-go covers nothing a press takes.
@@ -569,6 +706,7 @@ final class WindowSwitcher {
     private func hide() {
         waiting = nil
         heldUp = false
+        dragging = nil
         glanceEnd?.invalidate()
         glanceEnd = nil
         let panel = glass.panel, shown = generation

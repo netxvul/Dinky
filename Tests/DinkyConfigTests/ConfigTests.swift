@@ -213,6 +213,7 @@ struct ConfigTests {
         #expect(defaults.tilesStyle == .map)
         #expect(defaults.showSingle)
         #expect(defaults.showFloating)
+        #expect(defaults.dragToReorder)
         #expect(defaults.showTitles)
         #expect(defaults.position == .auto)
         let switcher = try Config.parse("""
@@ -225,6 +226,7 @@ struct ConfigTests {
             tiles-style = 'row'
             show-single = false
             show-floating = false
+            drag-to-reorder = false
             show-titles = false
             position = 'bottom'
             """).windowSwitcher
@@ -236,6 +238,7 @@ struct ConfigTests {
         #expect(switcher.tilesStyle == .row)
         #expect(!switcher.showSingle)
         #expect(!switcher.showFloating)
+        #expect(!switcher.dragToReorder)
         #expect(!switcher.showTitles)
         #expect(switcher.position == .bottom)
         assertError("[window-switcher]\nposition = 'left'\n", path: "window-switcher.position", line: 2, contains: "'auto', 'center', 'top', 'bottom', 'mouse'")
