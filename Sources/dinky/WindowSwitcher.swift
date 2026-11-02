@@ -524,7 +524,7 @@ final class WindowSwitcher {
             guard tree?.contains(id) == true,
                   tree?.focused != id || (!shownFloats.isEmpty && coordinator.commandFocusedWindow != id) else { return }
         }
-        coordinator.focus(id)
+        if !coordinator.focusStripOverFloats(id) { coordinator.focus(id) }
     }
 
     /// Fades the capsule in, rising a few points, where `origin` says.

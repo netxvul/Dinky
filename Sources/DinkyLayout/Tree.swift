@@ -13,14 +13,14 @@ public enum Orientation: Equatable, Sendable {
 
 /// How a container picks its axis: fixed, or `auto`, along the longer side of its rectangle (a square runs
 /// horizontally). `auto` is resolved wherever the rectangle is known, see `Container.axis(in:)`.
-public enum ContainerOrientation: Equatable, Sendable {
+public enum ContainerOrientation: String, Codable, Equatable, Sendable {
     case horizontal, vertical, auto
 
     public init(_ axis: Orientation) { self = axis == .horizontal ? .horizontal : .vertical }
 }
 
 /// How a container shows its children: side by side, or stacked with neighbours peeking out.
-public enum LayoutMode: Equatable, Sendable {
+public enum LayoutMode: String, Codable, Equatable, Sendable {
     case tiles, accordion
 }
 

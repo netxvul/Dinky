@@ -119,6 +119,7 @@ extension Coordinator {
         griddedFrom[id] = nil
         endFloatingStage(id)
         placements[id] = Placement(floating: floating, space: nil)
+        chosenFloating[id] = floating
         track(window)
         flush()
         return true

@@ -66,9 +66,9 @@ final class Recovery {
     /// Stops journaling, moves every journaled window back to its Space, writes its frame, and forgets the
     /// journal. Blocks until the frames are written. Returns a summary; what could not be restored is logged.
     /// Without `spaces`, as on quitting, windows stay on the Spaces they are on now and only get their frames
-    /// back, so a restarted dinky finds them on the workspaces they were tiled on.
+    /// back, so a restarted dinky finds them on the workspaces they were tiled on. `leaving` are left where they are.
     @discardableResult
-    func restore(spaces: Bool = true) -> String {
+    func restore(spaces: Bool = true, leaving: Set<UInt32> = []) -> String {
         recording = false
         guard let model, !entries.isEmpty else { return "nothing to restore" }
         let displays = AppState.shared.displays
@@ -83,6 +83,7 @@ final class Recovery {
                 problems[entry.id] = "its display is gone"
                 return false
             }
+            guard !leaving.contains(entry.id) else { return false }
             // Already in place, possibly on a Space AX cannot reach.
             return dinky_window_info(entry.id).frame != entry.frame
                 || (spaces && dinky_window_space_id(entry.id) != entry.spaceID)
