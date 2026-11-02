@@ -71,6 +71,40 @@ struct SwitcherReorderTests {
         #expect(SwitcherReorder.step(2, in: [[1], [2]], forward: false, allowed: 1...2) == nil)
     }
 
+    @Test func `A floating window tiles in a column of its own at the gap it is dropped in`() {
+        var ws = workspace(3, algorithm: .scrolling)
+        ws.drop(3, onto: 2, .split(.down))
+        let groups = ws.root.children.map(\.windows)
+        ws.insert(9)
+        func tiled(at slot: Int) -> String? {
+            guard let move = SwitcherReorder(inserting: 9, among: groups, at: slot) else { return nil }
+            var ws = ws
+            guard ws.drop(9, onto: move.target, .split(move.after ? .right : .left)) else { return "refused" }
+            return shape(ws.root)
+        }
+        #expect(tiled(at: 0) == "h[9 1 v[2 3]]")
+        #expect(tiled(at: 1) == "h[1 9 v[2 3]]")
+        #expect(tiled(at: 2) == "h[1 v[2 3] 9]")
+        #expect(tiled(at: 7) == "h[1 v[2 3] 9]")
+    }
+
+    @Test func `Only a window none of the groups holds inserts, and only with a group to go beside`() {
+        #expect(SwitcherReorder(inserting: 9, among: [], at: 0) == nil)
+        #expect(SwitcherReorder(inserting: 1, among: [[1], [2]], at: 1) == nil)
+        #expect(SwitcherReorder(inserting: 9, among: [[1], [2]], at: 1) == SwitcherReorder(target: 2, after: false))
+        #expect(SwitcherReorder(inserting: 9, among: [[1], [2]], at: 2) == SwitcherReorder(target: 2, after: true))
+    }
+
+    @Test func `Past the line the pointer aims among the floating windows, before it at a gap`() {
+        let spans: [ClosedRange<CGFloat>] = [10...110, 122...222]
+        #expect(SwitcherReorder.target(at: 239, spans: spans, allowed: 0...2, divider: 240) == .column(2))
+        #expect(SwitcherReorder.target(at: 240, spans: spans, allowed: 0...2, divider: 240) == .float)
+        #expect(SwitcherReorder.target(at: 500, spans: spans, allowed: 0...2, divider: 240) == .float)
+        #expect(SwitcherReorder.target(at: 0, spans: spans, allowed: 1...2, divider: 240) == .column(1))
+        // No line, no floating windows to go among.
+        #expect(SwitcherReorder.target(at: 500, spans: spans, allowed: 0...2, divider: nil) == .column(2))
+    }
+
     @Test func `The marker sits in the middle of a gap, or past an end`() {
         let spans: [ClosedRange<CGFloat>] = [10...110, 122...222]
         #expect(SwitcherReorder.markerX(0, spans: spans, gap: 12) == 4)

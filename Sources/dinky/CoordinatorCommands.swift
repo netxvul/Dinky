@@ -112,8 +112,16 @@ extension Coordinator {
            let workspace = workspaces[space], workspace.pinSide(of: id) != nil || workspace.pins.values.contains(id) {
             return true
         }
+        changeFloating(window, to: floating)
+        flush()
+        return true
+    }
+
+    /// What `setFloating` does to a window, but for applying it.
+    private func changeFloating(_ window: Window, to floating: Bool) {
+        let id = window.id
         // Floated, a pin is pinned again as it is tiled back.
-        if let space = placement.space { edit(space) { floating ? $0.depart(id) : $0.remove(id) } }
+        if let space = placements[id]?.space { edit(space) { floating ? $0.depart(id) : $0.remove(id) } }
         heldTabs[id] = nil
         filledFrom[id] = nil
         griddedFrom[id] = nil
@@ -121,8 +129,6 @@ extension Coordinator {
         placements[id] = Placement(floating: floating, space: nil)
         chosenFloating[id] = floating
         track(window)
-        flush()
-        return true
     }
 
     /// Floats a tiled window, then glides it to cells of a grid over its display's visible area, inside the
@@ -215,6 +221,23 @@ extension Coordinator {
         // A pin the move took apart was unpinned by hand: its rule leaves it so.
         unpinnedByHand.formUnion(pinned.subtracting(workspaces[key]?.pinnedWindows ?? []))
         return moved
+    }
+
+    /// The window switcher's drop of a floating window among a strip's columns: tiled, into a column of its own beside
+    /// `target`'s, after it or before, in the tree of `key`, all applied at once, so it does not go by where a new window
+    /// would; focus stays where it was, and the strip with it. One tiling takes back to a pin, or holds as a possible tab,
+    /// goes there instead. False where it does not float or `target` is not in that tree.
+    func tile(_ id: WindowID, beside target: WindowID, after: Bool, in key: UInt64) -> Bool {
+        guard placements[id]?.floating == true, let window = model.windows[id],
+              let tree = workspaces[key], tree.contains(target) else { return false }
+        changeFloating(window, to: false)
+        if let focused = tree.focused { edit(key) { $0.focus(focused) } }
+        if workspaces[key]?.contains(id) == true, workspaces[key]?.pinSide(of: id) == nil {
+            _ = reorder(id, beside: target, after: after, in: key)
+        } else {
+            flush()
+        }
+        return true
     }
 
     /// Moves a window dinky just moved to another Space into that Space's tree now, rather than on the next event.

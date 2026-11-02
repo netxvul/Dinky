@@ -1,5 +1,12 @@
 import CoreGraphics
 
+/// Where a card of the window switcher's row, dragged, would go: a gap between the strip's columns, or past the line
+/// among the floating windows.
+public enum SwitcherDropTarget: Equatable, Sendable {
+    case column(Int)
+    case float
+}
+
 /// Moving a window the window switcher's row shows to another place among a strip's columns, as dragging its card
 /// or Shift with h or l asks: the window goes into a column of its own at `slot`, a gap between the row's groups (0
 /// before the first, `groups.count` after the last), as `Workspace.drop` beside a neighbour's column puts it. A
@@ -27,6 +34,23 @@ public struct SwitcherReorder: Equatable, Sendable {
         let column = slot < groups.count ? slot : groups.count - 1
         guard let target = groups[column].first(where: { $0 != id }) else { return nil }
         self.init(target: target, after: slot == groups.count)
+    }
+
+    /// The drop that puts `id`, one of none of `groups`, as a floating window is, in a column of its own at `slot`: nil
+    /// with no group to go beside, or for a window one of them holds.
+    public init?(inserting id: WindowID, among groups: [[WindowID]], at slot: Int) {
+        guard !groups.isEmpty, !groups.contains(where: { $0.contains(id) }) else { return nil }
+        let slot = min(max(slot, 0), groups.count)
+        guard let target = groups[min(slot, groups.count - 1)].first else { return nil }
+        self.init(target: target, after: slot == groups.count)
+    }
+
+    /// Where a pointer at `x`, in the row's coordinates, aims: among the floating windows at or past `divider`, the
+    /// line before them, where there is one; else the gap `slot(at:spans:allowed:)` says.
+    public static func target(at x: CGFloat, spans: [ClosedRange<CGFloat>], allowed: ClosedRange<Int>,
+                              divider: CGFloat?) -> SwitcherDropTarget {
+        if let divider, x >= divider { return .float }
+        return .column(slot(at: x, spans: spans, allowed: allowed))
     }
 
     /// The gap a pointer at `x`, in the row's coordinates, aims at: before the first of `spans`, each a group's extent

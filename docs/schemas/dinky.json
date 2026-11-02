@@ -447,7 +447,7 @@
         "drag-to-reorder": {
           "type": "boolean",
           "default": true,
-          "description": "Whether a scrolling workspace's row reorders its strip: drag a card to another gap, or press Shift with h or l, and its window's column moves there."
+          "description": "Whether a scrolling workspace's row reorders its strip: drag a card to another gap, or press Shift with h or l, and its window's column moves there. A floating window's card dragged to a gap tiles it there, and a tiled window's dragged past the line floats it."
         },
         "show-titles": {
           "type": "boolean",
