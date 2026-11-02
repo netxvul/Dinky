@@ -309,6 +309,7 @@
         "preview-fill-color": { "$ref": "#/definitions/color", "description": "Fill of that part. Unset, the border colour at 30%." },
         "home-outline": { "type": "boolean", "default": true, "description": "Outline the tile a dragged window came from. false shows only the feedback over the tile under the pointer." },
         "preview-border-width": { "type": "number", "minimum": 0, "maximum": 20, "default": 3, "description": "Points, for every border while you drag: the preview, a swap's, and the outlines of the tiles." },
+        "preview-blur": { "type": "boolean", "default": true, "description": "Whether dragging a card in the window switcher frosts the part of the card under the mark of where it would go. false shows only the mark's fill and border." },
         "mouse-modifier": {
           "type": "string",
           "pattern": "^(none|(alt|ctrl|cmd|shift)(-(alt|ctrl|cmd|shift))*)$",

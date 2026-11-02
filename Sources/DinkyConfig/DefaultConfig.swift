@@ -94,6 +94,7 @@ extension Config {
     # preview-border-color = '#7aa2f7'  # where a drop will land; unset follows the system accent colour
     # preview-fill-color = '#7aa2f74d'  # unset is the border colour at 30%
     preview-border-width = 3        # points, for the preview and the outlines
+    preview-blur = true             # the window switcher's drop mark frosts the card under it
     home-outline = true             # outline where a dragged tile goes back to while it would
     mouse-modifier = 'none'         # held, drag a window from anywhere in it; set, only such drags drop on tiles: none (off) | alt | ctrl | cmd | shift, or joined, 'ctrl-cmd'
 

@@ -414,6 +414,7 @@ not tile, the window goes back.
 | `preview-border-color` | [`highlight-color`](#top-level), else the accent colour | The preview's border: `'#rrggbb'`, `'#rrggbbaa'`, or `'accent'` for the accent colour in System Settings. |
 | `preview-fill-color` | border at 30% | The preview's fill, `'#rrggbbaa'` for a translucent one such as `'#7aa2f74d'`. |
 | `preview-border-width` | `3` | Points, from `0` to `20`, for every border while you drag: the preview, a swap's, and the outline of where the window goes back to. |
+| `preview-blur` | `true` | Whether dragging a card in [`[window-switcher]`](#window-switcher) frosts the part of the card under the mark of where it would go. `false` shows only the mark's fill and border. The mark takes `preview-fill-color`, `preview-border-color` and `preview-border-width`, its border at most 3 points. A window's own drag preview doesn't blur. |
 | `home-outline` | `true` | While a drag would put the window back, outline in grey the tile it goes back to. `false` shows nothing then. |
 | `mouse-modifier` | `'none'` | Hold it to drag a window from anywhere in it, not only by its title bar: `'alt'`, `'ctrl'`, `'cmd'` or `'shift'`, or several joined by `-` such as `'ctrl-cmd'`, held exactly. A tiled window drops as above; a floating one just moves. Once it is set, only a drag with it held drops onto a tile on the window's own display and shows where it will go: a tiled window dragged by its title bar alone goes back to its tile there, though it still drops onto another display, and dragging its edges still resizes it. The press goes to dinky, not the app, so pick modifiers your apps don't click with: `cmd` opens links, `ctrl` is a right click. Each key's side follows [`[modifiers]`](#modifiers), and it can't be a switcher's `modifier`. `'none'` turns it off. |
 
@@ -1129,6 +1130,7 @@ placeholders = true             # windows make room for a dragged tile and a pre
 # preview-border-color = '#7aa2f7'  # where a drop will land; unset follows the system accent colour
 # preview-fill-color = '#7aa2f74d'  # unset is the border colour at 30%
 preview-border-width = 3        # points, for the preview and the outlines
+preview-blur = true             # the window switcher's drop mark frosts the card under it
 home-outline = true             # outline where a dragged tile goes back to while it would
 mouse-modifier = 'none'         # held, drag a window from anywhere in it; set, only such drags drop on tiles: none (off) | alt | ctrl | cmd | shift, or joined, 'ctrl-cmd'
 

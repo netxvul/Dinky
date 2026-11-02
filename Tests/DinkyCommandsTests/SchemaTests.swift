@@ -334,6 +334,7 @@ struct SchemaTests {
         preview-border-color = '#7aa2f7'
         preview-fill-color = '#7aa2f74d'
         preview-border-width = 2.5
+        preview-blur = false
         home-outline = false
         mouse-modifier = 'ctrl-cmd'
 

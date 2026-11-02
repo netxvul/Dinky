@@ -1113,6 +1113,8 @@ public struct Drag: Equatable {
     public var previewFillColor: Color?
     /// Points, for the preview and the outlines around it.
     public var previewBorderWidth = 3.0
+    /// Whether the window switcher's mark of where a card goes frosts the card under it.
+    public var previewBlur = true
     /// Whether the tile a dragged window goes back to is outlined while the drag would put it back.
     public var homeOutline = true
     /// Held, exactly these, a press anywhere in a window drags it, not only on its title bar. Empty is off.
@@ -1132,6 +1134,7 @@ public struct Drag: Equatable {
         previewBorderColor = try t.highlight("preview-border-color") ?? previewBorderColor
         previewFillColor = try t.color("preview-fill-color") ?? previewFillColor
         previewBorderWidth = try t.double("preview-border-width") ?? previewBorderWidth
+        previewBlur = try t.bool("preview-blur") ?? previewBlur
         homeOutline = try t.bool("home-outline") ?? homeOutline
         guard (0...20).contains(previewBorderWidth) else {
             throw ConfigError(path: t.path("preview-border-width"), "must be 0 to 20")

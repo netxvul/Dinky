@@ -78,6 +78,8 @@ final class WindowSwitcher {
     private var reorderFloatable = false
     /// The tiled cards, each window's frame in the capsule.
     private var reorderCards: [(id: WindowID, frame: CGRect)] = []
+    /// How `[drag]` has the mark of where a card goes look.
+    private var dropLook = SwitcherView.DropLook()
     /// A well is open, the capsule wider than its cards, for this drag (`openWell`).
     private var wellOpen = false
     /// Points of the well past the line's gap.
@@ -211,6 +213,8 @@ final class WindowSwitcher {
             AppState.shared.displays.observe { [weak self] _ in self?.spacesChanged() }
         }
         self.config = config.windowSwitcher
+        dropLook = SwitcherView.DropLook(border: config.drag.previewBorderColor ?? .accent, fill: config.drag.previewFillColor,
+                                         width: CGFloat(config.drag.previewBorderWidth), blur: config.drag.previewBlur)
         let modifier = self.config.enabled ? self.config.modifier : .none
         let byHand = modifier != .none || config.binds("window-switcher")
         let glances = config.gestures.stripGlances && self.config.layouts.contains(.scrolling)
@@ -511,6 +515,7 @@ final class WindowSwitcher {
         let scale = screen.backingScaleFactor
         view.animates = animates
         view.highlight = config.highlightColor
+        view.dropLook = dropLook
         view.frame = CGRect(origin: .zero, size: arrangement.size)
         let dividers: [CGRect]
         if case .row(let row) = arrangement { dividers = row.dividers } else { dividers = [] }
@@ -763,15 +768,17 @@ final class WindowSwitcher {
         let frames = arrangement.frames
         let top = frames.map(\.minY).min() ?? 0, bottom = frames.map(\.maxY).max() ?? 0
         let gap = SwitcherLayout.columnGap, span = top...max(bottom, top)
-        let marker: CGRect? = switch target {
+        let mark: SwitcherView.DropMark? = switch target {
         case .column(let slot):
-            SwitcherReorder.markerX(slot, spans: reorderSpans, gap: gap).map { SwitcherView.markerLine(x: $0, span: span) }
+            SwitcherReorder.markerX(slot, spans: reorderSpans, gap: gap).map { .line(SwitcherView.markerLine(x: $0, span: span)) }
         case .card(let onto, let zone):
-            reorderCards.first { $0.id == onto }.map { SwitcherReorder.marked($0.frame, zone) }
-        case .float: reorderFloatsEnd.map { SwitcherView.markerLine(x: $0 + gap / 2, span: span) }
+            items.firstIndex { $0.id == onto }.map {
+                .card(index: $0, part: SwitcherReorder.marked(frames[$0], zone), swap: zone == .swap)
+            }
+        case .float: reorderFloatsEnd.map { .line(SwitcherView.markerLine(x: $0 + gap / 2, span: span)) }
         case nil: nil
         }
-        view.drag(to: local, marker: marker)
+        view.drag(to: local, mark: mark)
     }
 
     /// The dragged card let go: its window goes where it aimed, or the card back to its place.
