@@ -81,6 +81,14 @@ extension Workspace {
         if focused == memory.focused { scrollOffset = memory.scrollOffset }
     }
 
+    /// Focus back on `id` after a window came in that no one is looking at, with a strip scrolled so `id` stands at `x`
+    /// as it did, whatever came in before it.
+    public mutating func refocus(_ id: WindowID, standingAt x: CGFloat) {
+        focus(id)
+        guard isScrolling, let frame = layout().frames[id] else { return }
+        scrollOffset += frame.minX - x
+    }
+
     /// Puts `id` into the column, in the order `saved` has its windows.
     private mutating func stack(_ id: WindowID, into column: Int, like saved: StripMemory.Column) {
         let rank = { saved.windows.firstIndex(of: $0) ?? .max }

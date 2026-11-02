@@ -26,6 +26,14 @@ func axWindow(pid: pid_t, wid: UInt32, timeout: Float = 0) -> AXUIElement? {
     return window
 }
 
+/// Whether the app answers Accessibility at all, whatever it says. For a look off the main thread.
+func appAnswers(_ pid: pid_t) -> Bool {
+    let app = AXUIElementCreateApplication(pid)
+    AXUIElementSetMessagingTimeout(app, 0.25)
+    var value: CFTypeRef?
+    return AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value) != .cannotComplete
+}
+
 private func axElement(_ element: AXUIElement, _ attribute: String) -> AXUIElement? {
     var value: CFTypeRef?
     guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,

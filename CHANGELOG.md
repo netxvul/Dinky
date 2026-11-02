@@ -5,6 +5,7 @@
 ### Fixes
 
 - Restarting dinky keeps what the scrolling strips held: the columns' order and stacks, their widths, focus and where each strip was scrolled to, and which windows you floated or tiled by hand, for every window still open. Quitting leaves floating windows where they are. An app that restarted meanwhile has new windows, which come in as new.
+- A window floated because its app stopped answering tiles again on its own once the app answers, without taking focus or moving what the strip shows.
 - Scrolling layouts now preserve column widths when windows are minimized and restored. Previously, manually adjusted column widths (via `resize`, `cycle-size`, or drag operations) were lost when a window was minimized and later restored, reverting to the default width. This fix also preserves widths through hide/show and float/tile cycles.
 
 ### HUD

@@ -64,6 +64,18 @@ struct StripMemoryTests {
         #expect(ws.scrollOffset == 250)
     }
 
+    @Test func `A window coming in unasked leaves focus and what shows as they were`() {
+        var ws = strip([1, 2, 3, 4])
+        ws.focus(3)
+        let x = ws.layout().frames[3]!.minX
+        let saved = memory([[9], [1], [2], [3], [4]], focused: 9, scrollOffset: 0)
+        ws.arrive(9, remembering: saved)
+        #expect(columns(ws) == [[9], [1], [2], [3], [4]])
+        ws.refocus(3, standingAt: x)
+        #expect(ws.focused == 3)
+        #expect(ws.layout().frames[3]!.minX == x)
+    }
+
     @Test func `A window it does not remember comes as any new one`() {
         var ws = strip([1, 2])
         ws.focus(1)
