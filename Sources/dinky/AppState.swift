@@ -76,11 +76,11 @@ final class AppState {
     /// menu's Enabled item, `dinky recover` and quitting all come through here.
     /// Quitting keeps windows on their Spaces (`spaces: false`), so a restart picks them up where they were tiled.
     @discardableResult
-    func setEnabled(_ on: Bool, spaces: Bool = true) -> String {
+    func setEnabled(_ on: Bool, spaces: Bool = true, leaving: Set<UInt32> = []) -> String {
         if on { recovery.resume() }
         enabled = on
         propagateEnabled()
-        return on ? "" : recovery.restore(spaces: spaces)
+        return on ? "" : recovery.restore(spaces: spaces, leaving: leaving)
     }
 
     /// `dinky recover` and the menu's restore item: after a crash, stops tiling and restores every
@@ -90,9 +90,11 @@ final class AppState {
         return .ok(setEnabled(false) + "; dinky is disabled, `dinky enable on` tiles again")
     }
 
-    /// Quitting stops tiling and puts every window back to its frame, on the Space it is on now.
+    /// Quitting saves what the trees hold for the next launch, stops tiling and puts every tiled window back to its
+    /// frame, on the Space it is on now. A floating window stays where the user has it.
     func quit() {
-        setEnabled(false, spaces: false)
+        coordinator?.saveSession()
+        setEnabled(false, spaces: false, leaving: coordinator?.floatingWindows ?? [])
     }
 
     private func apply(_ result: Result<Config, ConfigError>) {

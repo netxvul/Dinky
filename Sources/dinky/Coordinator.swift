@@ -87,7 +87,12 @@ final class Coordinator {
     var attempts: [WindowID: Int] = [:]
     /// Windows floated because their AX element could not be reached, so dinky could not have moved them into a
     /// tile, with when it last looked again. See `retryUnreachable(_:)`.
-    var unreachable: [WindowID: CFTimeInterval] = [:]
+    var unreachable: [WindowID: CFTimeInterval] = [:] {
+        didSet { if unreachable.count > oldValue.count { watchUnreachable() } }
+    }
+    /// How long till the next look at the windows above, and which look is the one due. See `watchUnreachable`.
+    private var unreachableDelay = Coordinator.unreachableDelays.lowerBound
+    private var unreachableLook = 0
     /// By tiled window, how many passes in a row could not read it back.
     private var unread: [WindowID: Int] = [:]
     /// When a display last came, went, moved or changed size. While macOS rearranges the displays, Accessibility cannot
@@ -104,6 +109,13 @@ final class Coordinator {
     var adoptTargets: [WindowID: String] = [:]
     /// New windows on their way to the focused display, kept out of the trees until they arrive.
     var adopting: Set<WindowID> = []
+    /// What the last session left, by Space, and the windows yet to go back into it. See Session.swift.
+    var rememberedStrips: [UInt64: StripMemory] = [:]
+    var rememberedPending: [UInt64: Set<WindowID>] = [:]
+    /// Windows floated or tiled by hand, over what `classify` says of them, kept across a restart.
+    var chosenFloating: [WindowID: Bool] = [:]
+    var sessionSaveScheduled = false
+    var sessionWritten: Data?
     /// The tiled window being dragged with the mouse, until the button is released. See Drag.swift.
     var drag: DragSession? {
         didSet { if drag != nil, oldValue == nil { mouseCursorInterrupted() } }
@@ -371,6 +383,7 @@ final class Coordinator {
             fputs("coordinator: no WindowServer events\n", stderr)
             return
         }
+        loadSession()
         update(config: config)
         reconcile()
     }
@@ -400,7 +413,8 @@ final class Coordinator {
         }
         configureWorkspaces()
         // A workspace switched to/from free or untiled must release/acquire its existing windows too.
-        for window in model.windows.values { track(window) }
+        // In a set order: a dictionary's changes with each launch, and new windows go in beside the last.
+        for window in model.windows.values.sorted(by: { $0.id < $1.id }) { track(window) }
         fitToDisplays()
         dirty.formUnion(workspaces.keys)
         flush()
@@ -771,7 +785,9 @@ final class Coordinator {
             // Once, on the first classification attempt, not again on its retries.
             if attempts[window.id] == nil { noteFirstShowing(window) }
             guard let classification = classify(window) else { return }
-            placements[window.id] = Placement(floating: classification.floating, space: nil)
+            // One dinky could not reach floats whatever was chosen, as it cannot be moved.
+            let chosen = unreachable[window.id] == nil ? chosenFloating[window.id] : nil
+            placements[window.id] = Placement(floating: chosen ?? classification.floating, space: nil)
             if !classification.runsRules, adopt(window) { return }
         }
         // A dragged window keeps its tree till the drop, which decides where it goes (Drag.swift): macOS moves one
@@ -829,10 +845,11 @@ final class Coordinator {
             }
             // Pinned again only with room for it, judged with the minimums the next pass lays out with, its own too.
             let own = applier.minimumSize(of: window.id, app: window.bundleID)
+            let memory = rememberedStrip(of: window.id, on: new)
             edit(new) { workspace in
                 workspace.minimumSizes = minimumSizes(in: workspace)
                 workspace.minimumSizes[window.id] = own
-                workspace.arrive(window.id)
+                if let memory { workspace.arrive(window.id, remembering: memory) } else { workspace.arrive(window.id) }
             }
             telemetry.member(new, workspaces[new], window.id, joined: true, old.map { "from Space \($0)" } ?? "shown")
         }
@@ -866,11 +883,69 @@ final class Coordinator {
     func retryUnreachable(_ window: Window) {
         guard let since = unreachable[window.id], CACurrentMediaTime() - since > 3, !applier.isBusy(window.pid) else { return }
         unreachable[window.id] = CACurrentMediaTime()
-        guard axWindow(pid: window.pid, wid: window.id, timeout: 0.25) != nil else { return }
+        classifyAfresh(window)
+    }
+
+    /// Classifies a window floated as unreachable afresh, once its AX element can be reached.
+    @discardableResult
+    private func classifyAfresh(_ window: Window) -> Bool {
+        guard axWindow(pid: window.pid, wid: window.id, timeout: 0.25) != nil else { return false }
         unreachable[window.id] = nil
         attempts[window.id] = nil
         placements[window.id] = nil
         track(window)
+        flush()
+        return true
+    }
+
+    /// From 3 seconds up to half a minute between looks: an app can take long to answer again, or a window never be read.
+    private static let unreachableDelays = 3.0...30.0
+
+    /// Starts looking again, at the first delay, as a window becomes unreachable. Nothing tells of an app answering again,
+    /// and a window floated meanwhile may not take focus for a long time, so it is looked at for as long as it stays so.
+    private func watchUnreachable() {
+        unreachableDelay = Self.unreachableDelays.lowerBound
+        scheduleUnreachableLook()
+    }
+
+    private func scheduleUnreachableLook() {
+        unreachableLook += 1
+        let look = unreachableLook
+        DispatchQueue.main.asyncAfter(deadline: .now() + unreachableDelay) { [weak self] in
+            guard let self, look == unreachableLook else { return }
+            lookAtUnreachable()
+        }
+    }
+
+    /// Asks each app with an unreachable window whether it answers, off the main thread, which runs the event taps and
+    /// would wait on one that does not. The windows of those that do are classified afresh.
+    private func lookAtUnreachable() {
+        let windows = unreachable.keys.compactMap { model.windows[$0] }
+        guard !windows.isEmpty else { return }
+        let pids = Set(windows.map(\.pid)).filter { !applier.isBusy($0) }
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let answering = pids.filter(appAnswers)
+            DispatchQueue.main.async { self?.classifyAnswering(answering) }
+        }
+    }
+
+    private func classifyAnswering(_ pids: Set<pid_t>) {
+        // Not under the user's hand: it waits for the next look.
+        if enabled, stripScroll == nil, drag == nil, !clickHold, windowPress == nil {
+            let windows = unreachable.keys.compactMap { model.windows[$0] }.sorted { $0.id < $1.id }
+            for window in windows where pids.contains(window.pid) { keepingView(of: window) { classifyAfresh(window) } }
+        }
+        guard !unreachable.isEmpty else { return }
+        unreachableDelay = min(unreachableDelay * 2, Self.unreachableDelays.upperBound)
+        scheduleUnreachableLook()
+    }
+
+    /// Runs `change`, which can tile `window`, as no one asked for: the strip keeps its focus and what it shows.
+    private func keepingView(of window: Window, _ change: () -> Void) {
+        guard let key = key(of: window), let held = workspaces[key]?.focused,
+              let x = workspaces[key]?.layout().frames[held]?.minX else { return change() }
+        change()
+        edit(key) { $0.refocus(held, standingAt: x) }
         flush()
     }
 
@@ -905,6 +980,8 @@ final class Coordinator {
         attempts[id] = nil
         adoptTargets[id] = nil
         adopting.remove(id)
+        chosenFloating[id] = nil
+        forgetRemembered(id)
         applier.forget(id)
         animator.forget(id)
         landedWidths[id] = nil
@@ -1966,6 +2043,7 @@ final class Coordinator {
     // MARK: Applying
 
     func flush() {
+        saveSessionSoon()
         // A click holds the passes, but not the first making room for a drop its press began to show.
         guard !clickHold || drag?.shown != nil else { return }
         // A layout command can have taken a side of a strip across two displays off scrolling.
