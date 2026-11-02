@@ -12,8 +12,11 @@ import DinkyPrivate
 // they stand. Releasing the modifier focuses the window picked, which scrolls a strip to it. With `drag-to-reorder`, a
 // scrolling workspace's card dragged to another gap between the cards moves its window's column there in the strip as
 // it is let go, and Shift with left or right, h or l, moves the picked one a column; a floating window's card dragged
-// to such a gap tiles it there, and a tiled window's dragged past the line floats it where it stands; the capsule stays
-// up, filled afresh, the window still picked, and the pointer is a closed hand for as long as a card is held. A click on a card takes it then, held up by the modifier too. While it is up,
+// to such a gap tiles it there, and a tiled window's dragged past the line floats it where it stands. On a tiles workspace's
+// row a floating window's card dragged onto a side of a tiled one tiles it there, splitting that tile, and a tiled one's
+// floats past the line, as on a fixed workspace's, which tiles nothing by dragging. With no floating window to show the
+// line, the capsule opens a well at its right for the drag, with a line of its own. The capsule stays up, filled afresh,
+// the window still picked, and the pointer is a closed hand for as long as a card is held. A click on a card takes it then, held up by the modifier too. While it is up,
 // h, j, k, l and the arrows move the pick (`navigate`) and Return or Space focuses it at once, swallowed. Esc closes the
 // capsule without focusing anything. With `letter-keys`, each window carries a letter of `letters`, handed out as the
 // cards read left to right, drawn as a key beside its title, and its key focuses that window at once, swallowed, held
@@ -64,6 +67,20 @@ final class WindowSwitcher {
     private var reorderSpans: [ClosedRange<CGFloat>] = []
     private var reorderDivider: CGFloat?
     private var reorderFloatsEnd: CGFloat?
+    /// What dragging a card does on the row shown: moves a strip's columns, splits a tree's tiles, or only floats, a
+    /// fixed template taking no drop.
+    private enum ReorderKind { case columns, splits, floatsOnly }
+    private var reorderKind: ReorderKind?
+    /// Whether a tiled window dragged away can show among floating ones.
+    private var reorderFloatable = false
+    /// The tiled cards, each window's frame in the capsule.
+    private var reorderCards: [(id: WindowID, frame: CGRect)] = []
+    /// A well is open, the capsule wider than its cards, for this drag (`openWell`).
+    private var wellOpen = false
+    /// Points of the well past the line's gap.
+    private static let wellWidth: CGFloat = 60
+    /// Less room than this past the gap, and no well opens.
+    private static let wellLeast: CGFloat = 16
     /// The card being dragged, and where it aims; nil over its own place. The pointer is a closed hand while there is
     /// one: AppKit sets the cursor only for the active app, which dinky never is, so the connection's private
     /// background setting lets it, for the drag, and each move sets the hand again over whatever an app under it set.
@@ -76,6 +93,7 @@ final class WindowSwitcher {
                 NSCursor.arrow.set()
                 // Not from under the mouse's own hand, should it have come up meanwhile.
                 if !GrabCursor.isShown { _ = dinky_cursor_in_background(false) }
+                closeWell()
             }
         }
     }
@@ -592,13 +610,24 @@ final class WindowSwitcher {
         reorderSpans = []
         reorderDivider = nil
         reorderFloatsEnd = nil
-        guard config.dragToReorder, !glancing, !mapped, let workspace, kind(of: workspace) == .scrolling,
-              !columns.isEmpty else { return }
+        reorderKind = nil
+        reorderFloatable = false
+        reorderCards = []
+        wellOpen = false
+        guard config.dragToReorder, !glancing, !mapped, let workspace, !columns.isEmpty else { return }
+        switch kind(of: workspace) {
+        case .scrolling: reorderKind = .columns
+        case .tiles: reorderKind = .splits
+        case .fixed: reorderKind = .floatsOnly
+        default: return
+        }
+        reorderFloatable = showsFloats(for: workspace)
         reorderable = columns
         reorderKey = coordinator.treeKey(display.currentSpaceID)
         reorderAllowed = SwitcherReorder.allowed(columns) { workspace.pinSide(of: columns[$0][0]) != nil }
         // The tiled groups come first among the cards, each group's together.
         let frames = arrangement.frames
+        reorderCards = Array(zip(columns.joined(), frames)).map { (id: $0, frame: $1) }
         var index = 0
         reorderSpans = columns.map { group in
             let box = frames[index..<(index + group.count)].reduce(CGRect.null) { $0.union($1) }
@@ -617,12 +646,14 @@ final class WindowSwitcher {
         arrangement.index(at: CGPoint(x: point.x - origin.x, y: point.y - origin.y))
     }
 
-    /// Whether dragging the card at `point` can move its window: a floating window, or one in a column of the band, not
-    /// pinned.
+    /// Whether dragging the card at `point` can move its window: a floating window where drops tile, or a tiled one, not
+    /// pinned, where it can go somewhere: another column, or among floating windows.
     private func canDrag(at point: CGPoint) -> Bool {
-        guard let allowed = reorderAllowed, let index = card(at: point), items.indices.contains(index) else { return false }
+        guard let kind = reorderKind, let allowed = reorderAllowed, let index = card(at: point),
+              items.indices.contains(index) else { return false }
         let id = items[index].id
-        if shownFloats.contains(id) { return true }
+        if shownFloats.contains(id) { return kind != .floatsOnly }
+        if kind != .columns, !reorderFloatable { return false }
         guard let group = reorderable.firstIndex(where: { $0.contains(id) }) else { return false }
         return group >= allowed.lowerBound && group < allowed.upperBound
     }
@@ -630,41 +661,104 @@ final class WindowSwitcher {
     private func dragBegan(at point: CGPoint) {
         guard let index = card(at: point), items.indices.contains(index) else { return }
         dragging = (index, nil)
+        if !shownFloats.contains(items[index].id) { openWell() }
         view.beginDrag(index, at: CGPoint(x: point.x - origin.x, y: point.y - origin.y))
         if config.haptic { tapTrackpad("window switcher card lifted", actuation: config.hapticStrength.actuation) }
     }
 
-    /// Whether a drop on `target` moves `id`: not where it is already, as a floating window among the floating ones.
+    /// With no line to drag a tiled card past, opens one: the capsule grows right for the drag, the cards staying where
+    /// they are, by as much as the display has room for, with a line and room past it, the float zone. None with too
+    /// little room.
+    private func openWell() {
+        guard reorderFloatable, reorderDivider == nil, !wellOpen, let end = reorderCards.map(\.frame.maxX).max(),
+              let display = AppState.shared.displays.displays.first(where: { $0.uuid == shownDisplay }) else { return }
+        let gap = SwitcherLayout.dividerGap, size = arrangement.size
+        let room = display.visibleArea.maxX - SwitcherLayout.screenMargin - origin.x - size.width
+        let width = min(Self.wellWidth, room - gap)
+        guard width >= Self.wellLeast else { return }
+        wellOpen = true
+        let line = (end + gap / 2).rounded() - 0.5
+        reorderDivider = line + 0.5
+        // The marker's place, the middle of the room past the line.
+        reorderFloatsEnd = end + gap + width / 2 - SwitcherLayout.columnGap / 2
+        let top = reorderCards.map(\.frame.minY).min() ?? 0, bottom = reorderCards.map(\.frame.maxY).max() ?? 0
+        let grown = CGSize(width: size.width + gap + width, height: size.height)
+        view.frame = CGRect(origin: .zero, size: grown)
+        view.showWellLine(CGRect(x: line, y: top, width: 1, height: bottom - top))
+        setPanelFrame(grown)
+    }
+
+    /// The well goes back with the drag, the capsule to its cards.
+    private func closeWell() {
+        guard wellOpen else { return }
+        wellOpen = false
+        reorderDivider = nil
+        reorderFloatsEnd = nil
+        view.showWellLine(nil)
+        view.frame = CGRect(origin: .zero, size: arrangement.size)
+        setPanelFrame(arrangement.size)
+    }
+
+    private func setPanelFrame(_ size: CGSize) {
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = animates ? Self.fadeIn : 0
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            glass.panel.animator().setFrame(panelFrame(size), display: true)
+        }
+    }
+
+    /// The capsule's panel at `size`, its top-left corner at `origin`.
+    private func panelFrame(_ size: CGSize) -> CGRect {
+        let primary = NSScreen.screens.first?.frame.maxY ?? 0
+        return CGRect(x: origin.x, y: primary - origin.y - size.height, width: size.width, height: size.height)
+    }
+
+    /// Where a pointer at `point`, in the capsule, aims a card; nil over nowhere it can go.
+    private func aim(at point: CGPoint) -> SwitcherDropTarget? {
+        guard let allowed = reorderAllowed else { return nil }
+        switch reorderKind {
+        case .columns: return SwitcherReorder.target(at: point.x, spans: reorderSpans, allowed: allowed, divider: reorderDivider)
+        case .splits: return SwitcherReorder.target(at: point, cards: reorderCards, divider: reorderDivider)
+        case .floatsOnly: return reorderDivider.flatMap { point.x >= $0 ? .float : nil }
+        case nil: return nil
+        }
+    }
+
+    /// Whether a drop on `target` moves `id`: not where it is already, as a floating window among the floating ones, nor
+    /// a tiled window of a tree onto another, whose place a drag does not change.
     private func moves(_ id: WindowID, to target: SwitcherDropTarget) -> Bool {
         let floating = shownFloats.contains(id)
         switch target {
         case .float: return !floating
+        case .card(let onto, _): return floating && onto != id
         case .column(let slot):
             return floating ? SwitcherReorder(inserting: id, among: reorderable, at: slot) != nil
                 : SwitcherReorder(moving: id, in: reorderable, to: slot) != nil
         }
     }
 
-    /// The dragged card goes with the pointer, and the line to where it aims: a gap, or past the last floating window;
-    /// none over its own place.
+    /// The dragged card goes with the pointer, and the marker to where it aims: a gap, a side of a card, or past the last
+    /// floating window; none over its own place.
     private func dragMoved(to point: CGPoint) {
-        guard let drag = dragging, let allowed = reorderAllowed else { return }
+        guard let drag = dragging else { return }
         let local = CGPoint(x: point.x - origin.x, y: point.y - origin.y)
-        let aim = SwitcherReorder.target(at: local.x, spans: reorderSpans, allowed: allowed, divider: reorderDivider)
-        let target = moves(items[drag.index].id, to: aim) ? aim : nil
+        let target = aim(at: local).flatMap { moves(items[drag.index].id, to: $0) ? $0 : nil }
         if let target, target != drag.target, config.haptic {
             tapTrackpad("window switcher drop gap", actuation: config.hapticStrength.actuation)
         }
         dragging = (drag.index, target)
         let frames = arrangement.frames
         let top = frames.map(\.minY).min() ?? 0, bottom = frames.map(\.maxY).max() ?? 0
-        let gap = SwitcherLayout.columnGap
-        let markerX: CGFloat? = switch target {
-        case .column(let slot): SwitcherReorder.markerX(slot, spans: reorderSpans, gap: gap)
-        case .float: reorderFloatsEnd.map { $0 + gap / 2 }
+        let gap = SwitcherLayout.columnGap, span = top...max(bottom, top)
+        let marker: CGRect? = switch target {
+        case .column(let slot):
+            SwitcherReorder.markerX(slot, spans: reorderSpans, gap: gap).map { SwitcherView.markerLine(x: $0, span: span) }
+        case .card(let onto, let side):
+            reorderCards.first { $0.id == onto }.map { SwitcherReorder.half(of: $0.frame, side) }
+        case .float: reorderFloatsEnd.map { SwitcherView.markerLine(x: $0 + gap / 2, span: span) }
         case nil: nil
         }
-        view.drag(to: local, markerX: markerX, span: top...max(bottom, top))
+        view.drag(to: local, marker: marker)
     }
 
     /// The dragged card let go: its window goes where it aimed, or the card back to its place.
@@ -675,6 +769,7 @@ final class WindowSwitcher {
         let id = items[drag.index].id
         let moved = switch drag.target {
         case .column(let slot): shownFloats.contains(id) ? tile(id, at: slot) : reorder(id, to: slot)
+        case .card(let onto, let side): tile(id, beside: onto, side)
         case .float: float(id)
         case nil: false
         }
@@ -684,7 +779,8 @@ final class WindowSwitcher {
     /// Shift with left or right: the picked window a column that way, as `move` would. True for a window of a strip
     /// shown, moved or not; false for anything else, whose pick moves instead.
     private func reorderPicked(forward: Bool) -> Bool {
-        guard dragging == nil, let allowed = reorderAllowed, items.indices.contains(view.picked) else { return false }
+        guard dragging == nil, reorderKind == .columns, let allowed = reorderAllowed,
+              items.indices.contains(view.picked) else { return false }
         let id = items[view.picked].id
         guard let group = reorderable.firstIndex(where: { $0.contains(id) }) else { return false }
         if group >= allowed.lowerBound, group < allowed.upperBound,
@@ -699,16 +795,20 @@ final class WindowSwitcher {
     private func reorder(_ id: WindowID, to slot: Int) -> Bool {
         guard let move = SwitcherReorder(moving: id, in: reorderable, to: slot),
               let coordinator = AppState.shared.coordinator,
-              coordinator.reorder(id, beside: move.target, after: move.after, in: reorderKey) else { return false }
+              coordinator.reorder(id, beside: move.target, move.after ? .right : .left, in: reorderKey) else { return false }
         return refill(picking: id, coordinator)
     }
 
-    /// Tiles floating `id` in a column of its own at gap `slot` of the row's groups, then fills the capsule afresh as
-    /// `reorder` does. False where it cannot.
+    /// Tiles floating `id` in a column of its own at gap `slot` of the row's groups, as `tile(_:beside:_:)` does.
     private func tile(_ id: WindowID, at slot: Int) -> Bool {
-        guard let move = SwitcherReorder(inserting: id, among: reorderable, at: slot),
-              let coordinator = AppState.shared.coordinator,
-              coordinator.tile(id, beside: move.target, after: move.after, in: reorderKey) else { return false }
+        guard let move = SwitcherReorder(inserting: id, among: reorderable, at: slot) else { return false }
+        return tile(id, beside: move.target, move.after ? .right : .left)
+    }
+
+    /// Tiles floating `id` to `side` of `target`, then fills the capsule afresh as `reorder` does. False where it cannot.
+    private func tile(_ id: WindowID, beside target: WindowID, _ side: Direction) -> Bool {
+        guard let coordinator = AppState.shared.coordinator,
+              coordinator.tile(id, beside: target, side, in: reorderKey) else { return false }
         return refill(picking: id, coordinator)
     }
 
@@ -738,9 +838,8 @@ final class WindowSwitcher {
         if !glancing { AppState.shared.coordinator?.mouseCursorInterrupted() }
         let panel = glass.panel
         generation += 1
-        let primary = NSScreen.screens.first?.frame.maxY ?? 0
         let size = arrangement.size
-        let frame = CGRect(x: origin.x, y: primary - origin.y - size.height, width: size.width, height: size.height)
+        let frame = panelFrame(size)
         if panel.isVisible, panel.alphaValue > 0 {
             // Up already, perhaps still fading in, for the workspace the display left: to the new one's frame in
             // place. Through the animator, so the new frame replaces a fade-in's still on its way, which would

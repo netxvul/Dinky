@@ -1,9 +1,10 @@
 import CoreGraphics
 
-/// Where a card of the window switcher's row, dragged, would go: a gap between the strip's columns, or past the line
-/// among the floating windows.
+/// Where a card of the window switcher's row, dragged, would go: a gap between the strip's columns, a side of a tree's
+/// tile, which it splits, or past the line among the floating windows.
 public enum SwitcherDropTarget: Equatable, Sendable {
     case column(Int)
+    case card(WindowID, Direction)
     case float
 }
 
@@ -51,6 +52,35 @@ public struct SwitcherReorder: Equatable, Sendable {
                               divider: CGFloat?) -> SwitcherDropTarget {
         if let divider, x >= divider { return .float }
         return .column(slot(at: x, spans: spans, allowed: allowed))
+    }
+
+    /// Where a pointer at `point`, in the row's coordinates, aims over a tree's tiled `cards`: among the floating windows
+    /// at or past `divider`, where there is one; else the side of the nearest card it is nearest, none swapping. Nil with
+    /// no card.
+    public static func target(at point: CGPoint, cards: [(id: WindowID, frame: CGRect)],
+                              divider: CGFloat?) -> SwitcherDropTarget? {
+        if let divider, point.x >= divider { return .float }
+        func distance(_ r: CGRect) -> CGFloat {
+            hypot(max(r.minX - point.x, 0, point.x - r.maxX), max(r.minY - point.y, 0, point.y - r.maxY))
+        }
+        guard let card = cards.min(by: { distance($0.frame) < distance($1.frame) }) else { return nil }
+        return .card(card.id, side(at: point, of: card.frame))
+    }
+
+    /// The side of `card` that `point` is nearest, by the card's own diagonals.
+    public static func side(at point: CGPoint, of card: CGRect) -> Direction {
+        guard case .split(let side) = DropZone(at: point, in: card, center: 0) else { return .right }
+        return side
+    }
+
+    /// The half of `card` on `side`.
+    public static func half(of card: CGRect, _ side: Direction) -> CGRect {
+        switch side {
+        case .left: CGRect(x: card.minX, y: card.minY, width: card.width / 2, height: card.height)
+        case .right: CGRect(x: card.midX, y: card.minY, width: card.width / 2, height: card.height)
+        case .up: CGRect(x: card.minX, y: card.minY, width: card.width, height: card.height / 2)
+        case .down: CGRect(x: card.minX, y: card.midY, width: card.width, height: card.height / 2)
+        }
     }
 
     /// The gap a pointer at `x`, in the row's coordinates, aims at: before the first of `spans`, each a group's extent

@@ -59,8 +59,10 @@ final class SwitcherView: NSView {
     private var dividers: [CALayer] = []
     private let glow = CALayer()
     private let ring = CALayer()
-    /// The gap a dragged card would go to.
+    /// Where a dragged card would go: a line in a gap, or the half of a card it would take.
     private let marker = CALayer()
+    /// The line of a well opened for a drag with no floating window to show one (`openWell`).
+    private let wellLine = CALayer()
     /// The card being dragged, and where on it the pointer took it, from its middle.
     private var dragged: (index: Int, grab: CGPoint)?
     private static let markerWidth: CGFloat = 3
@@ -92,6 +94,8 @@ final class SwitcherView: NSView {
         marker.zPosition = 4
         marker.isHidden = true
         layer?.addSublayer(marker)
+        wellLine.isHidden = true
+        layer?.addSublayer(wellLine)
     }
 
     @available(*, unavailable)
@@ -113,6 +117,7 @@ final class SwitcherView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         marker.isHidden = true
+        wellLine.isHidden = true
         glow.opacity = 1
         ring.opacity = 1
         cards.forEach { $0.root.removeFromSuperlayer() }
@@ -187,25 +192,43 @@ final class SwitcherView: NSView {
         CATransaction.commit()
     }
 
-    /// The dragged card follows the pointer to `point`, and the line goes to `markerX` across, between the cards in
-    /// `span` up and down; none where nil, as over the gap it came from.
-    func drag(to point: CGPoint, markerX: CGFloat?, span: ClosedRange<CGFloat>) {
+    /// A line of the separator colour at `frame` while a well is open, or none.
+    func showWellLine(_ frame: CGRect?) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        wellLine.isHidden = frame == nil
+        if let frame {
+            wellLine.frame = frame
+            wellLine.backgroundColor = NSColor.separatorColor.cgColor
+        }
+        CATransaction.commit()
+    }
+
+    /// The marker for a gap: a line at `x` across, `span` up and down.
+    static func markerLine(x: CGFloat, span: ClosedRange<CGFloat>) -> CGRect {
+        CGRect(x: (x - markerWidth / 2).rounded(), y: span.lowerBound, width: markerWidth, height: span.upperBound - span.lowerBound)
+    }
+
+    /// The dragged card follows the pointer to `point`, and the marker goes to `marker`: `markerLine`, or a card's half
+    /// washed with its colour; none where nil, as over the place it came from.
+    func drag(to point: CGPoint, marker frame: CGRect?) {
         guard let dragged else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         cards[dragged.index].root.position = CGPoint(x: point.x - dragged.grab.x, y: point.y - dragged.grab.y)
         CATransaction.commit()
-        guard let x = markerX else {
+        guard let frame else {
             marker.isHidden = true
             return
         }
-        let frame = CGRect(x: (x - Self.markerWidth / 2).rounded(), y: span.lowerBound, width: Self.markerWidth,
-                           height: span.upperBound - span.lowerBound)
+        let area = frame.width > Self.markerWidth
         CATransaction.begin()
-        // Straight there when it shows, sliding from gap to gap after.
+        // Straight there when it shows, sliding from place to place after.
         CATransaction.setDisableActions(marker.isHidden || !animates)
         CATransaction.setAnimationDuration(0.12)
         marker.frame = frame
+        marker.opacity = area ? 0.4 : 1
+        marker.cornerRadius = area ? style.cardRadius : Self.markerWidth / 2
         marker.isHidden = false
         CATransaction.commit()
     }

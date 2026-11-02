@@ -206,15 +206,15 @@ extension Coordinator {
         return result
     }
 
-    /// The window switcher's reorder: `id` into a column of its own beside `target`'s, after it or before, in the tree
-    /// of `key`, at the width its column had, as a drop there puts it, and applied; focus stays where it was, and the
-    /// strip with it. False where the strip refuses, or either window is not in that tree.
-    func reorder(_ id: WindowID, beside target: WindowID, after: Bool, in key: UInt64) -> Bool {
+    /// The window switcher's reorder: `id` to `side` of `target`, in the tree of `key`, as a drop there puts it: in a
+    /// strip, left or right, a column of its own at the width its column had; in a tree, half of `target`'s tile. Applied;
+    /// focus stays where it was, and the strip with it. False where the tree refuses, or either window is not in it.
+    func reorder(_ id: WindowID, beside target: WindowID, _ side: Direction, in key: UInt64) -> Bool {
         guard let tree = workspaces[key], tree.contains(id), tree.contains(target) else { return false }
         let pinned = Set(tree.pinnedWindows)
         let moved = command(onSpace: key) { workspace -> Bool in
             let focused = workspace.focused
-            guard workspace.drop(id, onto: target, .split(after ? .right : .left)) else { return false }
+            guard workspace.drop(id, onto: target, .split(side)) else { return false }
             if let focused, focused != id { workspace.focus(focused) }
             return true
         } ?? false
@@ -223,17 +223,17 @@ extension Coordinator {
         return moved
     }
 
-    /// The window switcher's drop of a floating window among a strip's columns: tiled, into a column of its own beside
-    /// `target`'s, after it or before, in the tree of `key`, all applied at once, so it does not go by where a new window
-    /// would; focus stays where it was, and the strip with it. One tiling takes back to a pin, or holds as a possible tab,
-    /// goes there instead. False where it does not float or `target` is not in that tree.
-    func tile(_ id: WindowID, beside target: WindowID, after: Bool, in key: UInt64) -> Bool {
+    /// The window switcher's drop of a floating window among a tree's windows: tiled, to `side` of `target`, in the tree
+    /// of `key`, as `reorder` puts it, all applied at once, so it does not go by where a new window would; focus stays
+    /// where it was, and the strip with it. One tiling takes back to a pin, or holds as a possible tab, goes there
+    /// instead. False where it does not float or `target` is not in that tree.
+    func tile(_ id: WindowID, beside target: WindowID, _ side: Direction, in key: UInt64) -> Bool {
         guard placements[id]?.floating == true, let window = model.windows[id],
               let tree = workspaces[key], tree.contains(target) else { return false }
         changeFloating(window, to: false)
         if let focused = tree.focused { edit(key) { $0.focus(focused) } }
         if workspaces[key]?.contains(id) == true, workspaces[key]?.pinSide(of: id) == nil {
-            _ = reorder(id, beside: target, after: after, in: key)
+            _ = reorder(id, beside: target, side, in: key)
         } else {
             flush()
         }

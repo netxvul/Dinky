@@ -105,6 +105,44 @@ struct SwitcherReorderTests {
         #expect(SwitcherReorder.target(at: 500, spans: spans, allowed: 0...2, divider: nil) == .column(2))
     }
 
+    @Test func `Over a tree the pointer aims at the side of the nearest card, none swapping`() {
+        let cards: [(id: WindowID, frame: CGRect)] = [(1, rect(10, 10, 100, 100)), (2, rect(122, 10, 100, 100))]
+        func aim(_ x: CGFloat, _ y: CGFloat, divider: CGFloat? = 240) -> SwitcherDropTarget? {
+            SwitcherReorder.target(at: CGPoint(x: x, y: y), cards: cards, divider: divider)
+        }
+        #expect(aim(20, 60) == .card(1, .left))
+        #expect(aim(100, 60) == .card(1, .right))
+        #expect(aim(60, 15) == .card(1, .up))
+        #expect(aim(60, 105) == .card(1, .down))
+        // The middle, which a window's drag swaps at, goes to a side too.
+        #expect(aim(61, 60) == .card(1, .right))
+        // Off the cards, the nearest; past the line, the floating windows; with none, still the nearest.
+        #expect(aim(118, 60) == .card(2, .left))
+        #expect(aim(240, 60) == .float)
+        #expect(aim(400, 60, divider: nil) == .card(2, .right))
+        #expect(SwitcherReorder.target(at: .zero, cards: [], divider: nil) == nil)
+    }
+
+    @Test func `A side of a card is its half that way`() {
+        let card = rect(10, 20, 100, 60)
+        #expect(SwitcherReorder.half(of: card, .left) == rect(10, 20, 50, 60))
+        #expect(SwitcherReorder.half(of: card, .right) == rect(60, 20, 50, 60))
+        #expect(SwitcherReorder.half(of: card, .up) == rect(10, 20, 100, 30))
+        #expect(SwitcherReorder.half(of: card, .down) == rect(10, 50, 100, 30))
+    }
+
+    @Test func `Dropped on a side of a tile, a window of a tree splits it`() {
+        var ws = workspace(2, algorithm: .dwindle(.tiles))
+        ws.insert(9)
+        #expect(ws.windows.count == 3)
+        let dropped = ws.drop(9, onto: 2, .split(.down))
+        #expect(dropped)
+        #expect(ws.root.path(of: 9) != nil)
+        let frames = ws.layout().frames
+        #expect(frames[9]?.minX == frames[2]?.minX)
+        #expect(frames[9]!.minY > frames[2]!.minY)
+    }
+
     @Test func `The marker sits in the middle of a gap, or past an end`() {
         let spans: [ClosedRange<CGFloat>] = [10...110, 122...222]
         #expect(SwitcherReorder.markerX(0, spans: spans, gap: 12) == 4)
