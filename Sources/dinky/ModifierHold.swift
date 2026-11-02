@@ -723,7 +723,8 @@ final class ModifierHold {
         releaseCheck?.cancel()
         let check = DispatchWorkItem { [weak self] in
             guard let self, pressing != nil else { return }
-            if CGEventSource.buttonState(.combinedSessionState, button: .left) {
+            // The hardware's state: a press swallowed never reaches the session's.
+            if CGEventSource.buttonState(.hidSystemState, button: .left) {
                 awaitPressRelease()
             } else {
                 pressReleased(at: CGEvent(source: nil)?.location ?? .zero)
