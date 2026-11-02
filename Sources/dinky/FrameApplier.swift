@@ -320,9 +320,10 @@ final class FrameApplier {
     /// keep their order among themselves, the pins in front still, and those floating windows end behind them all. On the
     /// raise queue, in turn with the other orderings, and judged on the stack as it is then. Left out, the other windows of
     /// the app in front, its focused one not: Dock orders one at a time, so one of them would be in front of the focused
-    /// one for a moment, which Finder takes for focus, ending the hold. `done` hears, on the main thread, the floating
-    /// windows it went over; nothing where it ordered none.
-    func orderOverFloats(strip: Set<WindowID>, floats: Set<WindowID>, bounds: CGRect,
+    /// one for a moment, which Finder takes for focus, ending the hold. With `siblings` they go too, for a focus about to
+    /// move, and read as focus meanwhile counts as dinky's raise. `done` hears, on the main thread, the floating windows
+    /// it went over, none where it ordered nothing, once Dock has them in order.
+    func orderOverFloats(strip: Set<WindowID>, floats: Set<WindowID>, bounds: CGRect, siblings: Bool = false,
                          done: @escaping ([WindowID]) -> Void) {
         raiseQueue.async {
             let normal = Int(CGWindowLevelForKey(.normalWindow))
@@ -330,13 +331,17 @@ final class FrameApplier {
             let focused = dinky_border_focused_window()
             let owner = focused != 0 ? dinky_window_info(focused).pid : 0
             let ordered = stack.map(\.id).filter { id in
-                strip.contains(id) && (id == focused || owner == 0 || dinky_window_info(id).pid != owner)
+                strip.contains(id) && (siblings || id == focused || owner == 0 || dinky_window_info(id).pid != owner)
             }
-            guard let back = stack.lastIndex(where: { ordered.contains($0.id) }) else { return }
+            let back = stack.lastIndex { ordered.contains($0.id) } ?? 0
             let over = stack[..<back].filter { floats.contains($0.id) && $0.frame?.intersects(bounds) == true }.map(\.id)
-            guard !over.isEmpty else { return }
-            let ids = Array(ordered.reversed())
-            dinky_sa_order_batch(ids, Int32(ids.count))
+            if !over.isEmpty {
+                let ids = Array(ordered.reversed())
+                let echoing = ids.filter { $0 != focused && dinky_window_info($0).pid == owner }
+                if !echoing.isEmpty { self.lock.withLock { self.raising.begin(echoing, front: focused, at: CACurrentMediaTime()) } }
+                dinky_sa_order_batch(ids, Int32(ids.count))
+                if !echoing.isEmpty { self.endRaise() }
+            }
             DispatchQueue.main.async { done(over) }
         }
     }
@@ -456,7 +461,7 @@ final class FrameApplier {
             let began = CACurrentMediaTime()
             lock.withLock { raising.begin(echoing, front: front, at: began) }
         }
-        defer { if !echoing.isEmpty { endRaise() } }
+        defer { if !echoing.isEmpty { self.endRaise() } }
         var unanswered: Set<pid_t> = [], raised: [WindowID] = []
         let now = CACurrentMediaTime()
         unansweredRaises = unansweredRaises.filter { $0.value > now }

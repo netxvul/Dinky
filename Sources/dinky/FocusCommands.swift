@@ -87,7 +87,7 @@ extension Dispatcher {
         guard let coordinator = AppState.shared.coordinator, let window = coordinator.model.windows[id] else {
             return .error("window \(id) is gone")
         }
-        coordinator.focus(id)
+        if !coordinator.focusStripOverFloats(id) { coordinator.focus(id) }
         return .ok("focused window \(id) \(window.appName ?? "")")
     }
 
@@ -124,7 +124,7 @@ extension Dispatcher {
                                               < hypot($1.frame.midX - from.x, $1.frame.midY - from.y) }) else {
             return .nothing("no window \(direction)", ok: false)
         }
-        focusWindow(pid: next.pid, id: next.id)
+        if AppState.shared.coordinator?.focusStripOverFloats(next.id) != true { focusWindow(pid: next.pid, id: next.id) }
         return .ok("focused window \(next.id) \(next.app)")
     }
 }

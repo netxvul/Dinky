@@ -67,7 +67,10 @@ enum Dispatcher {
                 }
             }) { return still && reply.ok ? .nothing("\(name): nothing to do", ok: true) : reply }
             if floatingOnly { return .nothing("\(name): the focused window does not float", ok: true) }
-            return tree(name, alreadyThere: true) { $0.move(direction) }
+            var moved = false
+            let reply = tree(name, alreadyThere: true) { moved = $0.move(direction); return moved }
+            if moved { AppState.shared.coordinator?.orderFocusedStripOverFloats() }
+            return reply
         case .joinWith(let direction):
             if let reply = floating("join-with \(direction)", window: window, { coordinator, id in
                 coordinator.isOnFreeWorkspace(id) ? freeRefusal : "the focused window floats; tile it first"

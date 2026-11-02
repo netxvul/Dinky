@@ -4,6 +4,7 @@
 
 ### Fixes
 
+- With a floating window over a scrolling strip, `focus`, `move`, the window switcher and a click on a column that only partly shows put the whole strip in front of it first, as holding the strip does, rather than leaving some columns over it and others under it. The floating window stays behind till a click, Cmd-Tab or a focus brings it forward.
 - Restarting dinky keeps what the scrolling strips held: the columns' order and stacks, their widths, focus and where each strip was scrolled to, and which windows you floated or tiled by hand, for every window still open. Quitting leaves floating windows where they are. An app that restarted meanwhile has new windows, which come in as new.
 - A window floated because its app stopped answering tiles again on its own once the app answers, without taking focus or moving what the strip shows.
 - Scrolling layouts now preserve column widths when windows are minimized and restored. Previously, manually adjusted column widths (via `resize`, `cycle-size`, or drag operations) were lost when a window was minimized and later restored, reverting to the default width. This fix also preserves widths through hide/show and float/tile cycles.
