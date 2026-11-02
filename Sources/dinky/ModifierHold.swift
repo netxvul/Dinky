@@ -26,6 +26,12 @@ import DinkyLayout
 // `commit`, swallowed. Pressing the trackpad while they drive it commits too, and on a Magic Mouse a right click
 // runs `hide`, swallowed with its release.
 //
+// Where `pressable` says so, a press over what is shown, held up by the modifier or from the keyboard, is taken,
+// swallowed with its release, and waits to see what it is: let go where it was, a click, which commits; moved
+// `dragSlop` points over what `canDrag` allows, a drag, which `dragBegan`, `dragMoved` and, let go, `dropped` follow,
+// leaving it up. Esc during a drag calls the drag off (`dragCancelled`), leaving it up too, and the modifier let go
+// meanwhile commits only once the button is.
+//
 // It follows the modifier, the keys and the pointer with a tap that only listens, so no app's input waits on dinky's
 // main thread for it. A second tap, ahead of that one, swallows keys, clicks and scrolls, and is on only while it
 // shows or the release of a click it took is still to come. Main thread only.
@@ -55,8 +61,8 @@ final class ModifierHold {
     private var lastIntercepted: (type: CGEventType, time: CGEventTimestamp)?
 
     /// What the swallowing tap takes; everything else is only ever listened to.
-    private static let swallowable: [CGEventType] = [.keyDown, .leftMouseDown, .leftMouseUp, .rightMouseDown,
-                                                     .rightMouseUp, .scrollWheel]
+    private static let swallowable: [CGEventType] = [.keyDown, .leftMouseDown, .leftMouseUp, .leftMouseDragged,
+                                                     .rightMouseDown, .rightMouseUp, .scrollWheel]
 
     /// Shows whatever the hold is for; false if there is nothing to show, which calls the hold off.
     var show: () -> Bool = { false }
@@ -68,6 +74,19 @@ final class ModifierHold {
     var cycle: (Bool) -> Void = { _ in }
     var commit: () -> Void = {}
     var hide: () -> Void = {}
+    /// Whether a press over what is shown is taken, to be a click or a drag; false leaves presses as they were.
+    var pressable: () -> Bool = { false }
+    /// Whether a press at a point, in global coordinates with a top-left origin, can drag what it is over.
+    var canDrag: (CGPoint) -> Bool = { _ in false }
+    /// A drag from a point began, went on to one, or was let go at one.
+    var dragBegan: (CGPoint) -> Void = { _ in }
+    var dragMoved: (CGPoint) -> Void = { _ in }
+    var dropped: (CGPoint) -> Void = { _ in }
+    /// A drag was called off, by Esc or as what was shown went.
+    var dragCancelled: () -> Void = {}
+    /// Moves the picked thing a step right, or with false left, as Shift with left or right asks; false where nothing
+    /// shown moves that way, which moves the pick instead.
+    var reorder: (Bool) -> Bool = { _ in false }
 
     /// Set while a trackpad swipe runs its commands, so a showing from the keyboard is driven by its fingers too.
     static var gesturing = false
@@ -82,9 +101,25 @@ final class ModifierHold {
             if !isShowing {
                 cancelLetGo()
                 cancelLiftCommit()
+                pressGone()
             }
         }
     }
+    /// A press over what is shown, taken while it shows (`pressable`): where it went down, whether it moved far enough
+    /// to drag, and whether what it was over still shows. Its release is swallowed either way.
+    private struct Press {
+        let start: CGPoint
+        let draggable: Bool
+        var dragging = false
+        var live = true
+    }
+    private var pressing: Press? {
+        didSet { syncSwallowing() }
+    }
+    /// The modifier, or a binding's modifiers, let go while a press was down: the pick is taken once it comes up.
+    private var commitAfterPress = false
+    /// Points a press moves before it drags.
+    private static let dragSlop: CGFloat = 6
     /// Takes the pick once fingers lifted off a mouse stay off for `relanding`: its surface is too short for one
     /// stroke to go far, so they may land again and go on.
     private var liftCommit: DispatchWorkItem?
@@ -163,10 +198,14 @@ final class ModifierHold {
         }
     }
 
-    /// Whether it shows from the keyboard, a binding or a double tap, over `point`, where a click picks.
+    /// Whether it shows over `point`, where a press is its own: shown from the keyboard, a binding or a double tap, or
+    /// held up by the modifier where presses are taken (`pressable`).
     func covers(_ point: CGPoint) -> Bool {
-        guard case .keyboard = state else { return false }
-        return within(point)
+        switch state {
+        case .keyboard: within(point)
+        case .showing: pressable() && within(point)
+        default: false
+        }
     }
 
     /// Whether a key is one it takes while shown, so key bindings leave it alone: alt-h moves the pick, not the focus,
@@ -360,7 +399,7 @@ final class ModifierHold {
     /// Turns the swallowing tap on while it shows or the release of a click it took is still to come, and off
     /// otherwise: whatever that tap takes waits for the main thread.
     private func syncSwallowing() {
-        let wanted = isShowing || swallowUp || swallowRightUp
+        let wanted = isShowing || swallowUp || swallowRightUp || pressing != nil
         guard let swallower, wanted != swallowing else { return }
         swallowing = wanted
         swallower.enable(wanted)
@@ -386,6 +425,7 @@ final class ModifierHold {
             passedOn.remove(at: index)
             if let press = swallowedPress, press.type == type, press.time == event.timestamp {
                 if type == .leftMouseDown, swallowUp { released() }
+                if type == .leftMouseDown, pressing != nil { pressLost() }
                 if type == .rightMouseDown, swallowRightUp { rightReleased() }
             }
             return
@@ -409,6 +449,7 @@ final class ModifierHold {
                 // it, heard first, may have done so already (`heard`).
                 if let press = swallowedPress, let last = lastIntercepted, last.type == press.type, last.time == press.time {
                     if press.type == .leftMouseDown, swallowUp { released() }
+                    if press.type == .leftMouseDown, pressing != nil { pressLost() }
                     if press.type == .rightMouseDown, swallowRightUp { rightReleased() }
                 }
             }
@@ -449,12 +490,19 @@ final class ModifierHold {
         switch type {
         case .flagsChanged:
             flagsChanged(event.flags)
+        case .keyDown where pressing?.dragging == true:
+            // Esc calls the drag off, leaving it up; any other key waits for the drop.
+            if case .dismiss? = key(of: event) { cancelDrag() }
+            return false
         case .keyDown where isKeyboard:
             return keyboardKey(event)
         case .keyDown where isShowing:
             return heldKey(event)
         case .keyDown:
             dismiss()
+        case .leftMouseDragged where pressing != nil:
+            pressMoved(to: event.location)
+            return false
         case .mouseMoved, .leftMouseDragged:
             if case .showing = state { moved(event.location) }
             if pointerPicks(at: event.location) { moved(event.location) }
@@ -485,6 +533,16 @@ final class ModifierHold {
         case .rightMouseDown where byFingers, .otherMouseDown where byFingers:
             // A tap or press of the fingers that drive it, which only lifting them, or the left button, ends.
             break
+        case .leftMouseDown where canSwallow && isShowing && !byFingers && pressing == nil && pressable()
+                                  && within(event.location):
+            // A click or a drag, as it goes on; its release swallowed too.
+            pressing = Press(start: event.location, draggable: canDrag(event.location))
+            swallowedPress = (type, event.timestamp)
+            awaitPressRelease()
+            return false
+        case .leftMouseUp where pressing != nil:
+            pressReleased(at: event.location)
+            return false
         case .leftMouseDown where byFingers || pointerPicks(at: event.location):
             // Pressing the trackpad the fingers drive it on takes the pick, as a click on it does.
             // Its release goes the way it went: swallowed too, or, heard only once the app had it, left to the app.
@@ -543,6 +601,10 @@ final class ModifierHold {
             lastKey = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
             if letGo != nil { movedWhileLetGo = true }
             navigate(direction)
+        case .reorder(let forward):
+            lastKey = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+            if letGo != nil { movedWhileLetGo = true }
+            if !reorder(forward) { navigate(forward ? .right : .left) }
         default:
             if event.getIntegerValueField(.keyboardEventAutorepeat) != 0
                 || AppState.shared.hotkeys.commands(for: event)?.contains(name) == true {
@@ -576,11 +638,100 @@ final class ModifierHold {
             lastKey = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
             if letGo != nil { movedWhileLetGo = true }
             navigate(direction)
+        case .reorder(let forward):
+            lastKey = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+            if letGo != nil { movedWhileLetGo = true }
+            if !reorder(forward) { navigate(forward ? .right : .left) }
         default:
             dismiss()
             return true
         }
         return false
+    }
+
+    /// A press taken moved to `point`: past `dragSlop` from where it went down, over something it can drag, it drags.
+    private func pressMoved(to point: CGPoint) {
+        guard var press = pressing, press.live else { return }
+        if !press.dragging {
+            guard press.draggable, hypot(point.x - press.start.x, point.y - press.start.y) >= Self.dragSlop else { return }
+            press.dragging = true
+            pressing = press
+            dragBegan(press.start)
+        }
+        dragMoved(point)
+    }
+
+    /// The press taken came up at `point`: a drag drops there, a click commits. Either way the pick is taken now if
+    /// the modifier was let go meanwhile; what closed meanwhile only had its release to swallow.
+    private func pressReleased(at point: CGPoint) {
+        releaseCheck?.cancel()
+        releaseCheck = nil
+        guard let press = pressing else { return }
+        pressing = nil
+        let modifierUp = commitAfterPress
+        commitAfterPress = false
+        guard press.live else {
+            if modifierUp, isShowing { takePressed(modifierUp: true) }
+            return
+        }
+        if press.dragging {
+            dropped(point)
+            if modifierUp { takePressed(modifierUp: true) }
+            return
+        }
+        takePressed(modifierUp: modifierUp)
+    }
+
+    /// Commits for a press taken: let go of the modifier, or shown from the keyboard, it is done; held up by the
+    /// modifier still, nothing shows again until that is let go.
+    private func takePressed(modifierUp: Bool) {
+        state = isKeyboard || modifierUp ? .idle : .spoiled
+        commitSoon()
+        settle()
+    }
+
+    /// Esc during a drag: it goes back, what is shown stays, and the release is swallowed still.
+    private func cancelDrag() {
+        guard var press = pressing, press.live, press.dragging else { return }
+        press.live = false
+        pressing = press
+        dragCancelled()
+    }
+
+    /// What was shown went with a press down: a drag is over, and only its release is left to swallow.
+    private func pressGone() {
+        commitAfterPress = false
+        guard var press = pressing, press.live else { return }
+        press.live = false
+        pressing = press
+        if press.dragging { dragCancelled() }
+    }
+
+    /// The press taken reached the app after all, the tap timing out: it and its release are the app's.
+    private func pressLost() {
+        releaseCheck?.cancel()
+        releaseCheck = nil
+        let dragging = pressing?.dragging == true && pressing?.live == true
+        pressing = nil
+        commitAfterPress = false
+        if dragging { dragCancelled() }
+    }
+
+    /// Checks now and then that the button is still down while a press taken is: one whose release never reached the
+    /// taps comes up where the pointer is.
+    private func awaitPressRelease() {
+        releaseCheck?.cancel()
+        let check = DispatchWorkItem { [weak self] in
+            guard let self, pressing != nil else { return }
+            // The hardware's state: a press swallowed never reaches the session's.
+            if CGEventSource.buttonState(.hidSystemState, button: .left) {
+                awaitPressRelease()
+            } else {
+                pressReleased(at: CGEvent(source: nil)?.location ?? .zero)
+            }
+        }
+        releaseCheck = check
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(500), execute: check)
     }
 
     /// Commits for a click that picked once its release came, the swallowing tap off by then.
@@ -639,6 +790,8 @@ final class ModifierHold {
             guard !openedWith.isEmpty else { return }
             guard flags.intersection(openedWith).isEmpty else { return cancelLetGo() }
             whenLetGo(stillHeld: { [unowned self] in !$0.intersection(openedWith).isEmpty }) { [unowned self] in
+                // A press down still: the pick is taken once it comes up.
+                if pressing != nil { return commitAfterPress = true }
                 state = .idle
                 commit()
                 settle()
@@ -724,6 +877,7 @@ final class ModifierHold {
                 cancelLetGo()
             } else {
                 whenLetGo(stillHeld: { [unowned self] in holding($0)?.held == true }) { [unowned self] in
+                    if pressing != nil { return commitAfterPress = true }
                     state = .idle
                     commit()
                 }

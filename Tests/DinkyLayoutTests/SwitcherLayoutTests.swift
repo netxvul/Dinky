@@ -33,11 +33,40 @@ struct SwitcherLayoutTests {
         #expect(round.size == CGSize(width: 350, height: 138))
     }
 
+    @Test func `Floating windows come last, a wider gap and a line before them`() {
+        let floats = SwitcherLayout(columns: [[1.5], [0.5, 0.5], [1.6]], maxWidth: 2000, divideBefore: 2)
+        #expect(floats.frames == [
+            CGRect(x: 14, y: 14, width: 150, height: 100),
+            CGRect(x: 176, y: 14, width: 64, height: 100),
+            CGRect(x: 244, y: 14, width: 64, height: 100),
+            CGRect(x: 337, y: 14, width: 160, height: 100),
+        ])
+        // Down the middle of the gap, as tall as the thumbnails.
+        #expect(floats.dividers == [CGRect(x: 322.5, y: 14, width: 1, height: 100)])
+        #expect(floats.size == CGSize(width: 511, height: 128))
+        // The pointer picks across the wider gap as across any other.
+        #expect(floats.index(at: CGPoint(x: 320, y: 64)) == 2)
+        #expect(floats.index(at: CGPoint(x: 325, y: 64)) == 3)
+    }
+
+    @Test func `No line with nothing on one side of it`() {
+        #expect(layout.dividers.isEmpty)
+        for at in [0, 3, 7] {
+            let row = SwitcherLayout(columns: [[1.5], [0.5, 0.5], [1.6]], maxWidth: 2000, divideBefore: at)
+            #expect(row == layout, "\(at)")
+        }
+    }
+
     @Test func `A row too wide is scaled down to fit`() {
         let narrow = SwitcherLayout(columns: [[2], [2], [2]], maxWidth: 300)
         #expect(narrow.frames.map(\.minX) == [14, 108, 202])
         #expect(narrow.frames.allSatisfy { $0.width == 82 && $0.height == 41 })
         #expect(narrow.size.width == 298)
+        // The gap before the floating windows stays as it is; only the thumbnails shrink.
+        let floats = SwitcherLayout(columns: [[2], [2], [2]], maxWidth: 300, divideBefore: 2)
+        #expect(floats.frames.map(\.minX) == [14, 103, 209])
+        #expect(floats.dividers.map(\.midX) == [195])
+        #expect(floats.size.width == 300)
     }
 
     @Test func `The thumbnail under the pointer reaches halfway into the gaps, and past the ends`() {

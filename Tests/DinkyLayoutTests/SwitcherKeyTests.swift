@@ -37,6 +37,16 @@ struct SwitcherKeyTests {
         #expect(SwitcherKey(keyCode: 29) == .number(10))
     }
 
+    @Test func `Shift with left or right moves the picked window, up and down still the pick`() {
+        #expect(SwitcherKey(keyCode: 4, shift: true) == .reorder(forward: false))
+        #expect(SwitcherKey(keyCode: 37, shift: true) == .reorder(forward: true))
+        #expect(SwitcherKey(keyCode: 123, shift: true) == .reorder(forward: false))
+        #expect(SwitcherKey(keyCode: 124, shift: true) == .reorder(forward: true))
+        #expect(SwitcherKey(keyCode: 38, shift: true) == .move(.down))
+        #expect(SwitcherKey(keyCode: 126, shift: true) == .move(.up))
+        #expect(SwitcherKey(keyCode: 4, shift: true, command: true) == nil)
+    }
+
     @Test func `Command leaves the moves alone, and other keys are not the switcher's`() {
         #expect(SwitcherKey(keyCode: 4, command: true) == nil)
         #expect(SwitcherKey(keyCode: 124, command: true) == nil)

@@ -546,6 +546,8 @@ per window, so the capsule draws at once and fresh ones fade in.
 | `layouts` | `['scrolling', 'tiles']` | The layouts it shows for: `'scrolling'`, `'tiles'` (dwindle), `'accordion'`, `'fixed'` and `'free'`, a workspace dinky does not tile. |
 | `tiles-style` | `'map'` | How a tiles or fixed workspace shows: `'map'`, its tiles as they are, or `'row'`, a row like a scrolling workspace's. |
 | `show-single` | `true` | Whether the capsule shows for a workspace with a lone tiled window (on a free workspace, a lone window), held or from a binding. `false` shows it only with two or more. |
+| `show-floating` | `true` | Whether a row shows the floating windows over a tiled workspace after its tiled ones, past a line down the middle of a wider gap, left to right as they stand. Not on a map (`tiles-style = 'map'`), nor in the glance as fingers let go of a strip. They count towards `show-single`. |
+| `drag-to-reorder` | `true` | Whether a scrolling workspace's row reorders its strip. Drag a card to another gap between the cards and its window's column moves there as you let go, at its width; a window of a stack leaves it for a column of its own. A line shows where it goes. The capsule stays up, so you can go on, and releasing the modifier focuses the window as before; Esc during a drag calls it off. Shift with h or l (or the left and right arrows) moves the picked window a column the same way. A floating window's card dragged to a gap between the tiled ones tiles it there, and a tiled window's dragged past the line floats it where it stands. That line shows only with a floating window in the row (`show-floating`). Shift with h or l on a floating window moves the pick. The pointer is a closed hand while a card is held. Pinned columns stay where they are. With it on, a click on a card focuses its window while the modifier is held, too. |
 | `enabled`, `delay-ms`, `trigger`, `double-tap-ms`, `corner-radius`, `position`, `show-titles`, `letter-keys`, `letters`, `highlight-color`, `haptic`, `haptic-strength` | [`[switcher]`](#switcher)'s | As in `[switcher]`, for this switcher alone. |
 
 </div>
@@ -1164,6 +1166,8 @@ modifier = 'none'               # none (off) | alt | ctrl | cmd | shift | hyper
 layouts = ['scrolling', 'tiles']  # where it shows: scrolling | tiles | accordion | fixed | free
 tiles-style = 'map'             # tiles and fixed: map (their tiles, picked in two dimensions) | row
 show-single = true              # also show it for a workspace with a lone tiled window (free: a lone window)
+show-floating = true            # a row's floating windows after the tiled ones, past a line (not on a map)
+drag-to-reorder = true          # scrolling: drag a card, or Shift-h/l, to move its column in the strip
 
 # Hold the modifier alone for a glass capsule of the workspaces at the pointer, each drawn small in its layout;
 # move across to pick one, release to switch to it.
