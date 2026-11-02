@@ -74,7 +74,6 @@ final class SwitcherView: NSView {
     struct DropLook {
         var border = Highlight.accent
         var fill: Color?
-        var width: CGFloat = 3
         var blur = true
     }
     var dropLook = DropLook()
@@ -89,8 +88,6 @@ final class SwitcherView: NSView {
     /// The card being dragged, and where on it the pointer took it, from its middle.
     private var dragged: (index: Int, grab: CGPoint)?
     private static let markerWidth: CGFloat = 3
-    /// The thickest border a mark on a card has, whatever a whole window's preview has.
-    private static let markBorder: CGFloat = 3
     /// Of a picture's height, how far its frost blurs.
     private static let frostRadius: CGFloat = 0.06
     private static let frostContext = CIContext()
@@ -276,14 +273,11 @@ final class SwitcherView: NSView {
             case .line(let frame):
                 marker.frame = frame
                 marker.backgroundColor = border.cgColor
-                marker.borderWidth = 0
                 marker.cornerRadius = Self.markerWidth / 2
             case .card(_, let part, let swap):
                 let fill = dropLook.fill?.nsColor ?? border.fading(to: 0.3)
                 marker.frame = part
                 marker.backgroundColor = (swap ? fill.swapFill : fill).cgColor
-                marker.borderColor = border.cgColor
-                marker.borderWidth = min(dropLook.width, Self.markBorder)
                 marker.cornerRadius = style.cardRadius
             }
         }

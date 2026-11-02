@@ -214,7 +214,7 @@ final class WindowSwitcher {
         }
         self.config = config.windowSwitcher
         dropLook = SwitcherView.DropLook(border: config.drag.previewBorderColor ?? .accent, fill: config.drag.previewFillColor,
-                                         width: CGFloat(config.drag.previewBorderWidth), blur: config.drag.previewBlur)
+                                         blur: config.drag.previewBlur)
         let modifier = self.config.enabled ? self.config.modifier : .none
         let byHand = modifier != .none || config.binds("window-switcher")
         let glances = config.gestures.stripGlances && self.config.layouts.contains(.scrolling)
