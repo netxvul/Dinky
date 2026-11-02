@@ -264,6 +264,8 @@ final class Coordinator {
         var tickPending = false
         /// Since when the button of a press dragging it has read up with no release heard (`watchStripScroll`).
         var upSince: CFTimeInterval?
+        /// Whether this hold has ordered the strip in front of the floating windows over it (`orderStripOverFloats`).
+        var orderedOverFloats = false
     }
     private var stripScroll: StripScroll?
     /// Counts the holds of a strip, numbering each (`StripScroll.hold`).
@@ -1162,7 +1164,16 @@ final class Coordinator {
         // Until the app is activated, which waits on Accessibility calls into it off the main thread (at most about
         // two seconds), and for half a second after.
         focusing = (id, Date() + 3, false)
-        focusWindow(pid: window.pid, id: id) { [weak self] activated in
+        // Its app's other windows out of order around it, where they go into order at all (see below): before it comes
+        // to the front.
+        var behind: (() -> [WindowID])?
+        if let workspace = placements[id]?.space.flatMap({ workspaces[$0] }), workspace.focused == id,
+           workspace.pinSide(of: id) == nil, drag == nil, !clickHold, windowPress == nil {
+            let layout = workspace.layout(), pinned = Set(workspace.pinnedWindows)
+            let siblings = Set(workspace.windows.filter { $0 != id && !pinned.contains($0) && model.windows[$0]?.pid == window.pid })
+            if !siblings.isEmpty { behind = { layout.raises(current: onScreenOrder()).filter(siblings.contains) } }
+        }
+        focusWindow(pid: window.pid, id: id, behind: behind) { [weak self] activated in
             guard let self, focusing?.id == id else { return }
             forgetFrontRead()
             if activated {
@@ -1207,6 +1218,30 @@ final class Coordinator {
         }
     }
 
+    /// The window of app `pid` to focus instead of `id`, a column parked off a strip that shows, which macOS gave focus
+    /// as its app came to the front, by the Dock or Cmd-Tab: the frontmost of the app's windows showing over the strip,
+    /// floating or in view, which is the one its user can see, with no scroll away from what they have. Nil where another
+    /// window of the app had focus (Cmd-` moves focus within it), where dinky is focusing a window, where a click landed on
+    /// the part of `id` that shows, where `id` is not where it is parked, as a new window, and where nothing else shows.
+    private func shownInPlaceOfParked(_ id: WindowID, of pid: pid_t) -> WindowID? {
+        guard model.windows[lastFocused]?.pid != pid, stripScroll == nil, drag == nil,
+              focusing.map({ Date() >= $0.until }) ?? true,
+              let window = model.windows[id], let key = placements[id]?.space, isVisible(key),
+              let workspace = workspaces[key], workspace.isScrolling, workspace.focused != id,
+              !workspace.isInView(id), !workspace.hangsUnderPin(id),
+              let parked = workspace.layout().frames[id], window.frame.isClose(to: parked, within: 8) else { return nil }
+        let info = onScreenWindowInfo()
+        if clickUnderWay(within: 0.3), let pointer = CGEvent(source: nil)?.location,
+           frontmostWindow(at: pointer, in: info)?.id == id { return nil }
+        let shows = { [self] (other: WindowID) -> Bool in
+            guard other != id, let shown = model.windows[other], shown.pid == pid, shown.isVisible, !shown.isMinimized,
+                  shown.frame.intersects(workspace.bounds), let placement = placements[other] else { return false }
+            if placement.floating { return isVisible(shown.spaceID) }
+            return placement.space == key && workspace.isInView(other)
+        }
+        return info.lazy.compactMap { $0[kCGWindowNumber as String] as? UInt32 }.first(where: shows)
+    }
+
     /// Follows focus into the trees, so new windows land beside the focused one and accordions show it.
     private func syncFocus(fresh: Bool = false, whileMoving: Bool = false) {
         let id = frontWindow(fresh: fresh, whileMoving: whileMoving)
@@ -1247,6 +1282,11 @@ final class Coordinator {
                 return focus(used)
             }
             raisedInBackground = raisedInBackground.filter { model.windows[$0]?.pid != pid }
+            if let shown = shownInPlaceOfParked(id, of: pid) {
+                if let key = placements[id]?.space { telemetry.command(key, "macOS activated \(id) parked, \(shown) shows") }
+                print("\(stamp()) focus: \(id) of \(pid) is parked, \(shown) of its app shows: focused that")
+                return focus(shown)
+            }
             if placements[id]?.space != nil { lastUsed[pid] = id }
         }
         if id != lastFocused {
@@ -1623,6 +1663,22 @@ final class Coordinator {
         scrollStrip(points: -CGFloat(dx * config.gestures.scroll.speed) * (workspace.seam?.left.width ?? workspace.bounds.width))
     }
 
+    /// The first time a hold moves the strip on `key`, its windows on screen are ordered in front of dinky's floating
+    /// windows over it, through Dock, keeping their order among themselves, so it slides over them rather than over some
+    /// and under others: no focus moves and no app is activated. Not for a push at an end, which moves nothing. The
+    /// floating windows stay behind, as any window does, till a click, Cmd-Tab or a focus brings them forward. Nothing
+    /// without Dock's ordering, nor where no floating window is in front of a window of the strip.
+    private func orderStripOverFloats(_ key: UInt64, _ workspace: Workspace) {
+        guard ScriptingAddition.available, ScriptingAddition.orders else { return }
+        let floats = Set(placements.compactMap { id, placement in
+            placement.floating && model.windows[id] != nil ? id : nil
+        })
+        guard !floats.isEmpty else { return }
+        applier.orderOverFloats(strip: Set(workspace.windows), floats: floats, bounds: workspace.bounds) { [self] over in
+            print("\(stamp()) strip \(key): ordered over floating \(over.map(telemetry.name))")
+        }
+    }
+
     /// Scrolls the strip held by `delta` points, positive to show what is right of it, and has its windows follow.
     private func scrollStrip(points delta: CGFloat) {
         guard let scroll = stripScroll else { return }
@@ -1641,6 +1697,11 @@ final class Coordinator {
         }
         guard moved != 0 else { return }
         workspaces[scroll.key] = workspace
+        // The first move of a hold, not a push at an end that moves nothing, puts the strip in front of the floating windows.
+        if stripScroll?.orderedOverFloats == false {
+            stripScroll?.orderedOverFloats = true
+            orderStripOverFloats(scroll.key, workspace)
+        }
         followStrip(scroll, in: workspace)
         tickForColumn()
     }

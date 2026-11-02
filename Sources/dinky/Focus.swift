@@ -75,8 +75,10 @@ func frontWindowID() -> UInt32 {
 /// the app can be slow to answer, and the main thread, which also runs the event taps, must not wait on it. An app
 /// that is not answering dinky's frame writes either is only activated. A newer focus supersedes one still under
 /// way, and so does anything else that brings another app to the front meanwhile: a click, Cmd-Tab. `done` runs on
-/// the main thread with whether the app was activated.
-func focusWindow(pid: pid_t, id: UInt32, done: ((Bool) -> Void)? = nil) {
+/// the main thread with whether the app was activated. `behind`, read off the main thread, gives the windows of its app
+/// to raise first, back to front, while it is in the background: there they go behind the window in front, in order
+/// under `id` by the time that shows. Raised once it is active, they would cover `id` till it is raised in turn.
+func focusWindow(pid: pid_t, id: UInt32, behind: (() -> [UInt32])? = nil, done: ((Bool) -> Void)? = nil) {
     // Focus is on a window again, even when it is the one that had it before a `focus-monitor`.
     AppState.shared.displays.focusOverride = nil
     if let display = AppState.shared.displays.display(ofWindow: id) {
@@ -86,24 +88,59 @@ func focusWindow(pid: pid_t, id: UInt32, done: ((Bool) -> Void)? = nil) {
     let request = focusRequests
     focusLatest.withLock { $0 = request }
     let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
-    let activate = {
+    let activate = { (mainAfter: AXUIElement?) in
         let now = NSWorkspace.shared.frontmostApplication?.processIdentifier
         guard request == focusRequests, now == front || now == pid else { done?(false); return }
         NSRunningApplication(processIdentifier: pid)?.activate()
+        if let mainAfter {
+            focusQueue.async {
+                guard focusLatest.withLock({ $0 }) == request else { return }
+                AXUIElementSetAttributeValue(mainAfter, kAXMainAttribute as CFString, kCFBooleanTrue)
+            }
+        }
         done?(true)
     }
-    if AppState.shared.coordinator?.applier.isBusy(pid) == true { return activate() }
+    if AppState.shared.coordinator?.applier.isBusy(pid) == true { return activate(nil) }
     focusQueue.async {
         let current = { focusLatest.withLock { $0 } == request }
+        var mainAfter: AXUIElement?
         if current(), let element = axWindow(pid: pid, wid: id, timeout: focusTimeout) {
+            // A window in front of the app in front's stays there: in the background its app would put it behind those
+            // on being raised or made main, for a moment, till activated, showing them. So it is only made main after.
+            let staysInFront = standsOverFront(id, pid: pid, front: front)
+            if !staysInFront, front != pid, let behind {
+                for sibling in behind() where current() {
+                    guard let element = axWindow(pid: pid, wid: sibling, timeout: focusTimeout) else { continue }
+                    AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+                }
+            }
             // Raise alone makes the window main; the app's key window can stay one on another Space, and the
             // next command would then act on that one. Make this window main and key explicitly.
-            AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
+            if staysInFront {
+                mainAfter = element
+            } else {
+                AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
+            }
             if current() { AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue) }
-            if current() { AXUIElementPerformAction(element, kAXRaiseAction as CFString) }
+            if current(), !staysInFront { AXUIElementPerformAction(element, kAXRaiseAction as CFString) }
         }
-        DispatchQueue.main.async(execute: activate)
+        DispatchQueue.main.async { activate(mainAfter) }
     }
+}
+
+/// Whether `id`, of another app, is on screen in front of all the windows of `front`, the app in front, at its level, as
+/// a strip Dock ordered over a floating window of the app in front is: `focusWindow` leaves it there. Windows of its own
+/// app in front of it do not matter: focused and then activated, it comes in front of them.
+private func standsOverFront(_ id: UInt32, pid: pid_t, front: pid_t?) -> Bool {
+    guard let front, front != pid else { return false }
+    let info = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
+    guard let layer = info.first(where: { $0[kCGWindowNumber as String] as? UInt32 == id })?[kCGWindowLayer as String] as? Int
+    else { return false }
+    let shown = info.filter { window in
+        window[kCGWindowLayer as String] as? Int == layer
+            && (window[kCGWindowNumber as String] as? UInt32 == id || window[kCGWindowOwnerPID as String] as? pid_t == front)
+    }
+    return shown.first?[kCGWindowNumber as String] as? UInt32 == id && shown.count > 1
 }
 
 /// Whether the left button is down, or was pressed within `seconds`: a click may still be activating an app, which
