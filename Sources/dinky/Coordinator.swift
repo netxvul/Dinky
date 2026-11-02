@@ -1536,7 +1536,11 @@ final class Coordinator {
     /// `Workspace.holdsScroll`.
     func revealClickedFocus() {
         guard !clickHold else { return }
-        for (key, tree) in workspaces where tree.holdsScroll { edit(key) { $0.revealFocus() } }
+        for (key, tree) in workspaces where tree.holdsScroll {
+            // The strip is about to slide to a column clicked where it only partly shows.
+            if let focused = tree.focused, !tree.isInView(focused) { orderStripOverFloats(key, tree) }
+            edit(key) { $0.revealFocus() }
+        }
     }
 
     // MARK: Strip scroll
@@ -1744,16 +1748,45 @@ final class Coordinator {
     /// windows over it, through Dock, keeping their order among themselves, so it slides over them rather than over some
     /// and under others: no focus moves and no app is activated. Not for a push at an end, which moves nothing. The
     /// floating windows stay behind, as any window does, till a click, Cmd-Tab or a focus brings them forward. Nothing
-    /// without Dock's ordering, nor where no floating window is in front of a window of the strip.
-    private func orderStripOverFloats(_ key: UInt64, _ workspace: Workspace) {
-        guard ScriptingAddition.available, ScriptingAddition.orders else { return }
+    /// without Dock's ordering, nor where no floating window is in front of a window of the strip. `done` runs on the main
+    /// thread once that is over with, at once where there is nothing to ask of Dock.
+    private func orderStripOverFloats(_ key: UInt64, _ workspace: Workspace, siblings: Bool = false, done: (() -> Void)? = nil) {
         let floats = Set(placements.compactMap { id, placement in
             placement.floating && model.windows[id] != nil ? id : nil
         })
-        guard !floats.isEmpty else { return }
-        applier.orderOverFloats(strip: Set(workspace.windows), floats: floats, bounds: workspace.bounds) { [self] over in
-            print("\(stamp()) strip \(key): ordered over floating \(over.map(telemetry.name))")
+        guard ScriptingAddition.available, ScriptingAddition.orders, !floats.isEmpty else { done?(); return }
+        applier.orderOverFloats(strip: Set(workspace.windows), floats: floats, bounds: workspace.bounds,
+                                siblings: siblings) { [self] over in
+            if !over.isEmpty { print("\(stamp()) strip \(key): ordered over floating \(over.map(telemetry.name))") }
+            done?()
         }
+    }
+
+    /// The strip of the focused window goes in front of the floating windows over it, as a hold does, for a command moving
+    /// that window along the strip.
+    func orderFocusedStripOverFloats() {
+        guard let key = placements[commandFocusedWindow]?.space, let workspace = workspaces[key], workspace.isScrolling else { return }
+        orderStripOverFloats(key, workspace, siblings: true)
+    }
+
+    /// Focuses `id`, a window of a scrolling strip that a key or the window switcher asked for, with its strip ordered in
+    /// front of the floating windows first, as a hold does, not over some columns and under others. Activated before
+    /// Dock is done, `id` would be raised behind the app in front and come back up, a flash; a Dock that does not answer
+    /// holds it up no longer than a tenth of a second. False for any other window, which is the caller's to focus.
+    func focusStripOverFloats(_ id: WindowID) -> Bool {
+        guard let key = placements[id]?.space, let workspace = workspaces[key], workspace.isScrolling,
+              model.windows[id] != nil else { return false }
+        // No other window takes the tree meanwhile. A newer focus supersedes this one.
+        focusing = (id, Date() + 3, false)
+        var sent = false
+        let send = { [weak self] in
+            guard !sent, let self, focusing?.id == id else { return }
+            sent = true
+            focus(id)
+        }
+        orderStripOverFloats(key, workspace, siblings: true, done: send)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: send)
+        return true
     }
 
     /// Scrolls the strip held by `delta` points, positive to show what is right of it, and has its windows follow.
@@ -2110,6 +2143,7 @@ final class Coordinator {
         guard enabled, let key = placements[id]?.space, model.windows[id] != nil else { return }
         focusing = (id, Date() + 3, false)
         telemetry.command(key, "peek of \(id) \(model.windows[id]?.appName ?? "?") clicked")
+        if let workspace = workspaces[key], workspace.isScrolling { orderStripOverFloats(key, workspace) }
         edit(key) { $0.focus(id) }
         flush()
         focusOnceStill(id, in: key)

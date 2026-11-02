@@ -479,7 +479,7 @@ final class WindowSwitcher {
             let tree = coordinator.workspaces[coordinator.treeKey(space)]
             guard tree?.contains(id) == true, tree?.focused != id else { return }
         }
-        coordinator.focus(id)
+        if !coordinator.focusStripOverFloats(id) { coordinator.focus(id) }
     }
 
     /// Fades the capsule in, rising a few points, where `origin` says.
