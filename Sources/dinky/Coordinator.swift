@@ -821,8 +821,8 @@ final class Coordinator {
         // A window coming from another Space's tree is moving, not switching tabs: tabs share a Space.
         if let new, old == nil, holdAsTab(window, in: new) { return }
         if let new {
-            // Back in another tree, it is no pin away from the one it left.
-            for key in workspaces.keys where key != new && workspaces[key]!.departedPins.values.contains(window.id) {
+            // Back in another tree, it is not away from the one it left.
+            for key in workspaces.keys where key != new && workspaces[key]!.remembersDeparted(window.id) {
                 edit(key) { $0.forgetPinned(window.id) }
             }
             // Pinned again only with room for it, judged with the minimums the next pass lays out with, its own too.
@@ -891,8 +891,8 @@ final class Coordinator {
         unpinnedByHand.remove(id)
         raisedInBackground.remove(id)
         lastUsed = lastUsed.filter { $0.value != id }
-        // A pin away when it closed: no tree remembers it, its id free for another window.
-        for key in workspaces.keys where workspaces[key]!.departedPins.values.contains(id) {
+        // Away when it closed: no tree remembers it, its id free for another window.
+        for key in workspaces.keys where workspaces[key]!.remembersDeparted(id) {
             edit(key) { $0.forgetPinned(id) }
         }
         stagingWindows[id] = nil

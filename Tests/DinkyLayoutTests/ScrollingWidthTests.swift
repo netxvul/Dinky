@@ -106,21 +106,32 @@ struct ScrollingWidthSurvivalTests {
         #expect(ws.width(ofColumn: 0) == 0.3, "pinned column keeps its custom width")
     }
 
-    @Test func `Width is cleared when window is permanently removed`() {
+    @Test func `A window that closes while away leaves no width for another window with its id`() {
         var ws = strip(3, width: 0.5)
         ws.setWidth(ofColumn: 1, 0.3)
 
-        // Depart saves the width
         ws.depart(2)
         #expect(ws.departedColumnWidths[2] == 0.3)
+        #expect(ws.remembersDeparted(2))
 
-        // forgetPinned clears pin state but NOT departed widths
+        // Closed while minimized: the window is gone for good.
         ws.forgetPinned(2)
-        #expect(ws.departedColumnWidths[2] == 0.3, "departed width still saved")
-
-        // clearDepartedWidth is called separately when window truly closes
-        ws.clearDepartedWidth(2)
         #expect(ws.departedColumnWidths[2] == nil)
+        #expect(!ws.remembersDeparted(2))
+
+        // Its id comes back as another window's, at the default width.
+        ws.insert(2)
+        let column = ws.root.path(of: 2)![0]
+        #expect(ws.width(ofColumn: column) == 0.5)
+    }
+
+    @Test func `A window removed from the tree does not keep its width`() {
+        var ws = strip(3, width: 0.5)
+        ws.setWidth(ofColumn: 1, 0.3)
+
+        ws.remove(2)
+        #expect(ws.departedColumnWidths[2] == nil)
+        #expect(!ws.remembersDeparted(2))
     }
 
     @Test func `Cycle-size width changes are preserved through minimize`() {
