@@ -134,6 +134,7 @@ extension Config {
     show-single = true              # also show it for a workspace with a lone tiled window (free: a lone window)
     show-floating = true            # a row's floating windows after the tiled ones, past a line (not on a map)
     drag-to-reorder = true          # scrolling: drag a card, or Shift-h/l, to move its column in the strip
+    float-position = 'center'       # a card dragged past the line floats its window: center (at most 80% each way) | stay
 
     # Hold the modifier alone for a glass capsule of the workspaces at the pointer, each drawn small in its layout;
     # move across to pick one, release to switch to it.

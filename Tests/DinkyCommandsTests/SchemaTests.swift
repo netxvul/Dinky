@@ -83,6 +83,7 @@ struct SchemaTests {
         let layouts = switcher["layouts"]!["items"] as! [String: Any]
         #expect(layouts["enum"] as! [String] == SwitcherLayoutKind.allCases.map(\.rawValue))
         #expect(switcher["tiles-style"]!["enum"] as! [String] == SwitcherTilesStyle.allCases.map(\.rawValue))
+        #expect(switcher["float-position"]!["enum"] as! [String] == SwitcherFloatPosition.allCases.map(\.rawValue))
         #expect(switcher["position"]!["enum"] as! [String] == SwitcherPosition.allCases.map(\.rawValue))
         let shared = properties["switcher"]!["properties"] as! [String: [String: Any]]
         #expect(shared["position"]!["enum"] as! [String] == SwitcherPosition.allCases.map(\.rawValue))
@@ -201,6 +202,7 @@ struct SchemaTests {
         show-single = false
         show-floating = false
         drag-to-reorder = false
+        float-position = 'stay'
         show-titles = false
         letter-keys = false
         letters = 'qwerty'

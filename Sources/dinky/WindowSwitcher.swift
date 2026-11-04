@@ -12,7 +12,7 @@ import DinkyPrivate
 // they stand. Releasing the modifier focuses the window picked, which scrolls a strip to it. With `drag-to-reorder`, a
 // scrolling workspace's card dragged to another gap between the cards moves its window's column there in the strip as
 // it is let go, and Shift with left or right, h or l, moves the picked one a column; a floating window's card dragged
-// to such a gap tiles it there, and a tiled window's dragged past the line floats it where it stands. Dropped onto another
+// to such a gap tiles it there, and a tiled window's dragged past the line floats it, in the middle of its display with `float-position`. Dropped onto another
 // tiled card it goes as a window dragged onto that window's tile does: on a strip, stacked in the card's column at its top
 // or bottom, or swapped in the middle; on a tiles workspace, swapped in the middle or splitting the tile at an edge, a
 // floating window's card always splitting it. A fixed workspace only floats, past the line. With no floating window to show the
@@ -840,9 +840,10 @@ final class WindowSwitcher {
         return refill(picking: id, coordinator)
     }
 
-    /// Floats tiled `id` where it stands, then fills the capsule afresh as `reorder` does. False where it cannot.
+    /// Floats tiled `id`, as `float-position` says where, then fills the capsule afresh as `reorder` does. False where it
+    /// cannot.
     private func float(_ id: WindowID) -> Bool {
-        guard let coordinator = AppState.shared.coordinator, coordinator.setFloating(id, true) else { return false }
+        guard let coordinator = AppState.shared.coordinator, coordinator.floatFromSwitcher(id, centered: config.floatPosition == .center) else { return false }
         return refill(picking: id, coordinator)
     }
 

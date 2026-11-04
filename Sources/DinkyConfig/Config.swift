@@ -354,6 +354,11 @@ public enum SwitcherTilesStyle: String, CaseIterable {
     case map, row
 }
 
+/// Where a window floated from the window switcher's row goes: the middle of its display, or nowhere.
+public enum SwitcherFloatPosition: String, CaseIterable {
+    case center, stay
+}
+
 /// Where a switcher's capsule shows, on the display under the pointer.
 public enum SwitcherPosition: String, CaseIterable {
     /// Over the pointer when the modifier is held or a swipe shows it, in the middle from a key binding.
@@ -464,6 +469,7 @@ public struct Switcher: Equatable {
     public var showSingle = true
     /// Whether a row shows the floating windows over a tiled workspace after its tiled ones, past a line.
     public var showFloating = true
+    public var floatPosition = SwitcherFloatPosition.center
     /// Whether a scrolling workspace's row reorders its strip: a card dragged to another gap between the cards, or the
     /// picked one moved with Shift and left or right, moves its window's column there.
     public var dragToReorder = true
@@ -510,6 +516,7 @@ public struct Switcher: Equatable {
         tilesStyle = try t.choice("tiles-style") ?? tilesStyle
         showSingle = try t.bool("show-single") ?? showSingle
         showFloating = try t.bool("show-floating") ?? showFloating
+        floatPosition = try t.choice("float-position") ?? floatPosition
         dragToReorder = try t.bool("drag-to-reorder") ?? dragToReorder
         try t.done()
     }

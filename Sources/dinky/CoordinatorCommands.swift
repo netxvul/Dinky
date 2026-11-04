@@ -223,6 +223,19 @@ extension Coordinator {
         return moved
     }
 
+    /// The window switcher's floating of a tiled window: as `setFloating`, gliding on to the middle of its display, its
+    /// size kept up to `floatShare` of it each way, should `centered`, even from a scrolled-away column.
+    func floatFromSwitcher(_ id: WindowID, centered: Bool) -> Bool {
+        guard setFloating(id, true) else { return false }
+        if centered {
+            _ = floating(id, resizingOnce: true) { frame, area in
+                FloatingFrame.centered(frame.size, atMost: Self.floatShare, in: area)
+            }
+        }
+        return true
+    }
+    private static let floatShare = 0.8
+
     /// The window switcher's drop of a floating window among a tree's windows: tiled, into `zone` of `target`, in the tree
     /// of `key`, as `reorder` puts it, all applied at once, so it does not go by where a new window would; focus stays
     /// where it was, and the strip with it. One tiling takes back to a pin, or holds as a possible tab, goes there
