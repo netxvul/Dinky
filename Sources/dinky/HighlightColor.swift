@@ -29,5 +29,8 @@ extension DinkyConfig.Color {
 
 extension NSColor {
     /// This colour with its alpha scaled by `fraction`, so a translucent highlight stays as translucent relative to it.
+    /// A preview's fill for a swap: stronger than a split's, never fainter.
+    var swapFill: NSColor { withAlphaComponent(max(alphaComponent, min(alphaComponent * 1.5, 0.6))) }
+
     func fading(to fraction: CGFloat) -> NSColor { withAlphaComponent(alphaComponent * fraction) }
 }

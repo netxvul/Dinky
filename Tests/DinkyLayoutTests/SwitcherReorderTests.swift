@@ -1,4 +1,5 @@
 import CoreGraphics
+import QuartzCore
 import Testing
 @testable import DinkyLayout
 
@@ -103,6 +104,92 @@ struct SwitcherReorderTests {
         #expect(SwitcherReorder.target(at: 0, spans: spans, allowed: 1...2, divider: 240) == .column(1))
         // No line, no floating windows to go among.
         #expect(SwitcherReorder.target(at: 500, spans: spans, allowed: 0...2, divider: nil) == .column(2))
+    }
+
+    @Test func `Over a tree the pointer aims at the nearest card's zone`() {
+        let cards: [(id: WindowID, frame: CGRect)] = [(1, rect(10, 10, 100, 100)), (2, rect(122, 10, 100, 100))]
+        func aim(_ x: CGFloat, _ y: CGFloat, swaps: Bool = true, divider: CGFloat? = 240) -> SwitcherDropTarget? {
+            SwitcherReorder.target(at: CGPoint(x: x, y: y), cards: cards, swaps: swaps, divider: divider)
+        }
+        #expect(aim(20, 60) == .card(1, .split(.left)))
+        #expect(aim(100, 60) == .card(1, .split(.right)))
+        #expect(aim(60, 15) == .card(1, .split(.up)))
+        #expect(aim(60, 105) == .card(1, .split(.down)))
+        #expect(aim(61, 60) == .card(1, .swap))
+        // A floating window has no place to swap into: the middle goes to a side.
+        #expect(aim(61, 60, swaps: false) == .card(1, .split(.right)))
+        // Off the cards, the nearest; past the line, the floating windows; with none, still the nearest.
+        #expect(aim(118, 60) == .card(2, .split(.left)))
+        #expect(aim(240, 60) == .float)
+        #expect(aim(400, 60, divider: nil) == .card(2, .split(.right)))
+        #expect(SwitcherReorder.target(at: .zero, cards: [], swaps: true, divider: nil) == nil)
+    }
+
+    @Test func `Over a strip's card its bands stack, its middle swaps, and its sides are the gaps`() {
+        let cards: [(id: WindowID, frame: CGRect)] = [(1, rect(10, 10, 100, 100)), (2, rect(122, 10, 100, 100))]
+        let spans: [ClosedRange<CGFloat>] = [10...110, 122...222]
+        func aim(_ x: CGFloat, _ y: CGFloat, on: [(id: WindowID, frame: CGRect)]? = nil, allowed: ClosedRange<Int> = 0...2) -> SwitcherDropTarget {
+            SwitcherReorder.target(at: CGPoint(x: x, y: y), cards: on ?? cards, spans: spans, allowed: allowed, divider: 240)
+        }
+        #expect(aim(60, 15) == .card(1, .split(.up)))
+        #expect(aim(60, 105) == .card(1, .split(.down)))
+        #expect(aim(60, 60) == .card(1, .swap))
+        #expect(aim(20, 60) == .column(0))
+        #expect(aim(100, 60) == .column(1))
+        #expect(aim(116, 60) == .column(1))
+        #expect(aim(240, 60) == .float)
+        // A card it cannot go onto, as a pinned one's, is only ever beside.
+        #expect(aim(60, 15, on: [cards[1]], allowed: 1...2) == .column(1))
+    }
+
+    @Test func `A card's marked part is the half a drop takes, or all of it for a swap`() {
+        let card = rect(10, 20, 100, 60)
+        #expect(SwitcherReorder.marked(card, .split(.left)) == rect(10, 20, 50, 60))
+        #expect(SwitcherReorder.marked(card, .split(.right)) == rect(60, 20, 50, 60))
+        #expect(SwitcherReorder.marked(card, .split(.up)) == rect(10, 20, 100, 30))
+        #expect(SwitcherReorder.marked(card, .split(.down)) == rect(10, 50, 100, 30))
+        #expect(SwitcherReorder.marked(card, .swap) == card)
+    }
+
+    @Test func `A marked part rounds only the corners on the card's own outline`() {
+        let card = rect(10, 20, 100, 60)
+        func corners(_ zone: DropZone) -> CACornerMask { SwitcherReorder.outerCorners(of: SwitcherReorder.marked(card, zone), in: card) }
+        #expect(corners(.split(.left)) == [.layerMinXMinYCorner, .layerMinXMaxYCorner])
+        #expect(corners(.split(.right)) == [.layerMaxXMinYCorner, .layerMaxXMaxYCorner])
+        #expect(corners(.split(.up)) == [.layerMinXMinYCorner, .layerMaxXMinYCorner])
+        #expect(corners(.split(.down)) == [.layerMinXMaxYCorner, .layerMaxXMaxYCorner])
+        #expect(corners(.swap) == [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner])
+    }
+
+    @Test func `A drop changes a tree unless the window is just there already`() {
+        var strip = workspace(3, algorithm: .scrolling)
+        #expect(SwitcherReorder.changes(strip, moving: 1, onto: 2, .split(.down)))
+        #expect(SwitcherReorder.changes(strip, moving: 1, onto: 2, .swap))
+        strip.drop(3, onto: 2, .split(.down))
+        #expect(!SwitcherReorder.changes(strip, moving: 3, onto: 2, .split(.down)))
+        #expect(SwitcherReorder.changes(strip, moving: 3, onto: 2, .split(.up)))
+        let tiles = workspace(2, algorithm: .dwindle(.tiles))
+        #expect(SwitcherReorder.changes(tiles, moving: 1, onto: 2, .swap))
+    }
+
+    @Test func `Dropped on a side of a tile, a window of a tree splits it`() {
+        var ws = workspace(2, algorithm: .dwindle(.tiles))
+        ws.insert(9)
+        #expect(ws.windows.count == 3)
+        let dropped = ws.drop(9, onto: 2, .split(.down))
+        #expect(dropped)
+        #expect(ws.root.path(of: 9) != nil)
+        let frames = ws.layout().frames
+        #expect(frames[9]?.minX == frames[2]?.minX)
+        #expect(frames[9]!.minY > frames[2]!.minY)
+    }
+
+    @Test func `A dragged card fits in its box, keeping its shape, and never grows`() {
+        let box = CGSize(width: 72, height: 48)
+        #expect(SwitcherReorder.dragScale(of: CGSize(width: 220, height: 100), in: box) == 72.0 / 220)
+        #expect(SwitcherReorder.dragScale(of: CGSize(width: 64, height: 100), in: box) == 0.48)
+        #expect(SwitcherReorder.dragScale(of: CGSize(width: 40, height: 30), in: box) == 1)
+        #expect(SwitcherReorder.dragScale(of: .zero, in: box) == 1)
     }
 
     @Test func `The marker sits in the middle of a gap, or past an end`() {

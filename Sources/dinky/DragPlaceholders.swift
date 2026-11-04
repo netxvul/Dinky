@@ -54,8 +54,7 @@ final class DragPlaceholders {
         let width = CGFloat(drag.previewBorderWidth)
         splitLook = PlaceholderLook(stroke: border, fill: fill, width: width)
         // A swap: a stronger fill than a split, never a fainter one, with the same border.
-        let alpha = fill.alphaComponent
-        swapLook = PlaceholderLook(stroke: border, fill: fill.withAlphaComponent(max(alpha, min(alpha * 1.5, 0.6))), width: width)
+        swapLook = PlaceholderLook(stroke: border, fill: fill.swapFill, width: width)
         homeLook = PlaceholderLook(stroke: .secondaryLabelColor.withAlphaComponent(0.45),
                                    fill: .secondaryLabelColor.withAlphaComponent(0.06), width: width)
     }

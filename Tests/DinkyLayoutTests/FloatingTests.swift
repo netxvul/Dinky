@@ -11,6 +11,14 @@ struct FloatingTests {
         #expect(FloatingFrame.moved(rect(400, 230, 300, 200), direction, by: 50, within: area) == expected)
     }
 
+    @Test func `Centred keeping its size, a window is at most that share of the area each way`() {
+        let area = rect(10, 40, 1000, 800)
+        #expect(FloatingFrame.centered(CGSize(width: 400, height: 200), atMost: 0.8, in: area) == rect(310, 340, 400, 200))
+        #expect(FloatingFrame.centered(CGSize(width: 1400, height: 200), atMost: 0.8, in: area) == rect(110, 340, 800, 200))
+        #expect(FloatingFrame.centered(CGSize(width: 400, height: 790), atMost: 0.8, in: area) == rect(310, 120, 400, 640))
+        #expect(FloatingFrame.centered(CGSize(width: 1000, height: 800), atMost: 0.8, in: area) == rect(110, 120, 800, 640))
+    }
+
     @Test func `Move stops at the edge of the area`() {
         #expect(FloatingFrame.moved(rect(30, 40, 300, 200), .left, by: 50, within: area) == rect(10, 40, 300, 200))
         #expect(FloatingFrame.moved(rect(30, 40, 300, 200), .up, by: 50, within: area) == rect(30, 30, 300, 200))

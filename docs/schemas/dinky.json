@@ -309,6 +309,7 @@
         "preview-fill-color": { "$ref": "#/definitions/color", "description": "Fill of that part. Unset, the border colour at 30%." },
         "home-outline": { "type": "boolean", "default": true, "description": "Outline the tile a dragged window came from. false shows only the feedback over the tile under the pointer." },
         "preview-border-width": { "type": "number", "minimum": 0, "maximum": 20, "default": 3, "description": "Points, for every border while you drag: the preview, a swap's, and the outlines of the tiles." },
+        "preview-blur": { "type": "boolean", "default": true, "description": "Whether dragging a card in the window switcher frosts the part of the card under the mark of where it would go. false shows only the mark's fill." },
         "mouse-modifier": {
           "type": "string",
           "pattern": "^(none|(alt|ctrl|cmd|shift)(-(alt|ctrl|cmd|shift))*)$",
@@ -447,7 +448,13 @@
         "drag-to-reorder": {
           "type": "boolean",
           "default": true,
-          "description": "Whether a scrolling workspace's row reorders its strip: drag a card to another gap, or press Shift with h or l, and its window's column moves there. A floating window's card dragged to a gap tiles it there, and a tiled window's dragged past the line floats it."
+          "description": "Whether a scrolling workspace's row reorders its strip: drag a card to another gap, or press Shift with h or l, and its window's column moves there. A floating window's card dragged to a gap tiles it there, and a tiled window's dragged past the line floats it. A tiled card dropped onto another goes as a window dragged onto that window's tile does: stacks or swaps on a strip, swaps or splits on a tiles workspace's row. On a fixed workspace, cards only float."
+        },
+        "float-position": {
+          "type": "string",
+          "enum": ["center", "stay"],
+          "default": "center",
+          "description": "Where a window goes as its card is dragged past the line and floats it: center, the middle of its display, at most 80% of it each way, or stay, where it stands."
         },
         "show-titles": {
           "type": "boolean",

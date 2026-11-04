@@ -1,4 +1,5 @@
 import AppKit
+import CoreImage
 import DinkyConfig
 import DinkyLayout
 
@@ -21,8 +22,10 @@ struct SwitcherItem {
 // over a column's lower window. A window with a letter has it drawn as a key (`Keycap`) at the title's right: under
 // the card, the title and the key centred together; on a band, the key at its right end; with no title, the key alone
 // in its place. The picked card's key takes the highlight colour. A line of the separator colour parts a row's tiled
-// windows from the floating ones after them. A card being dragged lifts off the row and follows the pointer, the ring
-// and glow put away, and a line of the highlight colour marks the gap it would go to. Layers, in the frames the caller
+// windows from the floating ones after them. A card being dragged lifts off the row, small and see-through so it hides
+// little of what it is dragged over, and follows the pointer, the ring and glow put away, and a mark over it shows where
+// it would go: a line in a gap, or what of a card it would take, in `[drag]`'s preview colours, that part of the card
+// frosted below the dragged one from its picture, blurred once a drag. Layers, in the frames the caller
 // gives. Main thread only.
 final class SwitcherView: NSView {
     /// How the cards sit: a row has room around each card, a map's cells only a narrow gap.
@@ -59,12 +62,39 @@ final class SwitcherView: NSView {
     private var dividers: [CALayer] = []
     private let glow = CALayer()
     private let ring = CALayer()
-    /// The gap a dragged card would go to.
+    /// Where a dragged card would go: a line in a gap, or what of a card it would take.
     private let marker = CALayer()
+    /// That card's picture blurred, under the dragged card, and what shows of it.
+    private let frost = CALayer()
+    private let frostPart = CALayer()
+    private var frostCard: Int?
+    /// The cards' pictures blurred this drag, by card.
+    private var frosted: [Int: CGImage] = [:]
+    /// How `[drag]` has a mark look.
+    struct DropLook {
+        var border = Highlight.accent
+        var fill: Color?
+        var blur = true
+    }
+    var dropLook = DropLook()
+    /// Where a dragged card would go, in the capsule's coordinates: a line in a gap (`markerLine`), or a part of card
+    /// `index`, all of it for a swap.
+    enum DropMark {
+        case line(CGRect)
+        case card(index: Int, part: CGRect, swap: Bool)
+    }
+    /// The line of a well opened for a drag with no floating window to show one (`openWell`).
+    private let wellLine = CALayer()
     /// The card being dragged, and where on it the pointer took it, from its middle.
     private var dragged: (index: Int, grab: CGPoint)?
     private static let markerWidth: CGFloat = 3
-    private static let liftScale: CGFloat = 1.06
+    /// Of a picture's height, how far its frost blurs.
+    private static let frostRadius: CGFloat = 0.06
+    private static let frostContext = CIContext()
+    private static let allCorners: CACornerMask = [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+    /// What a dragged card fits in, its longest side at most that, and how much of it shows.
+    private static let liftBox = CGSize(width: 64, height: 64)
+    private static let liftOpacity: Float = 0.7
     private(set) var picked = 0
     /// The cards whose pick changed since they were last placed, and whether placing them is due.
     private var repicked: Set<Int> = []
@@ -89,9 +119,19 @@ final class SwitcherView: NSView {
         ring.borderWidth = Self.ringWidth
         ring.zPosition = 2
         marker.cornerRadius = Self.markerWidth / 2
-        marker.zPosition = 4
+        // Over a dragged card too, its frost under it.
+        marker.zPosition = 6
+        frost.zPosition = 4
+        frost.isHidden = true
+        frost.contentsGravity = .resizeAspectFill
+        frost.masksToBounds = true
+        frostPart.backgroundColor = NSColor.black.cgColor
+        frost.mask = frostPart
+        layer?.addSublayer(frost)
         marker.isHidden = true
         layer?.addSublayer(marker)
+        wellLine.isHidden = true
+        layer?.addSublayer(wellLine)
     }
 
     @available(*, unavailable)
@@ -112,7 +152,9 @@ final class SwitcherView: NSView {
         dragged = nil
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        marker.isHidden = true
+        hideMark()
+        frosted = [:]
+        wellLine.isHidden = true
         glow.opacity = 1
         ring.opacity = 1
         cards.forEach { $0.root.removeFromSuperlayer() }
@@ -168,13 +210,16 @@ final class SwitcherView: NSView {
             applyColors(only: Array(repicked))
             repicked = []
         }
-        dragged = (index, CGPoint(x: point.x - frames[index].midX, y: point.y - frames[index].midY))
+        // The pointer keeps its place on the card as it shrinks.
+        let scale = SwitcherReorder.dragScale(of: frames[index].size, in: Self.liftBox)
+        dragged = (index, CGPoint(x: (point.x - frames[index].midX) * scale, y: (point.y - frames[index].midY) * scale))
+        frosted = [:]
         CATransaction.begin()
         CATransaction.setDisableActions(!animates)
         CATransaction.setAnimationDuration(0.15)
         for (i, card) in cards.enumerated() {
-            card.root.opacity = i == index ? 0.95 : Self.dimmed
-            card.root.transform = i == index ? CATransform3DMakeScale(Self.liftScale, Self.liftScale, 1) : CATransform3DIdentity
+            card.root.opacity = i == index ? Self.liftOpacity : Self.dimmed
+            card.root.transform = i == index ? CATransform3DMakeScale(scale, scale, 1) : CATransform3DIdentity
             card.root.zPosition = i == index ? 5 : 0
         }
         let lifted = cards[index].root
@@ -187,27 +232,110 @@ final class SwitcherView: NSView {
         CATransaction.commit()
     }
 
-    /// The dragged card follows the pointer to `point`, and the line goes to `markerX` across, between the cards in
-    /// `span` up and down; none where nil, as over the gap it came from.
-    func drag(to point: CGPoint, markerX: CGFloat?, span: ClosedRange<CGFloat>) {
+    /// A line of the separator colour at `frame` while a well is open, or none.
+    func showWellLine(_ frame: CGRect?) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        wellLine.isHidden = frame == nil
+        if let frame {
+            wellLine.frame = frame
+            wellLine.backgroundColor = NSColor.separatorColor.cgColor
+        }
+        CATransaction.commit()
+    }
+
+    /// The marker for a gap: a line at `x` across, `span` up and down.
+    static func markerLine(x: CGFloat, span: ClosedRange<CGFloat>) -> CGRect {
+        CGRect(x: (x - markerWidth / 2).rounded(), y: span.lowerBound, width: markerWidth, height: span.upperBound - span.lowerBound)
+    }
+
+    /// The dragged card follows the pointer to `point`, and the mark goes to `mark`; none where nil, as over the place it
+    /// came from.
+    func drag(to point: CGPoint, mark: DropMark?) {
         guard let dragged else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         cards[dragged.index].root.position = CGPoint(x: point.x - dragged.grab.x, y: point.y - dragged.grab.y)
         CATransaction.commit()
-        guard let x = markerX else {
-            marker.isHidden = true
+        guard let mark else {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            hideMark()
+            CATransaction.commit()
             return
         }
-        let frame = CGRect(x: (x - Self.markerWidth / 2).rounded(), y: span.lowerBound, width: Self.markerWidth,
-                           height: span.upperBound - span.lowerBound)
         CATransaction.begin()
-        // Straight there when it shows, sliding from gap to gap after.
+        // Straight there when it shows, sliding from place to place after.
         CATransaction.setDisableActions(marker.isHidden || !animates)
         CATransaction.setAnimationDuration(0.12)
-        marker.frame = frame
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            let border = dropLook.border.nsColor
+            switch mark {
+            case .line(let frame):
+                marker.frame = frame
+                marker.backgroundColor = border.cgColor
+                marker.cornerRadius = Self.markerWidth / 2
+                marker.maskedCorners = Self.allCorners
+            case .card(let index, let part, let swap):
+                let fill = dropLook.fill?.nsColor ?? border.fading(to: 0.3)
+                marker.frame = part
+                marker.backgroundColor = (swap ? fill.swapFill : fill).cgColor
+                marker.cornerRadius = style.cardRadius
+                marker.maskedCorners = SwitcherReorder.outerCorners(of: part, in: frames[index])
+            }
+        }
         marker.isHidden = false
         CATransaction.commit()
+        placeFrost(mark)
+    }
+
+    /// The frost of what `mark` takes of a card, if it is on one with a picture, and frost is wanted.
+    private func placeFrost(_ mark: DropMark) {
+        guard case .card(let index, let part, _) = mark, dropLook.blur, let image = frostImage(of: index) else {
+            frostCard = nil
+            frost.isHidden = true
+            return
+        }
+        let frame = frames[index]
+        CATransaction.begin()
+        // Moved within a card it slides with the mark; to another, straight there.
+        CATransaction.setDisableActions(true)
+        frostPart.maskedCorners = SwitcherReorder.outerCorners(of: part, in: frame)
+        if frostCard != index {
+            frost.contents = image
+            frost.frame = frame
+            frost.cornerRadius = style.cardRadius
+            frostPart.frame = part.offsetBy(dx: -frame.minX, dy: -frame.minY)
+            frostPart.cornerRadius = style.cardRadius
+        }
+        frost.isHidden = false
+        CATransaction.commit()
+        guard frostCard == index else { return frostCard = index }
+        CATransaction.begin()
+        CATransaction.setDisableActions(!animates)
+        CATransaction.setAnimationDuration(0.12)
+        frostPart.frame = part.offsetBy(dx: -frame.minX, dy: -frame.minY)
+        CATransaction.commit()
+    }
+
+    /// Card `index`'s picture blurred, once a drag. Nil with no picture yet, or if it will not blur.
+    private func frostImage(of index: Int) -> CGImage? {
+        if let image = frosted[index] { return image }
+        guard cards.indices.contains(index), let image = cards[index].image else { return nil }
+        let picture = CIImage(cgImage: image)
+        let radius = CGFloat(image.height) * Self.frostRadius
+        guard let blurred = CIFilter(name: "CIGaussianBlur", parameters: [
+            kCIInputImageKey: picture.clampedToExtent(), kCIInputRadiusKey: radius,
+        ])?.outputImage, let out = Self.frostContext.createCGImage(blurred, from: picture.extent) else { return nil }
+        frosted[index] = out
+        return out
+    }
+
+    private func hideMark() {
+        marker.isHidden = true
+        frost.isHidden = true
+        frost.contents = nil
+        frostCard = nil
     }
 
     /// The dragged card goes back to its place in the row, the ring and glow with it.
@@ -218,7 +346,8 @@ final class SwitcherView: NSView {
         let to = CGPoint(x: frames[dragged.index].midX, y: frames[dragged.index].midY)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        marker.isHidden = true
+        hideMark()
+        frosted = [:]
         let from = card.position
         card.position = to
         card.shadowOpacity = 0
@@ -340,7 +469,6 @@ final class SwitcherView: NSView {
             let highlight = highlight.nsColor
             glow.backgroundColor = highlight.fading(to: 0.22).cgColor
             ring.borderColor = highlight.cgColor
-            marker.backgroundColor = highlight.cgColor
             for line in dividers where only == nil { line.backgroundColor = NSColor.separatorColor.cgColor }
             for (i, card) in cards.enumerated() where only?.contains(i) ?? true {
                 card.thumb.backgroundColor = NSColor.labelColor.withAlphaComponent(0.1).cgColor

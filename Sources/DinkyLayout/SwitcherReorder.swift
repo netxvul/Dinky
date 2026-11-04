@@ -1,9 +1,11 @@
 import CoreGraphics
+import QuartzCore
 
-/// Where a card of the window switcher's row, dragged, would go: a gap between the strip's columns, or past the line
-/// among the floating windows.
+/// Where a card of the window switcher's row, dragged, would go: a gap between the strip's columns, onto another card by
+/// the zone of it, as a window dragged onto that window's tile goes, or past the line among the floating windows.
 public enum SwitcherDropTarget: Equatable, Sendable {
     case column(Int)
+    case card(WindowID, DropZone)
     case float
 }
 
@@ -53,6 +55,61 @@ public struct SwitcherReorder: Equatable, Sendable {
         return .column(slot(at: x, spans: spans, allowed: allowed))
     }
 
+    /// Where a pointer at `point`, in the row's coordinates, aims a tiled card over a strip's: among the floating windows
+    /// at or past `divider`; on one of `cards`, those it can go onto, in its top or bottom band or the strip down its
+    /// middle, that card's zone, as a window dragged over that column; anywhere else, as between the cards or at a side of
+    /// one, the gap `slot(at:spans:allowed:)` says.
+    public static func target(at point: CGPoint, cards: [(id: WindowID, frame: CGRect)], spans: [ClosedRange<CGFloat>],
+                              allowed: ClosedRange<Int>, divider: CGFloat?) -> SwitcherDropTarget {
+        if let divider, point.x >= divider { return .float }
+        if let card = cards.first(where: { $0.frame.contains(point) }) {
+            let zone = DropZone(scrollingAt: point, in: card.frame)
+            if zone != .split(.left), zone != .split(.right) { return .card(card.id, zone) }
+        }
+        return .column(slot(at: point.x, spans: spans, allowed: allowed))
+    }
+
+    /// Where a pointer at `point`, in the row's coordinates, aims over a tree's tiled `cards`: among the floating windows
+    /// at or past `divider`, where there is one; else the nearest card's zone, as a window dragged over that tile, with
+    /// `swaps`, or without, its nearest side. Nil with no card.
+    public static func target(at point: CGPoint, cards: [(id: WindowID, frame: CGRect)], swaps: Bool,
+                              divider: CGFloat?) -> SwitcherDropTarget? {
+        if let divider, point.x >= divider { return .float }
+        func distance(_ r: CGRect) -> CGFloat {
+            hypot(max(r.minX - point.x, 0, point.x - r.maxX), max(r.minY - point.y, 0, point.y - r.maxY))
+        }
+        guard let card = cards.min(by: { distance($0.frame) < distance($1.frame) }) else { return nil }
+        return .card(card.id, swaps ? DropZone(at: point, in: card.frame) : DropZone(at: point, in: card.frame, center: 0))
+    }
+
+    /// Whether `id` dropped in `zone` of `target` changes `tree`: not one refused, nor one where it is already.
+    public static func changes(_ tree: Workspace, moving id: WindowID, onto target: WindowID, _ zone: DropZone) -> Bool {
+        var dropped = tree
+        return dropped.drop(id, onto: target, zone) && dropped.root != tree.root
+    }
+
+    /// The corners of `part` of `card` that are the card's own, to round as it is; those inside it stay square. In the
+    /// coordinates the two frames are in.
+    public static func outerCorners(of part: CGRect, in card: CGRect) -> CACornerMask {
+        var corners: CACornerMask = []
+        if part.minX == card.minX, part.minY == card.minY { corners.insert(.layerMinXMinYCorner) }
+        if part.maxX == card.maxX, part.minY == card.minY { corners.insert(.layerMaxXMinYCorner) }
+        if part.minX == card.minX, part.maxY == card.maxY { corners.insert(.layerMinXMaxYCorner) }
+        if part.maxX == card.maxX, part.maxY == card.maxY { corners.insert(.layerMaxXMaxYCorner) }
+        return corners
+    }
+
+    /// What of `card` a drop in `zone` of it takes: the half on that side, or for a swap all of it.
+    public static func marked(_ card: CGRect, _ zone: DropZone) -> CGRect {
+        guard case .split(let side) = zone else { return card }
+        return switch side {
+        case .left: CGRect(x: card.minX, y: card.minY, width: card.width / 2, height: card.height)
+        case .right: CGRect(x: card.midX, y: card.minY, width: card.width / 2, height: card.height)
+        case .up: CGRect(x: card.minX, y: card.minY, width: card.width, height: card.height / 2)
+        case .down: CGRect(x: card.minX, y: card.midY, width: card.width, height: card.height / 2)
+        }
+    }
+
     /// The gap a pointer at `x`, in the row's coordinates, aims at: before the first of `spans`, each a group's extent
     /// across, that it is left of the middle of, kept within `allowed`.
     public static func slot(at x: CGFloat, spans: [ClosedRange<CGFloat>], allowed: ClosedRange<Int>) -> Int {
@@ -76,6 +133,13 @@ public struct SwitcherReorder: Equatable, Sendable {
         guard let first = groups.indices.first(where: { !fixed($0) }),
               let last = groups.indices.last(where: { !fixed($0) }) else { return nil }
         return first...(last + 1)
+    }
+
+    /// What a card of `size` is scaled by while it is dragged, to fit in `box`, keeping its shape, so it hides little of
+    /// the cards it is dragged over; one that fits as it is stays as it is.
+    public static func dragScale(of size: CGSize, in box: CGSize) -> CGFloat {
+        guard size.width > 0, size.height > 0 else { return 1 }
+        return min(1, box.width / size.width, box.height / size.height)
     }
 
     /// Where the line marking `slot` goes among `spans`, `gap` apart, the middle of the gap or that far past an end, in

@@ -45,6 +45,12 @@ public enum FloatingFrame {
     /// The frame a floating window fills the display with: all of `area`, as fullscreen gives a tile.
     public static func filling(_ area: CGRect) -> CGRect { rounded(area) }
 
+    /// A frame of `size`, at most `share` of `area` each way, centred in it. Edges rounded to whole points.
+    public static func centered(_ size: CGSize, atMost share: Double, in area: CGRect) -> CGRect {
+        let width = min(size.width, area.width * CGFloat(share)), height = min(size.height, area.height * CGFloat(share))
+        return rounded(CGRect(x: area.midX - width / 2, y: area.midY - height / 2, width: width, height: height))
+    }
+
     /// `frame` moved inside `area`; along an axis it is too big for, against the top or left edge.
     private static func inside(_ frame: CGRect, _ area: CGRect) -> CGRect {
         let x = max(min(frame.minX, area.maxX - frame.width), area.minX)
