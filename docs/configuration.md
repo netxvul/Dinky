@@ -29,6 +29,7 @@ permalink: /configuration/
 | `default-tiling` | `true` | Set `false` to leave workspaces untiled unless overridden. |
 | `follow-app-activation` | `true` | Cmd-Tab and Dock clicks switch Spaces the fast way. Needs the macOS "switch to a Space with open windows" setting off. |
 | `float-windows-without-fullscreen` | `true` | Float windows that can't go full screen, such as Finder's copy progress, About This Mac and Calculator. Terminals and editors that can hide their title bar still tile. A `layout tiling` rule tiles a window anyway. |
+| `float-position` | `'normal'` | Where a new window that floats opens. `'normal'` leaves it where its app put it. `'center'` puts it in the middle of its display's visible area, inside the outer gaps, at the same size. Standard windows and dialogs only: sheets and panels stay with what they belong to. A window with a `grid`, `cycle-size` or `move` rule goes where the rule says, a window larger than the area stays where it is, and a [free](#workspacenumber) workspace's windows float where they stand. |
 | `menu-bar-icon` | `'blocks'` | `'blocks'` shows a block per display in the menu bar, left to right, with the workspace it shows: filled for the focused display, outlined for the others, corner marks for a full-screen Space. `'text'` shows the focused display's workspace number. `'none'` hides the menu bar item; the `kex` CLI and key bindings still work. |
 | `hide-menu-bar-icon` | `'never'` | When to hide Kex's menu bar item. `'single-display'` hides it while only one display is connected and shows it again once a second one is. `'always'` hides it, as `menu-bar-icon = 'none'` does. `'never'` leaves it to `menu-bar-icon`. Hidden, the `kex` CLI and key bindings still work. |
 | `scripting-addition` | `true` | Whether Kex may use its Dock scripting addition, which needs SIP off. Where it is injected (see [Scripting addition](scripting-addition.md)), a scrolling strip scrolls through it, its windows sliding past the screen edges; without it the strip moves its windows frame by frame. `false` never touches it, even with SIP off and the addition installed: Kex neither checks for it nor injects it, and the strip moves its windows frame by frame. Takes effect on reload. |
@@ -992,6 +993,10 @@ workspace-layout = ['tiles', 'fixed']
 run = 'cycle-size 60%'
 ```
 
+`cycle-size` in a rule sizes the tile or column. A window of that app that floats
+on its own, such as a settings window or a dialog, is left where the app put it.
+One that a rule floats with `layout floating` or `grid` takes the size.
+
 ## `[mode.<name>]`
 
 Key bindings. Kex starts in `main`; `mode <name>` switches. Each key maps to
@@ -1051,6 +1056,7 @@ default-layout = 'tiles'        # tiles (dwindle) | dwindle | accordion | fixed 
 default-tiling = true           # false leaves workspaces untiled unless overridden
 follow-app-activation = true    # Cmd-Tab and Dock clicks switch Spaces the fast way
 float-windows-without-fullscreen = true   # progress windows, About, Calculator and the like float
+float-position = 'normal'       # where a new floating window opens: normal (where its app put it) | center
 menu-bar-icon = 'blocks'        # blocks (one per display, focused filled) | text (the focused display's number) | none (hidden)
 hide-menu-bar-icon = 'never'    # never | always (as menu-bar-icon = 'none') | single-display (hidden while only one display is connected)
 scripting-addition = true       # scroll strips through the Dock scripting addition where it is injected (SIP off);

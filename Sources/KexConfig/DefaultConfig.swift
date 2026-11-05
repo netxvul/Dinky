@@ -14,6 +14,7 @@ extension Config {
     default-tiling = true           # false leaves workspaces untiled unless overridden
     follow-app-activation = true    # Cmd-Tab and Dock clicks switch Spaces the fast way
     float-windows-without-fullscreen = true   # progress windows, About, Calculator and the like float
+    float-position = 'normal'       # where a new floating window opens: normal (where its app put it) | center
     menu-bar-icon = 'blocks'        # blocks (one per display, focused filled) | text (the focused display's number) | none (hidden)
     hide-menu-bar-icon = 'never'    # never | always (as menu-bar-icon = 'none') | single-display (hidden while only one display is connected)
     scripting-addition = true       # scroll strips through the Dock scripting addition where it is injected (SIP off);

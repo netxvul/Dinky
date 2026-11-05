@@ -122,7 +122,9 @@ enum Dispatcher {
             let shares = percents.map { Double($0) / 100 }
             let name = "cycle-size " + percents.map { "\($0)%" }.joined(separator: " ")
             if let reply = floating(name, window: window, { coordinator, id in
-                coordinator.floating(id) { frame, area in
+                // Its corner would go where the sized frame's does, and its size stay: off centre for nothing.
+                guard coordinator.isResizable(id) else { return "window \(id) cannot be resized" }
+                return coordinator.floating(id) { frame, area in
                     FloatingFrame.centered(SizeCycle.next(after: Double(frame.width / area.width), in: shares), in: area)
                 }
             }) { return reply }

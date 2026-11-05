@@ -109,6 +109,8 @@ final class Coordinator {
     var adoptTargets: [WindowID: String] = [:]
     /// New windows on their way to the focused display, kept out of the trees until they arrive.
     var adopting: Set<WindowID> = []
+    /// New floating windows still to go to the middle of their display (`float-position`).
+    var centeringOnOpen: Set<WindowID> = []
     /// What the last session left, by Space, and the windows yet to go back into it. See Session.swift.
     var rememberedStrips: [UInt64: StripMemory] = [:]
     var rememberedPending: [UInt64: Set<WindowID>] = [:]
@@ -980,6 +982,7 @@ final class Coordinator {
         attempts[id] = nil
         adoptTargets[id] = nil
         adopting.remove(id)
+        centeringOnOpen.remove(id)
         chosenFloating[id] = nil
         forgetRemembered(id)
         applier.forget(id)
@@ -2845,7 +2848,7 @@ final class Coordinator {
     /// ResizeOnce): growing, it takes its whole size first; shrinking, it takes its new size once there; and one filling
     /// the display where macOS's Fill does, or coming back to where Fill took it from, is left to the system's tiling,
     /// unless `bySystem` is false (see SystemTiling).
-    func placeFloating(_ id: WindowID, at frame: CGRect, resizingOnce: Bool = false, bySystem: Bool = true) {
+    func placeFloating(_ id: WindowID, at frame: CGRect, resizingOnce: Bool = false, bySystem: Bool = true, animated: Bool = true) {
         guard let window = model.windows[id] else { return }
         floatingTargets[id] = frame
         // The system is moving it: placed once it has landed (see `tileBySystem`).
@@ -2860,7 +2863,7 @@ final class Coordinator {
                 DispatchQueue.main.async { self?.animator.noteLanded(results) }
             }
         }
-        guard animates else { return write() }
+        guard animates, animated else { return write() }
         let start = serverFrame(id) ?? window.frame
         let display = displays.display(ofWindow: id)
         let dock = display.map { $0.visibleArea.maxX < $0.frame.maxX - 0.5 } ?? false

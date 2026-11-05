@@ -68,7 +68,8 @@ extension Command {
         Doc(syntax: "cycle-size <percent>...",
             description: "Step the focused window to the next of these sizes, as percentages of its display, such as "
                 + "'cycle-size 50% 30% 60%': the size after the one it has now, or the first. A floating window is centred "
-                + "at that width and height of the display's visible area, inside the outer gaps. A tile takes that width "
+                + "at that width and height of the display's visible area, inside the outer gaps; one whose app does not let "
+                + "its size change stays put, with an error. A tile takes that width "
                 + "along its nearest side-by-side container, and a scrolling column that width; heights stay."),
         Doc(syntax: "pin <left|right> [--toggle]",
             description: "Pin the focused window's column to the left or right side of the screen in a scrolling workspace: "
