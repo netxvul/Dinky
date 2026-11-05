@@ -16,20 +16,23 @@ extension Dispatcher {
         }
         if let id = found { return focus(window: id) }
         let model = AppState.shared.displays
+        // Stopped at the workspace's edge, or past the outermost display when focus was to go on.
+        var noop = NoopScope.stepping(direction)
         if boundaries == .allMonitorsOuterFrame, let from = model.display(ofWindow: coordinator.commandFocusedWindow) {
             let line = displays(inLineWith: from, direction.orientation, model.displays)
             let index = line.firstIndex(of: from)! + (direction.isForward ? 1 : -1)
             if line.indices.contains(index) { return enter(line[index], from: direction) }
             if action == .wrapAroundAllMonitors { return enter(direction.isForward ? line[0] : line[line.count - 1], from: direction) }
+            noop = .display(from.uuid)
         }
         switch action {
         case .stop, .wrapAroundAllMonitors:
-            return .nothing("no window \(direction)", ok: true)
+            return .nothing("no window \(direction)", ok: true, scope: noop)
         case .fail:
-            return .nothing("no window \(direction)", ok: false)
+            return .nothing("no window \(direction)", ok: false, scope: noop)
         case .wrapAroundTheWorkspace:
             guard let id = coordinator.command({ $0.focus(direction, wrapping: true) ? $0.focused : nil }) ?? nil else {
-                return .nothing("no window to wrap around to", ok: true)
+                return .nothing("no window to wrap around to", ok: true, scope: noop)
             }
             return focus(window: id)
         }
@@ -41,7 +44,9 @@ extension Dispatcher {
         model.reconcile()
         guard let from = model.focusedDisplay() else { return .error("no display") }
         if target == .recent {
-            guard let recent = model.recentDisplay, recent != from else { return .nothing("no recent display", ok: false) }
+            guard let recent = model.recentDisplay, recent != from else {
+                return .nothing("no recent display", ok: false, scope: .display(from.uuid))
+            }
             return focus(recent, window: windowToFocus(on: recent))
         }
         let line = target.direction.map { displays(inLineWith: from, $0.orientation, model.displays) }
@@ -50,7 +55,7 @@ extension Dispatcher {
         let index = line.firstIndex(of: from)! + (forward ? 1 : -1)
         guard line.indices.contains(index) else {
             return .nothing(target.direction == nil ? "no \(target.rawValue) display" : "no display \(target.rawValue) of the focused one",
-                            ok: false)
+                            ok: false, scope: .display(from.uuid))
         }
         return focus(line[index], window: windowToFocus(on: line[index]))
     }
@@ -60,7 +65,11 @@ extension Dispatcher {
     static func focusMonitor(number n: Int) -> Reply {
         let model = AppState.shared.displays
         model.reconcile()
-        guard model.displays.indices.contains(n - 1) else { return .nothing("no display \(n), there are \(model.displays.count)", ok: false) }
+        guard model.displays.indices.contains(n - 1) else {
+            let text = "no display \(n), there are \(model.displays.count)"
+            guard let focused = model.focusedDisplay() else { return .error(text) }
+            return .nothing(text, ok: false, scope: .display(focused.uuid))
+        }
         let display = model.displays[n - 1]
         return focus(display, window: windowToFocus(on: display))
     }

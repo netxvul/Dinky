@@ -33,7 +33,7 @@ permalink: /configuration/
 | `menu-bar-icon` | `'blocks'` | `'blocks'` shows a block per display in the menu bar, left to right, with the workspace it shows: filled for the focused display, outlined for the others, corner marks for a full-screen Space. `'text'` shows the focused display's workspace number. `'none'` hides the menu bar item; the `kex` CLI and key bindings still work. |
 | `hide-menu-bar-icon` | `'never'` | When to hide Kex's menu bar item. `'single-display'` hides it while only one display is connected and shows it again once a second one is. `'always'` hides it, as `menu-bar-icon = 'none'` does. `'never'` leaves it to `menu-bar-icon`. Hidden, the `kex` CLI and key bindings still work. |
 | `scripting-addition` | `true` | Whether Kex may use its Dock scripting addition, which needs SIP off. Where it is injected (see [Scripting addition](scripting-addition.md)), a scrolling strip scrolls through it, its windows sliding past the screen edges; without it the strip moves its windows frame by frame. `false` never touches it, even with SIP off and the addition installed: Kex neither checks for it nor injects it, and the strip moves its windows frame by frame. Takes effect on reload. |
-| `highlight-color` | unset | One highlight colour for everything that has one: `'#rrggbb'`, `'#rrggbbaa'`, or `'accent'` for the accent colour in System Settings. Each highlight a table leaves unset takes it: the pick in both switchers ([`[switcher]`](#switcher)), the focused window's border ([`[borders]`](#borders) `active-color`), the glow of a binding that does nothing ([`[borders]`](#borders) `noop-flash-color`), the ring of pinned windows ([`[borders]`](#borders) `pinned-color`) and a drag's preview ([`[drag]`](#drag) `preview-border-color`). A table's own colour always wins, and its `'accent'` keeps the accent colour there. Unset, each keeps its own default. Like every top-level key, it goes above the first `[table]`. |
+| `highlight-color` | unset | One highlight colour for everything that has one: `'#rrggbb'`, `'#rrggbbaa'`, or `'accent'` for the accent colour in System Settings. Each highlight a table leaves unset takes it: the pick in both switchers ([`[switcher]`](#switcher)), the focused window's border ([`[borders]`](#borders) `active-color`), the glow of a binding that does nothing ([`[noop-flash]`](#noop-flash) `color`), the ring of pinned windows ([`[borders]`](#borders) `pinned-color`) and a drag's preview ([`[drag]`](#drag) `preview-border-color`). A table's own colour always wins, and its `'accent'` keeps the accent colour there. Unset, each keeps its own default. Like every top-level key, it goes above the first `[table]`. |
 | `haptic` | `true` | Whether the trackpad taps for Kex, as macOS's own taps feel. Each haptic a table leaves unset takes it: the strip's ticks as columns pass under the fingers ([`[gestures.scroll]`](#gesturesscroll)), the tap as a bound swipe runs ([`[gestures.trackpad]`](#gesturestrackpad)) and the switchers' picks ([`[switcher]`](#switcher)). A table's own always wins. |
 | `haptic-strength` | `'medium'` | How strongly: `'light'`, `'medium'` or `'strong'`. Each `haptic-strength` a table leaves unset takes it. A light tap is barely felt under moving fingers on a built-in trackpad. |
 
@@ -327,16 +327,53 @@ gaps.outer.top = 44
 | `inactive-color` | `'#494d64'` | |
 | `order` | `'below'` | `'above'` draws a click-through ring over the window. |
 | `exclude-apps` | `[]` | Bundle IDs that get no border. |
-| `noop-flash` | `true` | Make the focused window's edge glow once, the way the screen's edges do while Claude uses the computer, when a key binding or gesture does nothing: a move at the edge, a resize at its limit, `focus` or `focus-monitor` with nothing that way, `workspace next` on the last workspace or a workspace number past `[workspaces]`, moving a window to where it already is, `fullscreen` on a lone window that already fills its workspace. A ring around the window and a glow inside it, strongest at the edge and fading towards the middle, fade in, hold until a held key would repeat and fade out, in about a second; holding the key keeps it shown until it is let go, and it fades out once. Drawn over the window and its border, even with `enabled = false` and for windows of `exclude-apps`; it goes as soon as the window hides or minimizes, the Space changes or Mission Control opens. |
-| `noop-flash-color` | [`highlight-color`](#top-level), else `'#d97757'` | Its colour, Claude's orange by default: `'#rrggbb'`, `'#rrggbbaa'` or `'accent'`. The ring is drawn in it and the glow in it at `noop-flash-opacity` at the edge. |
-| `noop-flash-width` | `2` | The ring around the window, in points, from `0`, none, to `8`. |
-| `noop-flash-spread` | `100` | How far the glow reaches into the window, in points, from `8` to `160`, and at most a quarter of the window's shorter side. It fades as the screen's glow does, to about a third every third of the way, and to nothing at the end. |
-| `noop-flash-opacity` | `0.6` | The glow's opacity at the window's edge, as a share of the colour's own, from `0`, none, to `1`. |
 | `pinned` | `true` | Ring the windows of a [pinned](commands.md#pins) column in `pinned-color`, whether they have focus or not, even with `enabled = false` and for windows of `exclude-apps`: each window of a pinned stack, and the shown one of a pinned accordion. Drawn as the other borders are, by `order`, and kept with the pin as it is put back in front of the band; it goes while the pin does not show, minimized, hidden, on another Space, in Mission Control, under a window fullscreen over the pins or outside the scrolling layout. |
 | `pinned-color` | [`highlight-color`](#top-level), else `'#d97757'` | Its colour, Claude's orange by default, as the noop flash: `'#rrggbb'`, `'#rrggbbaa'` or `'accent'`. |
 | `pinned-width` | `2` | Its width in points, from `0`, none, to `8`. |
 
 </div>
+
+## `[noop-flash]`
+
+A key binding or gesture that does nothing glows, the way the screen's edges do
+while Claude uses the computer, as far as what it found missing reaches: a ring
+and a glow inside it fading to nothing, shown once, held for as long as a held
+key repeats, and drawn even with [`[borders]`](#borders) off.
+
+| Level | Glows | When |
+|---|---|---|
+| `[noop-flash.window]` | The focused window's edge | A move at the edge, a resize at its limit, `fullscreen`, `cycle-size`, `layout`, `rotate`, `mirror`, `pin`, `unpin` or `focus-pin` with nothing to do or refused, a floating window against the edge, `focus` with no window that way in the workspace, moving a window to the workspace it is on. In a [strip across two displays](#across-two-displays), a step past its left or right end glows that display's outer side instead. With no window to glow, nothing shows. |
+| `[noop-flash.workspace]` | The focused display's left or right side, or both | `workspace next` or `move-window-to-workspace next` at the display's last workspace (its right side), `prev` at its first (its left side). Both sides, with no direction to show: a workspace number past [`workspaces`](#top-level), `workspace recent` or `workspace-back-and-forth` with none before, `workspace-switcher` with fewer than two workspaces, and `window-switcher` with too few windows, on the display under the pointer. |
+| `[noop-flash.display]` | All four edges of a display, over the menu bar and the Dock | `focus-monitor` with no display that way, numbered or recent, `move-window-to-display` with no other or recent display, and `focus` with `--boundaries all-monitors-outer-frame` past the outermost display: the focused display. `move-window-to-display` to a display showing a full-screen app: that display. |
+
+| Key | Default | |
+|---|---|---|
+| `enabled` | `true` | `false` turns all three levels off. |
+| `color` | [`highlight-color`](#top-level), else `'#d97757'` | Claude's orange by default: `'#rrggbb'`, `'#rrggbbaa'` or `'accent'`. The ring is drawn in it and the glow in it at `opacity` at the edge. |
+| `width` | `2` | The ring at the edge, in points, from `0`, none, to `8`. |
+| `spread` | `100` | How far the glow reaches in, in points, from `8` to `160`, and at most a quarter of the window's shorter side, or of the display's. It fades as the screen's glow does, to about a third every third of the way, and to nothing at the end. |
+| `opacity` | `0.6` | The glow's opacity at the edge, as a share of the colour's own, from `0`, none, to `1`. |
+
+`[noop-flash.window]`, `[noop-flash.workspace]` and `[noop-flash.display]` take
+the same keys for that level alone, each left out taking `[noop-flash]`'s.
+`enabled = false` in one turns that level off; `enabled = true` there does not
+bring it back from `enabled = false` in `[noop-flash]`.
+
+```toml
+[noop-flash]
+color = '#7aa2f7'
+
+[noop-flash.window]
+enabled = false
+
+[noop-flash.display]
+spread = 160
+```
+
+The older `[borders]` keys `noop-flash`, `noop-flash-color`, `noop-flash-width`,
+`noop-flash-spread` and `noop-flash-opacity` still set what `[noop-flash]` leaves
+out, and `[hud] on-noop` is still accepted and does nothing; `kex doctor` warns
+about them all.
 
 ## `[focus-follows-mouse]`
 
@@ -443,7 +480,6 @@ Liquid Glass; earlier, the HUD material.
 | `on-layout-change` | `true` | Show it after the `layout` command. |
 | `on-mode-change` | `true` | Show it when the binding mode changes. |
 | `on-workspace-change` | `true` | Show the workspace's layout when a display moves to another workspace. |
-| `on-noop` | `false` | Show why when a key binding or gesture does nothing, such as `move left: nothing to do`. |
 
 </div>
 
@@ -763,10 +799,11 @@ strip still glides, as a click, a drag or focus going elsewhere do then too;
 `show-switcher = false` turns it off.
 
 Pushed on past an end of the strip, the display glows along that side, its
-left at the start and its right at the end, in the [noop flash](#borders)'s
-colour, width, spread and opacity, fading out towards the top and bottom: lit
-while the fingers push, fading once they stop. `edge-flash = false` turns it
-off, whatever `[borders] noop-flash` says.
+left at the start and its right at the end, in
+[`[noop-flash.workspace]`](#noop-flash)'s colour, width, spread and opacity,
+fading out towards the top and bottom: lit while the fingers push, fading once
+they stop. `edge-flash = false` turns it off, whatever `[noop-flash]`'s
+`enabled` says.
 
 As the fingers move the strip, the trackpad ticks each time the column a
 let-go would settle on changes, as the switchers' picks do, and once more as
@@ -1112,14 +1149,21 @@ width = 4
 inactive-color = '#494d64'
 order = 'below'                 # below | above (a click-through ring over the window)
 exclude-apps = []               # bundle IDs whose windows get no border
-noop-flash = true               # a binding that does nothing makes the focused window's edge glow once
-# noop-flash-color = '#d97757'  # '#rrggbb', '#rrggbbaa' or 'accent'; unset is highlight-color, else '#d97757'
-noop-flash-width = 2            # the ring around the window, 0 to 8 points
-noop-flash-spread = 100         # points the glow fades over inside the window, 8 to 160
-noop-flash-opacity = 0.6        # its opacity at the window's edge, 0 to 1
 pinned = true                   # a pinned column's windows get a ring, even with enabled = false
 # pinned-color = '#d97757'      # '#rrggbb', '#rrggbbaa' or 'accent'; unset is highlight-color, else '#d97757'
 pinned-width = 2                # the pinned windows' ring, 0 to 8 points
+
+# What a binding or gesture that does nothing lights: the window for what it could not do, the display's sides for no
+# workspace to go to, all its edges for no display. Each level's table takes any of these keys, for that level alone.
+[noop-flash]
+enabled = true                  # false turns all three off
+# color = '#d97757'             # '#rrggbb', '#rrggbbaa' or 'accent'; unset is highlight-color, else '#d97757'
+width = 2                       # the ring at the edge, 0 to 8 points
+spread = 100                    # points the glow fades over inside it, 8 to 160
+opacity = 0.6                   # its opacity at the edge, 0 to 1
+# [noop-flash.window]
+# [noop-flash.workspace]        # also how a strip's end glows as it is pushed past
+# [noop-flash.display]
 
 [focus-follows-mouse]
 enabled = false
@@ -1150,7 +1194,6 @@ offset = 16                     # points from the Dock or menu bar
 on-layout-change = true         # after the layout command
 on-mode-change = true           # when the binding mode changes
 on-workspace-change = true      # the new workspace's layout when a display moves to another workspace
-on-noop = false                 # why, when a binding does nothing
 
 # What both switchers below share. Each of these keys can go in [window-switcher] or [workspace-switcher] too,
 # for that one alone.

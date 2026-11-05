@@ -70,14 +70,21 @@ extension Config {
     inactive-color = '#494d64'
     order = 'below'                 # below | above (a click-through ring over the window)
     exclude-apps = []               # bundle IDs whose windows get no border
-    noop-flash = true               # a binding that does nothing makes the focused window's edge glow once
-    # noop-flash-color = '#d97757'  # '#rrggbb', '#rrggbbaa' or 'accent'; unset is highlight-color, else '#d97757'
-    noop-flash-width = 2            # the ring around the window, 0 to 8 points
-    noop-flash-spread = 100         # points the glow fades over inside the window, 8 to 160
-    noop-flash-opacity = 0.6        # its opacity at the window's edge, 0 to 1
     pinned = true                   # a pinned column's windows get a ring, even with enabled = false
     # pinned-color = '#d97757'      # '#rrggbb', '#rrggbbaa' or 'accent'; unset is highlight-color, else '#d97757'
     pinned-width = 2                # the pinned windows' ring, 0 to 8 points
+
+    # What a binding or gesture that does nothing lights: the window for what it could not do, the display's sides for no
+    # workspace to go to, all its edges for no display. Each level's table takes any of these keys, for that level alone.
+    [noop-flash]
+    enabled = true                  # false turns all three off
+    # color = '#d97757'             # '#rrggbb', '#rrggbbaa' or 'accent'; unset is highlight-color, else '#d97757'
+    width = 2                       # the ring at the edge, 0 to 8 points
+    spread = 100                    # points the glow fades over inside it, 8 to 160
+    opacity = 0.6                   # its opacity at the edge, 0 to 1
+    # [noop-flash.window]
+    # [noop-flash.workspace]        # also how a strip's end glows as it is pushed past
+    # [noop-flash.display]
 
     [focus-follows-mouse]
     enabled = false
@@ -108,7 +115,6 @@ extension Config {
     on-layout-change = true         # after the layout command
     on-mode-change = true           # when the binding mode changes
     on-workspace-change = true      # the new workspace's layout when a display moves to another workspace
-    on-noop = false                 # why, when a binding does nothing
 
     # What both switchers below share. Each of these keys can go in [window-switcher] or [workspace-switcher] too,
     # for that one alone.

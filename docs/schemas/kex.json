@@ -237,14 +237,29 @@
           "default": [],
           "description": "Bundle IDs whose windows get no border."
         },
-        "noop-flash": { "type": "boolean", "default": true, "description": "Make the focused window's edge glow once when a key binding or gesture does nothing. Drawn even when borders are off." },
-        "noop-flash-color": { "$ref": "#/definitions/highlight", "description": "Colour of the ring around the window and of the glow inside it. Unset, the top-level highlight-color, or #d97757 (Claude's orange) without one." },
-        "noop-flash-width": { "type": "number", "minimum": 0, "maximum": 8, "default": 2, "description": "The ring around the window, in points; 0 leaves it out." },
-        "noop-flash-spread": { "type": "number", "minimum": 8, "maximum": 160, "default": 100, "description": "How far the glow inside the window reaches in, fading as it goes, in points." },
-        "noop-flash-opacity": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.6, "description": "The glow's opacity at the window's edge, as a share of the colour's own; 0 leaves it out." },
+        "noop-flash": { "type": "boolean", "deprecated": true, "description": "Moved to [noop-flash] enabled, which takes this where it leaves it unset." },
+        "noop-flash-color": { "$ref": "#/definitions/highlight", "deprecated": true, "description": "Moved to [noop-flash] color, which takes this where it leaves it unset." },
+        "noop-flash-width": { "type": "number", "minimum": 0, "maximum": 8, "deprecated": true, "description": "Moved to [noop-flash] width, which takes this where it leaves it unset." },
+        "noop-flash-spread": { "type": "number", "minimum": 8, "maximum": 160, "deprecated": true, "description": "Moved to [noop-flash] spread, which takes this where it leaves it unset." },
+        "noop-flash-opacity": { "type": "number", "minimum": 0, "maximum": 1, "deprecated": true, "description": "Moved to [noop-flash] opacity, which takes this where it leaves it unset." },
         "pinned": { "type": "boolean", "default": true, "description": "Ring the windows of a pinned column in pinned-color, focused or not. Drawn even when borders are off." },
         "pinned-color": { "$ref": "#/definitions/highlight", "description": "Colour of the pinned windows' ring. Unset, the top-level highlight-color, or #d97757 (Claude's orange) without one." },
         "pinned-width": { "type": "number", "minimum": 0, "maximum": 8, "default": 2, "description": "The pinned windows' ring, in points; 0 leaves it out." }
+      }
+    },
+    "noop-flash": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A key binding or gesture that does nothing glows as far as what it found missing reaches. These keys are what the three levels leave out.",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true, "description": "false turns all three levels off, whatever their own tables say." },
+        "color": { "$ref": "#/definitions/highlight", "description": "Colour of the ring at the edge and of the glow inside it. Unset, the top-level highlight-color, or #d97757 (Claude's orange) without one." },
+        "width": { "type": "number", "minimum": 0, "maximum": 8, "default": 2, "description": "The ring at the edge, in points; 0 leaves it out." },
+        "spread": { "type": "number", "minimum": 8, "maximum": 160, "default": 100, "description": "How far the glow inside the ring reaches in, fading as it goes, in points." },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.6, "description": "The glow's opacity at the edge, as a share of the colour's own; 0 leaves it out." },
+        "window": { "$ref": "#/definitions/noopFlashLevel", "description": "The focused window's edge, for what a window could not do. Any key left out is [noop-flash]'s." },
+        "workspace": { "$ref": "#/definitions/noopFlashLevel", "description": "The focused display's left and right sides, for no workspace to go to, and how a strip's end glows as it is pushed past. Any key left out is [noop-flash]'s." },
+        "display": { "$ref": "#/definitions/noopFlashLevel", "description": "All four edges of a display, for no display to go to. Any key left out is [noop-flash]'s." }
       }
     },
     "focus-follows-mouse": {
@@ -591,7 +606,7 @@
         "on-layout-change": { "type": "boolean", "default": true, "description": "Show it after the layout command." },
         "on-mode-change": { "type": "boolean", "default": true, "description": "Show it when the binding mode changes." },
         "on-workspace-change": { "type": "boolean", "default": true, "description": "Show the workspace's number and layout when a display moves to another workspace." },
-        "on-noop": { "type": "boolean", "default": false, "description": "Show why when a key binding or gesture does nothing." }
+        "on-noop": { "type": "boolean", "deprecated": true, "description": "No longer does anything: a binding that does nothing shows it with [noop-flash] alone." }
       }
     },
     "gestures": {
@@ -800,6 +815,18 @@
       "type": "string",
       "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$",
       "description": "A colour, '#rrggbb' or '#rrggbbaa'."
+    },
+    "noopFlashLevel": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One level of the noop flash.",
+      "properties": {
+        "enabled": { "type": "boolean", "description": "false turns this level off. true does not bring it back from [noop-flash] enabled = false." },
+        "color": { "$ref": "#/definitions/highlight", "description": "Colour of the ring at the edge and of the glow inside it. Unset, [noop-flash]'s, then the top-level highlight-color, or #d97757 (Claude's orange) without one." },
+        "width": { "type": "number", "minimum": 0, "maximum": 8, "description": "The ring at the edge, in points; 0 leaves it out." },
+        "spread": { "type": "number", "minimum": 8, "maximum": 160, "description": "How far the glow inside the ring reaches in, fading as it goes, in points." },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1, "description": "The glow's opacity at the edge, as a share of the colour's own; 0 leaves it out." }
+      }
     },
     "highlight": {
       "type": "string",

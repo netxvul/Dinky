@@ -188,10 +188,9 @@ final class BorderManager {
     }
 }
 
-/// The noop flash: the window's edge glows once in `noop-flash-color`, the way the screen's edges glow while Claude uses
-/// the computer. A `noop-flash-width` ring around the window, and inside it the colour at `noop-flash-opacity` at the
-/// edge, fading to nothing `noop-flash-spread` points in, fade in, hold and fade out (Pulse), held on for as long as a
-/// held key repeats. Every window gets it, borders on or off, its app excluded or not. It is drawn over the window and
+/// The noop flash on a window: its edge glows once in `[noop-flash.window]`'s `color`, the way the screen's edges glow
+/// while Claude uses the computer. A `width` ring around the window, and inside it the colour at `opacity` at the
+/// edge, fading to nothing `spread` points in, fade in, hold and fade out (Pulse), held on for as long as a held key repeats. Every window gets it, borders on or off, its app excluded or not. It is drawn over the window and
 /// its border and follows it, and goes as soon as the window closes, hides or minimizes, the Space changes or Mission
 /// Control opens.
 final class NoopGlow: NSObject {
@@ -200,7 +199,7 @@ final class NoopGlow: NSObject {
     private var glow: BorderWindow?
     /// The glowing window as last seen.
     private var window: Window?
-    private var config = Borders()
+    private var look = NoopFlash.Look()
     private var pulse: Pulse?
     private var presence = 0.0
     /// The glow needs placing again: its window moved or changed, or another was raised over it.
@@ -218,17 +217,17 @@ final class NoopGlow: NSObject {
     func isBorder(_ id: UInt32) -> Bool { id != 0 && glow?.id == id }
 
     /// Glows on the window's edge. Again on the same window while it shows holds it.
-    func flash(_ id: UInt32, config: Borders, model: WindowModel) {
+    func flash(_ id: UInt32, look: NoopFlash.Look, model: WindowModel) {
         guard let window = model.windows[id], Self.shows(window) else { return }
         let now = CACurrentMediaTime()
         if window.id != self.window?.id { end() }
-        let changed = config != self.config
-        self.config = config
+        let changed = look != self.look
+        self.look = look
         self.window = window
         // A held key repeats its press only after the key repeat delay, then at the key repeat rate: each press holds the
         // glow until the next can come, so a held key shows it once.
-        if pulse?.press(at: now, hold: Self.hold(NSEvent.keyRepeatInterval)) != true {
-            pulse = Pulse(at: now, hold: Self.hold(NSEvent.keyRepeatDelay))
+        if pulse?.press(at: now, hold: Pulse.holding(for: NSEvent.keyRepeatInterval)) != true {
+            pulse = Pulse(at: now, hold: Pulse.holding(for: NSEvent.keyRepeatDelay))
         }
         presence = pulse?.presence(at: now) ?? presence
         // A glow already showing takes the press at its next frame, unless it is to look different.
@@ -274,8 +273,7 @@ final class NoopGlow: NSObject {
     /// The glow inside the window. It reaches a quarter of the window's shorter side at most, so its sides never meet.
     private var inside: BorderWindow.Glow {
         let size = window?.frame.size ?? .zero
-        return BorderWindow.Glow(depth: min(config.noopFlashSpread, Double(min(size.width, size.height)) / 4),
-                                 alpha: config.noopFlashOpacity)
+        return BorderWindow.Glow(depth: min(look.spread, Double(min(size.width, size.height)) / 4), alpha: look.opacity)
     }
 
     /// The glow's opacity as a whole now, to 1/256, finer than the eye tells apart: one that stays the same is not set
@@ -287,7 +285,7 @@ final class NoopGlow: NSObject {
         guard let window else { return }
         let glow = self.glow ?? BorderWindow(target: window.id)
         self.glow = glow
-        glow.glow(window, color: config.noopFlashColor.resolved, width: config.noopFlashWidth, glow: inside,
+        glow.glow(window, color: look.color.resolved, width: look.width, glow: inside,
                   opacity: opacity, above: borderAbove(window.id) ?? window.id)
     }
 
@@ -298,9 +296,6 @@ final class NoopGlow: NSObject {
             if CACurrentMediaTime() - self.lastTick > 0.5 { self.end() } else { self.watch(generation) }
         }
     }
-
-    /// How long a press holds the glow when the next may come `wait` seconds later, a little late.
-    private static func hold(_ wait: TimeInterval) -> Double { max(Pulse.hold, wait + 0.1) }
 
     private static func shows(_ window: Window) -> Bool {
         window.isOrderedIn && window.isVisible && !window.isMinimized && !MissionControl.shared.active

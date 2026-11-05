@@ -321,9 +321,11 @@ struct ConfigTests {
         #expect(global.workspaceSwitcher.highlightColor == .color(purple))
         #expect(global.borders.activeColor == .color(purple))
         #expect(global.drag.previewBorderColor == .color(purple))
-        #expect(global.borders.noopFlashColor == .color(purple))
+        #expect(global.noopFlash.window.color == .color(purple))
+        #expect(global.noopFlash.workspace.color == .color(purple))
+        #expect(global.noopFlash.display.color == .color(purple))
         #expect(defaults.drag.previewBorderColor == nil)
-        #expect(defaults.borders.noopFlashColor == .color(try Color(hex: "#d97757")))
+        #expect(defaults.noopFlash.window.color == .color(try Color(hex: "#d97757")))
         // A switcher's own over [switcher]'s over the top-level one; 'accent' stops the chain.
         let layered = try Config.parse("""
             highlight-color = '#59168b'
@@ -340,7 +342,7 @@ struct ConfigTests {
         #expect(layered.windowSwitcher.highlightColor == .color(try Color(hex: "#ff000080")))
         #expect(layered.workspaceSwitcher.highlightColor == .accent)
         #expect(layered.borders.activeColor == .color(try Color(hex: "#00ff00")))
-        #expect(try Config.parse("highlight-color = '#59168b'\n[borders]\nnoop-flash-color = 'accent'\n").borders.noopFlashColor == .accent)
+        #expect(try Config.parse("highlight-color = '#59168b'\n[noop-flash]\ncolor = 'accent'\n").noopFlash.display.color == .accent)
         #expect(try Config.parse("highlight-color = '#59168b'\n[drag]\npreview-border-color = 'accent'\n").drag.previewBorderColor == .accent)
         #expect(try Config.parse("[borders]\nactive-color = 'accent'\n").borders.activeColor == .accent)
         #expect(try Config.parse("highlight-color = 'accent'\n").borders.activeColor == .accent)
@@ -669,32 +671,99 @@ struct ConfigTests {
     }
 
     @Test func `Noop flash`() throws {
-        let defaults = Borders()
-        #expect(defaults.noopFlash)
-        #expect(defaults.noopFlashColor == .color(try Color(hex: "#d97757")))
-        #expect(defaults.noopFlashWidth == 2)
-        #expect(defaults.noopFlashSpread == 100)
-        #expect(defaults.noopFlashOpacity == 0.6)
-        let borders = try Config.parse("""
+        #expect(Config.default.noopFlash == NoopFlash())
+        for look in [NoopFlash().window, NoopFlash().workspace, NoopFlash().display] {
+            #expect(look.enabled)
+            #expect(look.color == .color(try Color(hex: "#d97757")))
+            #expect(look.width == 2)
+            #expect(look.spread == 100)
+            #expect(look.opacity == 0.6)
+        }
+        // A level's own over [noop-flash]'s over the default.
+        let flash = try Config.parse("""
+        [noop-flash]
+        color = 'accent'
+        width = 0
+        spread = 8
+        opacity = 0
+
+        [noop-flash.window]
+        color = '#59168b'
+        width = 8
+
+        [noop-flash.display]
+        spread = 160
+        opacity = 1
+        """).noopFlash
+        #expect(flash.window.color == .color(try Color(hex: "#59168b")))
+        #expect(flash.window.width == 8)
+        #expect(flash.window.spread == 8)
+        #expect(flash.workspace.color == .accent)
+        #expect(flash.workspace.width == 0)
+        #expect(flash.workspace.opacity == 0)
+        #expect(flash.display.color == .accent)
+        #expect(flash.display.spread == 160)
+        #expect(flash.display.opacity == 1)
+
+        // Off in [noop-flash] is off for all, whatever a level says; off in a level is off there alone.
+        let off = try Config.parse("[noop-flash]\nenabled = false\n[noop-flash.display]\nenabled = true\n").noopFlash
+        #expect(!off.window.enabled && !off.workspace.enabled && !off.display.enabled)
+        let one = try Config.parse("[noop-flash.workspace]\nenabled = false\n").noopFlash
+        #expect(one.window.enabled && !one.workspace.enabled && one.display.enabled)
+
+        for table in ["noop-flash", "noop-flash.window", "noop-flash.workspace", "noop-flash.display"] {
+            assertError("[\(table)]\nwidth = -1\n", path: "\(table).width", line: 2, contains: "0 to 8")
+            assertError("[\(table)]\nwidth = 8.5\n", path: "\(table).width", line: 2, contains: "0 to 8")
+            assertError("[\(table)]\nspread = 7\n", path: "\(table).spread", line: 2, contains: "8 to 160")
+            assertError("[\(table)]\nspread = 160.5\n", path: "\(table).spread", line: 2, contains: "8 to 160")
+            assertError("[\(table)]\nopacity = -0.1\n", path: "\(table).opacity", line: 2, contains: "0 to 1")
+            assertError("[\(table)]\nopacity = 1.5\n", path: "\(table).opacity", line: 2, contains: "0 to 1")
+            assertError("[\(table)]\ncolor = 'pink'\n", path: "\(table).color", line: 2, contains: "'pink' is not a colour")
+            assertError("[\(table)]\nbright = true\n", path: "\(table).bright", line: 2, contains: "unknown key")
+        }
+    }
+
+    @Test func `Old noop flash keys`() throws {
+        // [borders]' keys fill in what [noop-flash] leaves out, and go over highlight-color.
+        let old = try Config.parse("""
+        highlight-color = '#59168b'
         [borders]
         noop-flash = false
         noop-flash-color = 'accent'
         noop-flash-width = 0
         noop-flash-spread = 8
         noop-flash-opacity = 0
-        """).borders
-        #expect(!borders.noopFlash)
-        #expect(borders.noopFlashColor == .accent)
-        #expect(borders.noopFlashWidth == 0)
-        #expect(borders.noopFlashSpread == 8)
-        #expect(borders.noopFlashOpacity == 0)
-        #expect(try Config.parse("[hud]\non-noop = true\n").hud.onNoop)
+        """)
+        #expect(old.borders.setsRetiredNoopFlash)
+        #expect(!old.noopFlash.window.enabled && !old.noopFlash.workspace.enabled && !old.noopFlash.display.enabled)
+        for look in [old.noopFlash.window, old.noopFlash.workspace, old.noopFlash.display] {
+            #expect(look.color == .accent)
+            #expect(look.width == 0)
+            #expect(look.spread == 8)
+            #expect(look.opacity == 0)
+        }
+        let both = try Config.parse("""
+        [borders]
+        noop-flash = false
+        noop-flash-width = 5
+        noop-flash-spread = 40
+        [noop-flash]
+        enabled = true
+        width = 1
+        [noop-flash.display]
+        spread = 20
+        """)
+        #expect(both.noopFlash.window.enabled)
+        #expect(both.noopFlash.window.width == 1)
+        #expect(both.noopFlash.window.spread == 40)
+        #expect(both.noopFlash.display.spread == 20)
+        #expect(try !Config.parse("[borders]\nwidth = 2\n").borders.setsRetiredNoopFlash)
+        // Accepted, and ignored.
+        #expect(try Config.parse("[hud]\non-noop = true\n").hud.retiredOnNoop)
+        #expect(try !Config.parse("[hud]\nenabled = true\n").hud.retiredOnNoop)
 
         assertError("[borders]\nnoop-flash-width = -1\n", path: "borders.noop-flash-width", line: 2, contains: "0 to 8")
-        assertError("[borders]\nnoop-flash-width = 8.5\n", path: "borders.noop-flash-width", line: 2, contains: "0 to 8")
         assertError("[borders]\nnoop-flash-spread = 7\n", path: "borders.noop-flash-spread", line: 2, contains: "8 to 160")
-        assertError("[borders]\nnoop-flash-spread = 160.5\n", path: "borders.noop-flash-spread", line: 2, contains: "8 to 160")
-        assertError("[borders]\nnoop-flash-opacity = -0.1\n", path: "borders.noop-flash-opacity", line: 2, contains: "0 to 1")
         assertError("[borders]\nnoop-flash-opacity = 1.5\n", path: "borders.noop-flash-opacity", line: 2, contains: "0 to 1")
         assertError("[borders]\nnoop-flash-color = 'pink'\n", path: "borders.noop-flash-color", line: 2, contains: "'pink' is not a colour")
         // Gone with the glow that held at full between breaths, and with the one that breathed more than once.
@@ -1010,7 +1079,6 @@ struct ConfigTests {
         #expect(defaults.durationMs == 1200)
         #expect(defaults.offset == 16)
         #expect(defaults.onLayoutChange && defaults.onModeChange && defaults.onWorkspaceChange)
-        #expect(!defaults.onNoop)
         #expect(try !Config.parse("[hud]\non-workspace-change = false\n").hud.onWorkspaceChange)
         let hud = try Config.parse("[hud]\nposition = 'top'\nduration-ms = 3000\noffset = 4.5\non-mode-change = false\n").hud
         #expect(hud.position == .top)

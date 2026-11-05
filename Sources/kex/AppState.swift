@@ -1,4 +1,5 @@
 import KexConfig
+import KexLayout
 import Foundation
 
 // State that outlives a single command: the current config, the hotkey engine, whether kex is
@@ -133,26 +134,25 @@ final class AppState {
 }
 
 /// Runs a key binding's or a gesture's commands in order through the dispatcher. A command that did nothing makes the
-/// focused window's edge glow, and with `[hud] on-noop` shows why.
+/// noop flash glow as far as what it found missing reaches: the focused window, the display's sides or its whole edge.
 func runBound(_ commands: [String]) {
     // A binding that uses a switcher's modifier is the modifier at work for something else, unless it is the
     // switcher's own command, which steps its pick.
     if !commands.contains("window-switcher") { WindowSwitcher.shared.dismiss() }
     if !commands.contains("workspace-switcher") { WorkspaceSwitcher.shared.dismiss() }
-    var noop = false
+    var noops: [NoopScope] = []
     for command in commands {
         let reply = Dispatcher.run(command)
         if !reply.ok { fputs("\(command): \(reply.text)\n", stderr) }
-        guard reply.noop, !noop else { continue }
-        noop = true
-        // Shown now, so the capsule of a later command in the binding, as `mode main`'s, takes its place.
-        Hud.shared.nothingDone(reply.text)
+        if let noop = reply.noop { noops.append(noop) }
     }
     // Once for the binding, however many of its commands did nothing.
-    guard noop, let coordinator = AppState.shared.coordinator else { return }
+    guard let scope = NoopScope.widest(noops), let coordinator = AppState.shared.coordinator else { return }
     let id = coordinator.focusedWindow
-    let displays = AppState.shared.displays
-    // Focusing an empty display can leave the keyboard with a window on another, which the binding was not about.
-    guard displays.focusOverride == nil || displays.display(ofWindow: id)?.uuid == displays.focusedDisplay()?.uuid else { return }
-    coordinator.flashNoop(of: id, commands: commands)
+    if case .window = scope {
+        let displays = AppState.shared.displays
+        // Focusing an empty display can leave the keyboard with a window on another, which the binding was not about.
+        guard displays.focusOverride == nil || displays.display(ofWindow: id)?.uuid == displays.focusedDisplay()?.uuid else { return }
+    }
+    coordinator.flashNoop(scope, of: id)
 }

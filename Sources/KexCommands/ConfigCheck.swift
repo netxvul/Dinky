@@ -29,6 +29,14 @@ public func checkConfig(_ config: Config) -> [ConfigFinding] {
             + "strips scroll through the Dock scripting addition when scripting-addition = true and it is injected, "
             + "and move their windows frame by frame otherwise"))
     }
+    if config.borders.setsRetiredNoopFlash {
+        findings.append(.init(level: .warning, message: "borders.noop-flash and borders.noop-flash-* have moved: "
+            + "use enabled, color, width, spread and opacity in [noop-flash], which take the old keys only where they are unset"))
+    }
+    if config.hud.retiredOnNoop {
+        findings.append(.init(level: .warning, message: "hud.on-noop no longer does anything and can be removed: "
+            + "a binding that does nothing shows it with the noop flash alone, set in [noop-flash]"))
+    }
     if config.modes["main"] == nil {
         findings.append(.init(level: .warning, message: "no [mode.main]: no key bindings are active"))
     }

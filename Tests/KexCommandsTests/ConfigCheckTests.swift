@@ -24,6 +24,16 @@ struct ConfigCheckTests {
         #expect(findings[0].message.hasPrefix("scrolling.glide no longer does anything"))
     }
 
+    @Test func `Old noop flash keys are warnings`() throws {
+        let borders = try check("[mode.main]\n[borders]\nnoop-flash-width = 3")
+        #expect(borders.map(\.level) == [.warning])
+        #expect(borders[0].message.contains("[noop-flash]"))
+        let hud = try check("[mode.main]\n[hud]\non-noop = true")
+        #expect(hud.map(\.level) == [.warning])
+        #expect(hud[0].message.hasPrefix("hud.on-noop no longer does anything"))
+        #expect(try check("[mode.main]\n[noop-flash]\nwidth = 3") == [])
+    }
+
     @Test func `Unknown command in binding`() throws {
         let findings = try check("[mode.main]\nalt-h = 'fly left'")
         #expect(findings.count == 1)

@@ -11,6 +11,10 @@ public struct Pulse {
     /// Seconds it takes to fade out.
     public static let fadeOut = 0.5
 
+    /// How long a press holds it when the next may come `wait` seconds later, a little late, as a held key's do after the
+    /// key repeat delay and then at the key repeat rate: each holds it until the next can come.
+    public static func holding(for wait: Double) -> Double { max(hold, wait + 0.1) }
+
     /// When it last started to show, and how shown it was then.
     private var start: Double
     private var from = 0.0
