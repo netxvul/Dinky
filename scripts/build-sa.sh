@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Builds dinky's Dock scripting addition and injects it, so dinky can move and transform other apps' windows
-# through Dock's privileged WindowServer connection (what dinky's own connection cannot do; see
-# Sources/DinkyPrivate/osax). Requires: SIP Filesystem Protections + Debugging Restrictions disabled, the
+# Builds kex's Dock scripting addition and injects it, so kex can move and transform other apps' windows
+# through Dock's privileged WindowServer connection (what kex's own connection cannot do; see
+# Sources/KexPrivate/osax). Requires: SIP Filesystem Protections + Debugging Restrictions disabled, the
 # -arm64e_preview_abi boot-arg, and root for the install + injection. Re-run after a Dock restart or reboot.
 #
 # The injector (osax/loader.m) is derived from yabai's src/osax/loader.m (MIT, © Åsmund Vikane).
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-O="$REPO/Sources/DinkyPrivate/osax"
-OSAX="$REPO/build/dinky.osax"
-INSTALLED="/Library/ScriptingAdditions/dinky.osax"
+O="$REPO/Sources/KexPrivate/osax"
+OSAX="$REPO/build/kex.osax"
+INSTALLED="/Library/ScriptingAdditions/kex.osax"
 VER="0.4.0"
 
 if [ ! -f "$O/loader.m" ]; then
-    echo "missing $O/loader.m — copy yabai's src/osax/loader.m here and change yabai.osax -> dinky.osax" >&2
+    echo "missing $O/loader.m — copy yabai's src/osax/loader.m here and change yabai.osax -> kex.osax" >&2
     exit 1
 fi
 
@@ -32,8 +32,8 @@ cat > "$OSAX/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleExecutable</key><string>loader</string>
-<key>CFBundleIdentifier</key><string>app.dinky.dinky-osax</string>
-<key>CFBundleName</key><string>dinky</string>
+<key>CFBundleIdentifier</key><string>app.kex.kex-osax</string>
+<key>CFBundleName</key><string>kex</string>
 <key>CFBundlePackageType</key><string>osax</string>
 <key>CFBundleShortVersionString</key><string>$VER</string>
 <key>CFBundleVersion</key><string>$VER</string>
@@ -44,7 +44,7 @@ cat > "$OSAX/Contents/Resources/payload.bundle/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleExecutable</key><string>payload</string>
-<key>CFBundleIdentifier</key><string>app.dinky.dinky-sa</string>
+<key>CFBundleIdentifier</key><string>app.kex.kex-sa</string>
 <key>CFBundleName</key><string>payload</string>
 <key>CFBundlePackageType</key><string>BNDL</string>
 <key>CFBundleShortVersionString</key><string>$VER</string>
@@ -57,7 +57,7 @@ chmod +x "$OSAX/Contents/MacOS/loader" "$OSAX/Contents/Resources/payload.bundle/
 codesign -f -s - "$OSAX/Contents/MacOS/loader"
 codesign -f -s - "$OSAX/Contents/Resources/payload.bundle/Contents/MacOS/payload"
 
-SOCKET="/tmp/dinky-sa_$USER.socket"
+SOCKET="/tmp/kex-sa_$USER.socket"
 echo "installing to $INSTALLED and injecting Dock (needs root)..."
 sudo rm -rf "$INSTALLED"
 sudo cp -R "$OSAX" "$INSTALLED"
@@ -76,6 +76,6 @@ sleep 1
 if [ -S "$SOCKET" ]; then
     echo "OK: scripting addition loaded ($SOCKET)"
 else
-    echo "socket missing — injection may have failed; check Console for [dinky-sa]" >&2
+    echo "socket missing — injection may have failed; check Console for [kex-sa]" >&2
     exit 1
 fi

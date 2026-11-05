@@ -12,7 +12,7 @@ tags: [release, validation]
 ---
 # Host validation with SIP on, plus VM regression run
 
-Run the spike protocol and the v1 acceptance scenarios on the host (27.0 26A428, SIP on, two displays) and in the dinky Tart VM. Record OS build, display setup and results in RESULTS.md.
+Run the spike protocol and the v1 acceptance scenarios on the host (27.0 26A428, SIP on, two displays) and in the kex Tart VM. Record OS build, display setup and results in RESULTS.md.
 
 ## Acceptance Criteria
 
@@ -23,7 +23,7 @@ All acceptance criteria of the closed tickets hold on the host with SIP on.
 
 **2026-09-25T11:47:14Z**
 
-Host checklist: just bundle; open build/dinky.app; grant Accessibility; answer the Cmd-Tab prompt; ~/.config/dinky/dinky.toml is written with defaults (alt bindings active, ctrl-arrows swipe); check list-displays, list-workspaces, workspace N, automatic tiling on open/close, borders, accordion, floating toggle, Cmd-Tab follow, enable off restores, quit restores; then RESULTS.md two-display steps 1 to 9. Emergency: dinky enable off, or quit from the menu.
+Host checklist: just bundle; open build/Kex.app; grant Accessibility; answer the Cmd-Tab prompt; ~/.config/kex/kex.toml is written with defaults (alt bindings active, ctrl-arrows swipe); check list-displays, list-workspaces, workspace N, automatic tiling on open/close, borders, accordion, floating toggle, Cmd-Tab follow, enable off restores, quit restores; then RESULTS.md two-display steps 1 to 9. Emergency: kex enable off, or quit from the menu.
 
 **2026-09-26T21:12:30Z**
 

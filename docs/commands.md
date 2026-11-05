@@ -1,13 +1,13 @@
 ---
 layout: default
 title: Commands
-description: dinky commands, the command line and socket, and scripting a bar.
+description: Kex commands, the command line and socket, and scripting a bar.
 permalink: /commands/
 ---
 
 # Commands
 
-Key bindings, `dinky <command>` and the menu share one vocabulary. `dinky help`
+Key bindings, `kex <command>` and the menu share one vocabulary. `kex help`
 prints it.
 
 <div class="wide-table" markdown="1">
@@ -40,7 +40,7 @@ prints it.
 | `clear-minimum-sizes` | Forget the minimum window sizes learned for every app and re-apply every layout. |
 | `mode <name>` | Switch binding mode. |
 | `reload-config` | Reload the config. |
-| `enable <on\|off\|toggle>` | Turn dinky on or off. Off restores windows and turns key bindings off too, so turn it back on from the menu or with `dinky enable on`. |
+| `enable <on\|off\|toggle>` | Turn Kex on or off. Off restores windows and turns key bindings off too, so turn it back on from the menu or with `kex enable on`. |
 | `list-workspaces`, `list-windows`, `list-monitors`, `list-displays`, `list-modes` | See [Scripting](#scripting). `list-displays` = `list-monitors`. |
 | `debug-state` | Tiling state as JSON, for bug reports. |
 | `exec-and-forget <shell command>` | Run with `/bin/sh -c` without waiting. Output goes to the log. |
@@ -63,7 +63,7 @@ size it. With animations on, it glides.
 | `resize width\|height <+n\|-n>` | Grows or shrinks it by n points along that axis, about its centre, so a centred window stays centred, or from its top-left corner with [`[floating] resize-anchor = 'top-left'`](configuration.md#floating). |
 | `resize smart <+n\|-n>` | The same, in both width and height. |
 | `cycle-size <percent>...` | Centres it at the next of the sizes, that share of the visible area's width and height inside the outer gaps. |
-| `fullscreen` | Fills the display's visible area inside the outer gaps, as fullscreen does for a tile. Again, it goes back to where it was. The place is remembered until dinky quits. |
+| `fullscreen` | Fills the display's visible area inside the outer gaps, as fullscreen does for a tile. Again, it goes back to where it was. The place is remembered until Kex quits. |
 | `balance-sizes`, `flatten-workspace-tree` | Act on the tiles of its workspace. |
 | `join-with <direction>` | An error: a floating window has no neighbour in the tree. Tile it first. On a [free](configuration.md#workspacenumber) workspace, where nothing tiles, it answers that the workspace is free. |
 
@@ -100,7 +100,7 @@ pin or a resize that would leave less is refused, with the noop flash, and so is
 stacking a window into a pin, by a drop or `join-with`, that would, or a `move` or
 `join-with` up or down within one that would widen it so. A band
 window wider than the band, as an app's minimum width can make it, hangs past
-the band's edge, under a pin there. With dinky's Dock scripting addition the
+the band's edge, under a pin there. With Kex's Dock scripting addition the
 pins go in front of the band's windows, the active app's too; without it the
 active app's windows, and the focused window of a pin's own app, can show over
 a pin, sliding past or hanging under it. A band left under
@@ -117,7 +117,7 @@ need; they keep the narrower width and are never unpinned for it.
 - Columns scrolled out of the band slide under the pin and park at the screen's
   edge with only a sliver showing. The pin is raised in front of them as they
   slide under it, after a focus change, Cmd-Tab, a click in the Dock or a new
-  window, and while fingers scroll the strip. With dinky's Dock
+  window, and while fingers scroll the strip. With Kex's Dock
   [scripting addition](scripting-addition.md) loaded, the pins go in
   front of the band's windows sliding under them, the active app's too, and no
   app's focus changes. A floating window or a dialog over a pin, or a window
@@ -154,7 +154,7 @@ alt-shift-p = 'pin right --toggle'
 ## Grid
 
 `grid [--toggle] <rows>:<columns>:<x>:<y>:<width>:<height>` places the focused
-window the way yabai's `window --grid` does. dinky splits the display's visible area
+window the way yabai's `window --grid` does. Kex splits the display's visible area
 (without the menu bar and Dock, inside the outer gaps) into `rows` by `columns`
 equal cells, with the inner gaps between them. The window takes `width` by
 `height` cells, starting at column `x` and row `y`, counted from 0 at the top
@@ -224,7 +224,7 @@ Heights of tiles and columns stay. A window stays floating or tiled.
 
 ## Command line
 
-The app binary is the CLI. `dinky <command>` sends a command to the running app
+The app binary is the CLI. `kex <command>` sends a command to the running app
 and exits 1 on errors or when it isn't running. `move`, `join-with` and `resize`
 with nothing to do succeed: `move left` on a window already at the left edge
 prints `move left: nothing to do` and exits 0, as `workspace 1` does on
@@ -238,22 +238,22 @@ workspace 1. CLI-only commands:
 | `debug events\|windows` | Print window events or windows, without the app. |
 | `version`, `-v`, `--version` | Print the version and build number. |
 
-The log is `~/Library/Logs/dinky.log`; attach it to bug reports.
+The log is `~/Library/Logs/kex.log`; attach it to bug reports.
 
 Scripts can skip the CLI and talk to the socket: one command per connection,
 answered with `ok` or `error` and the reply.
 
 ```sh
-printf 'workspace 2\n' | nc -U "$TMPDIR/dinky.sock"
+printf 'workspace 2\n' | nc -U "$TMPDIR/kex.sock"
 ```
 
 ## Recovery
 
-dinky journals each window's original frame and Space before tiling it. `enable
+Kex journals each window's original frame and Space before tiling it. `enable
 off` puts them all back. Quitting, `kill` and logging out put back the frames
-but leave each window on the Space it is on, so dinky started again finds the
+but leave each window on the Space it is on, so Kex started again finds the
 windows on the workspaces they were tiled on. After a crash, the
-menu offers to restore them (or `dinky recover`); dinky stays off until `dinky
+menu offers to restore them (or `kex recover`); Kex stays off until `kex
 enable on`.
 
 ## Scripting
@@ -293,26 +293,26 @@ Drive a bar from the config's [hooks](configuration.md#hooks):
 ```toml
 [hooks]
 startup = ['exec-and-forget brew services restart sketchybar']
-workspace-changing = ['exec-and-forget sketchybar --trigger workspace_changing DINKY_DISPLAY=$DINKY_DISPLAY DINKY_WORKSPACE=$DINKY_WORKSPACE']
-workspace-changed = ['exec-and-forget sketchybar --trigger workspace_change WORKSPACE=$DINKY_WORKSPACE']
+workspace-changing = ['exec-and-forget sketchybar --trigger workspace_changing KEX_DISPLAY=$KEX_DISPLAY KEX_WORKSPACE=$KEX_WORKSPACE']
+workspace-changed = ['exec-and-forget sketchybar --trigger workspace_change WORKSPACE=$KEX_WORKSPACE']
 focus-changed = ['exec-and-forget sketchybar --trigger focus_changed']
-mode-changed = ['exec-and-forget sketchybar --trigger mode_changed MODE=$DINKY_MODE']
+mode-changed = ['exec-and-forget sketchybar --trigger mode_changed MODE=$KEX_MODE']
 ```
 
-The workspace hooks set `DINKY_WORKSPACE` (empty on a full-screen Space),
-`DINKY_PREV_WORKSPACE` and `DINKY_DISPLAY` (1-based). `workspace-changing`
-fires only for dinky's own switches, so draw the target there and the real
+The workspace hooks set `KEX_WORKSPACE` (empty on a full-screen Space),
+`KEX_PREV_WORKSPACE` and `KEX_DISPLAY` (1-based). `workspace-changing`
+fires only for Kex's own switches, so draw the target there and the real
 state on `workspace-changed`, which always follows. `mode-changed` sets
-`DINKY_MODE` and `DINKY_PREV_MODE`; `dinky list-modes --current` prints the
-mode at any time. `exec-and-forget` has `dinky` and Homebrew on `PATH`.
+`KEX_MODE` and `KEX_PREV_MODE`; `kex list-modes --current` prints the
+mode at any time. `exec-and-forget` has `kex` and Homebrew on `PATH`.
 
 ### Docking
 
-`display-changed` runs once dinky has arranged the workspaces after a display
-connects or disconnects. It sets `DINKY_DISPLAYS` and `DINKY_PREV_DISPLAYS`, the number
-of displays now and before; `dinky list-monitors` names them.
+`display-changed` runs once Kex has arranged the workspaces after a display
+connects or disconnects. It sets `KEX_DISPLAYS` and `KEX_PREV_DISPLAYS`, the number
+of displays now and before; `kex list-monitors` names them.
 
 ```toml
 [hooks]
-display-changed = ['exec-and-forget [ "$DINKY_DISPLAYS" = 1 ] && ~/bin/laptop-mode.sh || ~/bin/desk-mode.sh']
+display-changed = ['exec-and-forget [ "$KEX_DISPLAYS" = 1 ] && ~/bin/laptop-mode.sh || ~/bin/desk-mode.sh']
 ```

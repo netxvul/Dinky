@@ -22,4 +22,4 @@ Idea: when following, focus the moved window once the swipe lands (SpaceSwitcher
 
 **2026-09-25T22:44:28Z**
 
-switchSpace/SpaceSwitcher.request take a 'landed' callback, run once the display is on the target (dropped if a newer request replaces it). move-window-to-workspace --follow focuses the moved window there through Coordinator.focus -> focusWindow, which marks the activation as dinky's own. VM: a.txt the only window on 3, move-window-to-workspace 1 --follow: on 1, focused TextEdit a.txt.
+switchSpace/SpaceSwitcher.request take a 'landed' callback, run once the display is on the target (dropped if a newer request replaces it). move-window-to-workspace --follow focuses the moved window there through Coordinator.focus -> focusWindow, which marks the activation as kex's own. VM: a.txt the only window on 3, move-window-to-workspace 1 --follow: on 1, focused TextEdit a.txt.

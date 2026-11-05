@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "dinky",
+    name: "kex",
     platforms: [.macOS(.v15)],
     dependencies: [
         .package(url: "https://github.com/dduan/TOMLDecoder", exact: "0.4.4"),
@@ -11,7 +11,7 @@ let package = Package(
     targets: [
         // Private SkyLight and CGS calls. Objective-C, capability checked, nothing else lives here.
         .target(
-            name: "DinkyPrivate",
+            name: "KexPrivate",
             // The scripting addition (osax/payload.m, osax/loader.m) is built and injected into Dock separately,
             // by scripts/build-sa.sh; only its wire protocol (osax/common.h) is shared with the client here.
             exclude: ["osax/payload.m", "osax/loader.m"],
@@ -24,41 +24,41 @@ let package = Package(
         ),
         // Pure layout engine: trees, rectangles, no AppKit. Fully unit tested.
         .target(
-            name: "DinkyLayout",
+            name: "KexLayout",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
-            name: "DinkyLayoutTests",
-            dependencies: ["DinkyLayout"],
+            name: "KexLayoutTests",
+            dependencies: ["KexLayout"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         // The command vocabulary shared by bindings, CLI and menu: parsing and reference. Unit tested.
         .target(
-            name: "DinkyCommands",
-            dependencies: ["DinkyLayout", "DinkyConfig"],
+            name: "KexCommands",
+            dependencies: ["KexLayout", "KexConfig"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
-            name: "DinkyCommandsTests",
-            dependencies: ["DinkyCommands", "DinkyConfig", .product(name: "TOMLDecoder", package: "TOMLDecoder")],
+            name: "KexCommandsTests",
+            dependencies: ["KexCommands", "KexConfig", .product(name: "TOMLDecoder", package: "TOMLDecoder")],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         // Config types and TOML loading. No AppKit; Carbon.HIToolbox for the key codes only. Unit tested.
         .target(
-            name: "DinkyConfig",
+            name: "KexConfig",
             dependencies: [.product(name: "TOMLDecoder", package: "TOMLDecoder")],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
-            name: "DinkyConfigTests",
-            dependencies: ["DinkyConfig"],
+            name: "KexConfigTests",
+            dependencies: ["KexConfig"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         // The app and CLI.
         .executableTarget(
-            name: "dinky",
+            name: "kex",
             dependencies: [
-                "DinkyPrivate", "DinkyLayout", "DinkyConfig", "DinkyCommands",
+                "KexPrivate", "KexLayout", "KexConfig", "KexCommands",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
             swiftSettings: [.swiftLanguageMode(.v5)],

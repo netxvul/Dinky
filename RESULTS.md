@@ -1,6 +1,6 @@
 # Spike results
 
-Run on 24 September 2026 in a Tart VM (`dinky`, cloned from `tuna-golden-gate-base`): macOS 27.0 build 26A5416b, SIP **disabled** (how the Cirrus Labs images ship), 1024x768 display at 2x, admin logged in on the console. The binary was built on the host (27.0 build 26A428, SIP on) and copied in. Commands ran over SSH with Accessibility, Screen Recording, Post Event and Apple Events granted to `/usr/libexec/sshd-keygen-wrapper` in the guest's TCC database. `mru-spaces` was set to false; the switch-on-activate setting and Reduce Motion were left at defaults.
+Run on 24 September 2026 in a Tart VM (`kex`, cloned from `tuna-golden-gate-base`): macOS 27.0 build 26A5416b, SIP **disabled** (how the Cirrus Labs images ship), 1024x768 display at 2x, admin logged in on the console. The binary was built on the host (27.0 build 26A428, SIP on) and copied in. Commands ran over SSH with Accessibility, Screen Recording, Post Event and Apple Events granted to `/usr/libexec/sshd-keygen-wrapper` in the guest's TCC database. `mru-spaces` was set to false; the switch-on-activate setting and Reduce Motion were left at defaults.
 
 The host itself has not been tested. Both differences from the plan's target (beta build, SIP off) should be closed by rerunning on the host.
 
@@ -62,7 +62,7 @@ The keyboard route is the plain, supported way to switch and it works, but it is
 
 Cmd-Tab or a Dock click on an app whose windows are on another Space makes macOS switch there with its own slide, because of the "When switching to an application, switch to a Space with open windows" setting (`com.apple.dock workspaces-auto-swoosh`). With the setting on, activating TextEdit from another Space took about 294 ms to the Space ID flip, plus the animation.
 
-With the setting off, macOS only activates the app. The `dinky hotkeys` daemon now observes `NSWorkspace.didActivateApplicationNotification`, finds the app's frontmost normal window through the CG window list and its Space through SkyLight, and swipes there with the mimi path. Measured through a coarse polling loop: TextEdit 77 ms, Terminal 62 ms, with the app frontmost afterwards. So every route to another Space, keyboard, Cmd-Tab or Dock, can go through the fast switch. Not yet tested: apps with windows on several Spaces, activation of an app with no windows, and what the real Cmd-Tab switcher does versus `open -a`.
+With the setting off, macOS only activates the app. The `kex hotkeys` daemon now observes `NSWorkspace.didActivateApplicationNotification`, finds the app's frontmost normal window through the CG window list and its Space through SkyLight, and swipes there with the mimi path. Measured through a coarse polling loop: TextEdit 77 ms, Terminal 62 ms, with the app frontmost afterwards. So every route to another Space, keyboard, Cmd-Tab or Dock, can go through the fast switch. Not yet tested: apps with windows on several Spaces, activation of an app with no windows, and what the real Cmd-Tab switcher does versus `open -a`.
 
 ## Display targeting for switching
 
@@ -84,21 +84,21 @@ Research from source only; there is no two-display machine to test on, and the V
 - bobrwm: warp only, `return c.CGWarpMouseCursorPosition(center) == c.kCGErrorSuccess;` (skylight.zig:858). No restore, no menu bar or click follow-up.
 - Tuna: nothing; it always acts on the cursor's display.
 
-**What dinky does now** (Sources/DinkyPrivate/switch.m). `dinky_switch_to_space_index` looks up `displayUUID` in `dinky_displays()` and refuses with `switch: no display with UUID ...` on stderr when it is not there, for every path. The mimi path, `mimi_post_swipes`, checks whether the pointer is inside the target display's bounds. If it is, nothing changes from before. If not, it warps the pointer to the display's centre, waits 30 ms as mimi does, posts the swipes, waits 30 ms after the last one as well so the Dock reads them before the pointer moves, warps the pointer back, and calls `CGAssociateMouseAndMouseCursorPosition(true)` to end the short freeze of real mouse movement a warp causes. Restoring is dinky's own choice; none of the sources do it. It does not copy the menu-bar and click follow-up from mimi and yabai, because dinky switches the focused display, which should already own the menu bar; step 6 below checks that. The Tuna, bridged, keys and number paths are unchanged. In the VM (one display, pointer always on it) `switch 2` and `switch 1` with `--path mimi` still land, and `--times 10` landed 10 of 10, median 110 ms, just after a VM reboot.
+**What kex does now** (Sources/KexPrivate/switch.m). `kex_switch_to_space_index` looks up `displayUUID` in `kex_displays()` and refuses with `switch: no display with UUID ...` on stderr when it is not there, for every path. The mimi path, `mimi_post_swipes`, checks whether the pointer is inside the target display's bounds. If it is, nothing changes from before. If not, it warps the pointer to the display's centre, waits 30 ms as mimi does, posts the swipes, waits 30 ms after the last one as well so the Dock reads them before the pointer moves, warps the pointer back, and calls `CGAssociateMouseAndMouseCursorPosition(true)` to end the short freeze of real mouse movement a warp causes. Restoring is kex's own choice; none of the sources do it. It does not copy the menu-bar and click follow-up from mimi and yabai, because kex switches the focused display, which should already own the menu bar; step 6 below checks that. The Tuna, bridged, keys and number paths are unchanged. In the VM (one display, pointer always on it) `switch 2` and `switch 1` with `--path mimi` still land, and `--times 10` landed 10 of 10, median 110 ms, just after a VM reboot.
 
 Untested alternative: set the swipe events' location (`CGEventSetLocation`) to the target display instead of moving the pointer. No source does this, and it only helps if the Dock reads the event location rather than the WindowServer cursor. Worth one try on two displays if the warp flicker bothers.
 
 **Test procedure for the host with two displays**
 
-Setup: two displays attached, "Displays have separate Spaces" on (the default), at least 2 Spaces on each display, `mru-spaces` false, `swift build` done. Run everything from the repo with `.build/debug/dinky`. `dinky switch` always acts on the main display (the one with the menu bar in System Settings > Displays, Switch.swift:47), so the display under test is chosen by moving the pointer, not by a flag. `sleep 3;` gives you time to move the pointer after pressing Return.
+Setup: two displays attached, "Displays have separate Spaces" on (the default), at least 2 Spaces on each display, `mru-spaces` false, `swift build` done. Run everything from the repo with `.build/debug/kex`. `kex switch` always acts on the main display (the one with the menu bar in System Settings > Displays, Switch.swift:47), so the display under test is chosen by moving the pointer, not by a flag. `sleep 3;` gives you time to move the pointer after pressing Return.
 
-1. Build and launch the app (`just bundle`, open `build/dinky.app`, grant Accessibility). `dinky list-displays` must show two displays, one marked main and one focused; `dinky list-workspaces` shows each display's Spaces with the current one starred. Note both current Spaces.
-2. Pointer on the focused display: `dinky workspace 2`. Expect that display on workspace 2 within about 100 ms, the other display unchanged, and the pointer not moving. `dinky workspace 1` to go back.
-3. The case this ticket is about: click a window on display A so A has focus, then move the pointer to display B and leave it still; run `sleep 3; dinky workspace 2` from a terminal on either display (the terminal window's display is what has focus, so put the terminal on A). Expect A on workspace 2, B unchanged, and the pointer back where you left it after at most a brief flicker to A's centre. `dinky list-workspaces` should agree.
-4. With the pointer still on B: ten alternating `dinky workspace 2` and `dinky workspace 1` runs back to back. Expect A to settle on the last one and B never to change.
-5. Keep moving the mouse on B during a `sleep 3; dinky workspace 2`. Expect the switch on A and the pointer not to stick or freeze after it jumps back.
+1. Build and launch the app (`just bundle`, open `build/Kex.app`, grant Accessibility). `kex list-displays` must show two displays, one marked main and one focused; `kex list-workspaces` shows each display's Spaces with the current one starred. Note both current Spaces.
+2. Pointer on the focused display: `kex workspace 2`. Expect that display on workspace 2 within about 100 ms, the other display unchanged, and the pointer not moving. `kex workspace 1` to go back.
+3. The case this ticket is about: click a window on display A so A has focus, then move the pointer to display B and leave it still; run `sleep 3; kex workspace 2` from a terminal on either display (the terminal window's display is what has focus, so put the terminal on A). Expect A on workspace 2, B unchanged, and the pointer back where you left it after at most a brief flicker to A's centre. `kex list-workspaces` should agree.
+4. With the pointer still on B: ten alternating `kex workspace 2` and `kex workspace 1` runs back to back. Expect A to settle on the last one and B never to change.
+5. Keep moving the mouse on B during a `sleep 3; kex workspace 2`. Expect the switch on A and the pointer not to stick or freeze after it jumps back.
 6. After step 3, note which display shows the active menu bar and which window has keyboard focus. Expect both unchanged. If the menu bar moved to A, record it: mimi and yabai set it explicitly after a warp.
-7. `dinky move-window-to-display next` on a tiled window, then `--follow` on another. Expect the window to land on the other display's current workspace, both displays re-tiled, and focus on the moved window in the follow case.
+7. `kex move-window-to-display next` on a tiled window, then `--follow` on another. Expect the window to land on the other display's current workspace, both displays re-tiled, and focus on the moved window in the follow case.
 8. Swap which display is main in System Settings > Displays > Arrange and repeat steps 2, 3 and 7. Move the menu bar back afterwards.
 9. If step 3 switches B instead, or times out: the warp did not reach the Dock in time. Record the output; the next things to try are a longer wait after the warp in `mimi_post_swipes`, then the `CGEventSetLocation` alternative above.
 
@@ -123,7 +123,7 @@ Found and fixed in the same run: a display connected after launch never got its 
 
 Run on 25 September 2026 in the same VM (macOS 27.0 26A5416b, SIP off, one 1024x768 display, 3 Spaces at the start). Ticket din-19v3.
 
-**Result: dinky can create a user Space on a display with `SLSBridgedSpaceCreateOperation`, through SkyLight's synchronous bridged dispatcher. Mission Control shows it, windows move to it, the swipe switches to it, and it survives `killall Dock`.** Nothing is injected into the Dock, so SIP should not matter, but the host has not been tried.
+**Result: kex can create a user Space on a display with `SLSBridgedSpaceCreateOperation`, through SkyLight's synchronous bridged dispatcher. Mission Control shows it, windows move to it, the swipe switches to it, and it survives `killall Dock`.** Nothing is injected into the Dock, so SIP should not matter, but the host has not been tried.
 
 ### What the runtime says
 
@@ -150,22 +150,22 @@ No option or dictionary key is documented. The values follow bobrwm (below): `ty
 
 ### What other window managers do
 
-- **yabai** (`space_manager_add_space`): only through its scripting addition. It injects into the Dock and calls the Dock's own `addSpace` on a new `ManagedSpace`. That needs SIP off, so it is not an option for dinky.
+- **yabai** (`space_manager_add_space`): only through its scripting addition. It injects into the Dock and calls the Dock's own `addSpace` on a new `ManagedSpace`. That needs SIP off, so it is not an option for kex.
 - **bobrwm** (`skylight.zig createNativeSpace`): exactly this path. It calls `[[SLSBridgedSpaceCreateOperation alloc] initWithOptions:0 values:@{type: 0, "Display Identifier": uuid}]`, then `performWithWMBridgeDelegate`, and reads `spaceID` from the result. It then polls `SLSCopyManagedDisplaySpaces` until the count grows. It also uses `SLSBridgedSpaceDestroyOperation initWithSpaceID:` to remove Spaces.
 
 ### Calls and results on 26A5416b
 
 | Call | Process | Result |
 |---|---|---|
-| `dinky spaces create` (bridged op through the sync dispatcher) | dinky (links AppKit) | `SpaceIDResult` with spaceID 23. In `SLSCopyManagedDisplaySpaces` immediately, type 0 |
-| same, `--display <uuid> --restart-dock` | dinky | spaceID 32. Still listed after `killall Dock` |
+| `kex spaces create` (bridged op through the sync dispatcher) | kex (links AppKit) | `SpaceIDResult` with spaceID 23. In `SLSCopyManagedDisplaySpaces` immediately, type 0 |
+| same, `--display <uuid> --restart-dock` | kex | spaceID 32. Still listed after `killall Dock` |
 | bridged op via `-performWithWMBridgeDelegate` | bare Foundation probe | result **nil**, nothing created |
 | same, with `SLSCopyManagedDisplaySpaces` called first | bare Foundation probe | nil |
 | same | probe linking AppKit (`NSApplicationLoad()` or just touching `NSScreen`) | spaceID 44 / 45, created |
 | exported `SLSSpaceCreate(cid, 0, values)` | bare probe, and AppKit probe | returns 0, nothing created |
 | `SLSBridgedSpaceDestroyOperation` via `-performWithWMBridgeDelegate`, and exported `SLSSpaceDestroy` | bare probe, on Spaces 23 and 32 | nothing removed (return 0) |
 
-So the working form is the bridged op, sent from a process with AppKit loaded. dinky already links AppKit. Removing a Space from a bare process did not work, not even with the original creator gone. From a process with AppKit loaded it does; see "Removing Spaces" below. The test Spaces were removed with Mission Control's own close button.
+So the working form is the bridged op, sent from a process with AppKit loaded. kex already links AppKit. Removing a Space from a bare process did not work, not even with the original creator gone. From a process with AppKit loaded it does; see "Removing Spaces" below. The test Spaces were removed with Mission Control's own close button.
 
 ### Mission Control and the Dock
 
@@ -173,22 +173,22 @@ Screenshots were taken in the VM with Control-Up and `screencapture`, and checke
 
 - Before: Desktop 1 to 3.
 - After `spaces create`: **Desktop 4** appears at the end of the strip, with no Dock restart and no delay.
-- `dinky move 47 4` moved a TextEdit window there in 15 ms. `dinky switch 4 --path mimi` switched to it in 437 ms. The screen showed an empty desktop with TextEdit, and the menu bar number read 4.
+- `kex move 47 4` moved a TextEdit window there in 15 ms. `kex switch 4 --path mimi` switched to it in 437 ms. The screen showed an empty desktop with TextEdit, and the menu bar number read 4.
 - **`killall Dock` was run twice** in the VM. After it, `spaces ls` still showed Space 23, and Mission Control still showed Desktop 4 with the TextEdit thumbnail on it. Space 32 also survived its restart.
 
 The first two test Spaces (23, 32) were removed and 3 Spaces were confirmed. After the AppKit probe runs, the VM had 5 Spaces (44 and 45 added). The same Mission Control cleanup was sent, but the VM stopped answering on the network during it (tart still reports it running), so the final count is unverified. Expect 3, or 5 if the clicks did not land. Either way it is at least 3.
 
 ### Recommendation
 
-Use it. `dinky_create_space(displayUUID)` in `Sources/DinkyPrivate/spaces.m` is the real function. It returns the new Space ID, or 0 with the reason on stderr. The "ensure workspace count" feature (din-son6) can call it once per missing Space, then wait until `dinky_displays()` lists the new ID; it showed up on the first poll here. Open points:
+Use it. `kex_create_space(displayUUID)` in `Sources/KexPrivate/spaces.m` is the real function. It returns the new Space ID, or 0 with the reason on stderr. The "ensure workspace count" feature (din-son6) can call it once per missing Space, then wait until `kex_displays()` lists the new ID; it showed up on the first poll here. Open points:
 
-- **Host with SIP on:** not tested, per the brief. Nothing on this path touches the Dock, and the call is a plain client-to-WindowServer MIG call, so SIP should not matter. Confirm on the host before relying on it; it is a one-line `dinky spaces create`.
+- **Host with SIP on:** not tested, per the brief. Nothing on this path touches the Dock, and the call is a plain client-to-WindowServer MIG call, so SIP should not matter. Confirm on the host before relying on it; it is a one-line `kex spaces create`.
 - **Multi-display:** not tested, since the VM has one display. `--display <uuid>` goes into `Display Identifier`, which is the only way the target display is chosen.
 - **The exported `SLSSpaceCreate` does not work** on this build. Do not replace the dispatcher lookup with it.
 
 ## Removing Spaces, 29 September: works with AppKit loaded
 
-The earlier probe tried removal only from a bare Foundation process. A probe that loads AppKit (`[NSApplication sharedApplication]`, `NSScreen`), creates a Space with `dinky_create_space` and then removes it gives:
+The earlier probe tried removal only from a bare Foundation process. A probe that loads AppKit (`[NSApplication sharedApplication]`, `NSScreen`), creates a Space with `kex_create_space` and then removes it gives:
 
 | Call | Result |
 |---|---|
@@ -201,13 +201,13 @@ Also checked in the VM (26A5416b, SIP off): a Space created by another, exited p
 
 On the host (27.0, **SIP on**, two displays) a test Space created on the secondary display was removed the same way and left nothing behind in `com.apple.spaces`.
 
-`dinky_destroy_space` in `Sources/DinkyPrivate/spaces.m` uses `-performWithWMBridgeDelegate`. Workspace arranging (`Sources/dinky/WorkspaceNumbers.swift`) calls it for empty Spaces no workspace is on, after moving any workspace's windows away, and switches a display to one of its workspaces before removing the Space it shows.
+`kex_destroy_space` in `Sources/KexPrivate/spaces.m` uses `-performWithWMBridgeDelegate`. Workspace arranging (`Sources/kex/WorkspaceNumbers.swift`) calls it for empty Spaces no workspace is on, after moving any workspace's windows away, and switches a display to one of its workspaces before removing the Space it shows.
 
 ## Fuzzing, 26 September
 
-`just fuzz <seed> <steps>` copies the debug binary and `scripts/fuzz.py` into the VM, restarts the app from that binary and runs the fuzzer there over ssh. Each step runs one weighted random action through the CLI: open, reopen, close, minimize, unminimize or quit TextEdit documents; Finder and Safari windows; hide and unhide apps (`dinky debug hide-app`, the AX hidden attribute, because `NSRunningApplication.hide()` answers false from ssh); `open -a` activations (the Cmd-Tab path); `workspace` and `move-window-to-workspace` with and without `--follow`, which put TextEdit documents on several Spaces; tree commands; native Control-Arrow switches (posted in dinky's `service` mode so dinky's own ctrl-arrow bindings do not take them); trips to empty workspaces by dinky or natively, sometimes followed by an activation 0.5 or 1.5 s later; and a "twin", a window shown at exactly another tile's frame, as Ghostty opens new windows. Between 3 and 8 windows are kept.
+`just fuzz <seed> <steps>` copies the debug binary and `scripts/fuzz.py` into the VM, restarts the app from that binary and runs the fuzzer there over ssh. Each step runs one weighted random action through the CLI: open, reopen, close, minimize, unminimize or quit TextEdit documents; Finder and Safari windows; hide and unhide apps (`kex debug hide-app`, the AX hidden attribute, because `NSRunningApplication.hide()` answers false from ssh); `open -a` activations (the Cmd-Tab path); `workspace` and `move-window-to-workspace` with and without `--follow`, which put TextEdit documents on several Spaces; tree commands; native Control-Arrow switches (posted in kex's `service` mode so kex's own ctrl-arrow bindings do not take them); trips to empty workspaces by kex or natively, sometimes followed by an activation 0.5 or 1.5 s later; and a "twin", a window shown at exactly another tile's frame, as Ghostty opens new windows. Between 3 and 8 windows are kept.
 
-After each step it reads `dinky debug-state` at 0.8 s and at 2.3 s and checks: tiled windows on screen within 2 pt of their expected frames (unless a minimum size is recorded; TextEdit, Finder and Safari only, since Terminal snaps to its grid); no overlap between tiles whose expected frames do not overlap; every window in at most one tree and on that tree's Space; every normal window on a shown workspace placed; the focused tiled window on screen; `list-workspaces --focused` agreeing with the display; the display staying on its Space after actions that should not switch (close, quit, minimize, hide, tree commands); and nothing moving between the two reads ("spontaneous shift"). What was wrong at 0.8 s but right at 2.3 s is printed as "settled late", not counted.
+After each step it reads `kex debug-state` at 0.8 s and at 2.3 s and checks: tiled windows on screen within 2 pt of their expected frames (unless a minimum size is recorded; TextEdit, Finder and Safari only, since Terminal snaps to its grid); no overlap between tiles whose expected frames do not overlap; every window in at most one tree and on that tree's Space; every normal window on a shown workspace placed; the focused tiled window on screen; `list-workspaces --focused` agreeing with the display; the display staying on its Space after actions that should not switch (close, quit, minimize, hide, tree commands); and nothing moving between the two reads ("spontaneous shift"). What was wrong at 0.8 s but right at 2.3 s is printed as "settled late", not counted.
 
 Runs, 150 steps each: seeds 11, 21 and 22 found nothing (earlier fuzzer versions, without quit and the bounce check); seed 23 shift-frame x11; seed 31 shift-frame x11; seed 32 g-bounce x2, a-frame x1 (Terminal's grid, since excluded); seed 33 g-bounce x5, shift-frame x2, shift-tree x1. The app never died.
 
@@ -223,4 +223,4 @@ Runs, 150 steps each: seeds 11, 21 and 22 found nothing (earlier fuzzer versions
 
 **`move-window-to-workspace --follow` leaves the moved window unfocused** (din-mocv). After the move the source Space loses the active app's window, macOS activates Finder, and nothing focuses the window on arrival: `list-windows --focused` says no window is focused.
 
-On the "weirdness when switching to empty spaces" report: landing on an empty workspace by itself never moved the display in these runs (by dinky 38 of 38 times, by native Control-Arrow 32 of 32, seeds 21 to 23 and 31 to 33), and no frame changed during the idle period after a landing. What moves the user away from an empty workspace is the activation follower: din-4wkw when an app quits or hides there, din-2h2u when a document or window is opened from there, and din-czpm when a Cmd-Tab from there comes too soon and is dropped.
+On the "weirdness when switching to empty spaces" report: landing on an empty workspace by itself never moved the display in these runs (by kex 38 of 38 times, by native Control-Arrow 32 of 32, seeds 21 to 23 and 31 to 33), and no frame changed during the idle period after a landing. What moves the user away from an empty workspace is the activation follower: din-4wkw when an app quits or hides there, din-2h2u when a document or window is opened from there, and din-czpm when a Cmd-Tab from there comes too soon and is dropped.

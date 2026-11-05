@@ -1,0 +1,25 @@
+cask "kex" do
+  version "@VERSION@"
+  sha256 "@SHA256@"
+
+  url "https://github.com/mikker/Dinky/releases/download/v#{version}/Kex.app.zip"
+  name "Kex"
+  desc "Tiling window manager for macOS on native Spaces, with SIP left on"
+  homepage "https://dinky.rodeo/"
+
+  livecheck do
+    url "https://github.com/mikker/Dinky/releases/latest/download/appcast.xml"
+    strategy :sparkle, &:short_version
+  end
+
+  auto_updates true
+  depends_on macos: ">= :sequoia"
+
+  app "Kex.app"
+  binary "#{appdir}/Kex.app/Contents/MacOS/kex"
+
+  zap trash: [
+    "~/Library/Application Support/kex",
+    "~/Library/Preferences/com.brnbw.kex.plist",
+  ]
+end

@@ -1,0 +1,187 @@
+import AppKit
+import KexLayout
+import KexPrivate
+
+// Fans the one process-wide WindowServer callback out to every model that wants events.
+// kex_events_start keeps a single callback, so exactly one owner may call it: this hub.
+// Subscribers run on the main queue. The models subscribe here; everything else observes a model, which has
+// taken the event in by the time its observers run.
+final class EventHub {
+    static let shared = EventHub()
+    private var subscribers: [(KexEvent) -> Void] = []
+    private var started = false
+
+    /// Starts the stream on first use. False if WindowServer refused the registration.
+    @discardableResult
+    func subscribe(_ handler: @escaping (KexEvent) -> Void) -> Bool {
+        subscribers.append(handler)
+        guard !started else { return true }
+        started = kex_events_start({ event, _ in
+            DispatchQueue.main.async { EventHub.shared.subscribers.forEach { $0(event) } }
+        }, nil)
+        return started
+    }
+}
+
+/// One display as the model last read it.
+struct Display: Equatable {
+    let uuid: String
+    let id: CGDirectDisplayID
+    /// Global CG coordinates, top-left origin.
+    let frame: CGRect
+    /// The frame minus menu bar and Dock, in the same coordinates. Read with the rest, so a Dock that moves,
+    /// resizes or starts hiding changes the display, and the trees on it are fitted to the area again.
+    let visibleArea: CGRect
+    let isMain: Bool
+    /// Every Space in Mission Control order, full-screen ones included. Swipes step over all of them.
+    let spaces: [UInt64]
+    /// User Spaces only, in Mission Control order; full-screen Spaces are left out. Which workspace each is,
+    /// if any, is `WorkspaceNumbers`'s business.
+    let userSpaces: [UInt64]
+    let currentSpaceID: UInt64
+}
+
+// Displays, their Spaces, the current and previous Space per display, which display has focus, and the Space and
+// display focused before the focused ones, across all displays, for `recent`.
+// Refreshed from WindowServer Space events, screen reconfiguration, a poll and `reconcile()`. Main thread only.
+final class DisplayModel {
+    private(set) var displays: [Display] = []
+    /// The Space each display was on before its current one, by display UUID, for back-and-forth.
+    private var previousSpaceIDs: [String: UInt64] = [:]
+    /// The Space each display last settled on: a swipe passes through the Spaces between, which don't count.
+    private var settledSpaceIDs: [String: UInt64] = [:]
+    private var observers: [(DisplayModel) -> Void] = []
+    /// The UUID of a display `focus-monitor` focused without a window to focus there. It stands in for the
+    /// focused window's display until focus next changes.
+    var focusOverride: String? { didSet { if focusOverride != oldValue { noteFocus() } } }
+    /// The focused Space and the one before it, on any display. A swipe's Spaces on the way do not count.
+    private var focusedSpaces = Recent<UInt64>()
+    /// The focused display's UUID and the one before it.
+    private var focusedDisplays = Recent<String>()
+
+    /// Reads the displays and follows their changes from then on. Call once.
+    func start() {
+        reconcile()
+        EventHub.shared.subscribe { [weak self] event in
+            switch event.kind {
+            case .spaceChange, .spaceCreated, .spaceDestroyed: self?.reconcile()
+            default: break
+            }
+        }
+        let center = NotificationCenter.default
+        center.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.reconcile()
+        }
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification,
+                                                          object: nil, queue: .main) { [weak self] _ in
+            self?.reconcile()
+        }
+        // Neither notification is reliable for swipes posted by other processes, so poll. Enumerating displays and
+        // Spaces is not free, so poll every half second only while a switch is in flight — when the new Space must be
+        // caught quickly — and every two seconds otherwise, where it is just a backstop to the notifications.
+        var tick = 0
+        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            tick += 1
+            // Every half second while a switch is in flight — the new Space must be caught quickly — otherwise every
+            // five seconds, where the poll is only a backstop to the (usually reliable) Space-change notifications.
+            if SpaceSwitcher.shared.switching || tick % 10 == 0 { self?.reconcile() }
+        }
+    }
+
+    /// Re-reads every display from WindowServer. Records previous Spaces and publishes if anything changed.
+    func reconcile() {
+        defer { noteFocus() }
+        let fresh = readDisplays()
+        // Also when nothing else changed: a swipe that gave up settles where it already was.
+        for display in fresh {
+            if let target = SpaceSwitcher.shared.target(on: display.uuid), target != display.currentSpaceID { continue }
+            if let settled = settledSpaceIDs[display.uuid], settled != display.currentSpaceID {
+                previousSpaceIDs[display.uuid] = settled
+            }
+            settledSpaceIDs[display.uuid] = display.currentSpaceID
+        }
+        guard fresh != displays else { return }
+        // Displays coming and going (as around sleep) leave the focus where the windows are.
+        if Set(fresh.map(\.uuid)) != Set(displays.map(\.uuid)) { focusOverride = nil }
+        // A disconnected display takes its history with it.
+        previousSpaceIDs = previousSpaceIDs.filter { uuid, _ in fresh.contains { $0.uuid == uuid } }
+        settledSpaceIDs = settledSpaceIDs.filter { uuid, _ in fresh.contains { $0.uuid == uuid } }
+        focusedDisplays.forget { uuid in !fresh.contains { $0.uuid == uuid } }
+        focusedSpaces.forget { space in !fresh.contains { $0.spaces.contains(space) } }
+        displays = fresh
+        observers.forEach { $0(self) }
+    }
+
+    /// Calls `handler` after every change, in the order observers were added.
+    func observe(_ handler: @escaping (DisplayModel) -> Void) {
+        observers.append(handler)
+    }
+
+    /// The focused window as the coordinator tracks it, asking no app: the front app's frontmost, unless that is a pin
+    /// Dock ordered in front of the window the user is on. Set by the coordinator.
+    var frontWindow: () -> UInt32 = { kex_border_focused_window() }
+
+    /// The display chosen by `focus-monitor`, else that of the focused window (or `window`), else the one under
+    /// the cursor, else the main display. The focused window is the front app's frontmost one as WindowServer has
+    /// it, not as the app answers through Accessibility: this runs on the main thread, on a timer, on every
+    /// activation and command, often while that app is busy, and asking it would hold kex and every key and
+    /// click its event taps see until it answers.
+    func focusedDisplay(window wid: UInt32? = nil) -> Display? {
+        let wid = wid ?? frontWindow()
+        if let chosen = displays.first(where: { $0.uuid == focusOverride }) { return chosen }
+        if wid != 0, let display = display(ofWindow: wid) { return display }
+        if let cursor = CGEvent(source: nil)?.location, let display = displays.first(where: { $0.frame.contains(cursor) }) {
+            return display
+        }
+        return displays.first(where: \.isMain) ?? displays.first
+    }
+
+    /// The display showing the window's Space, or failing that the one containing its frame's centre.
+    func display(ofWindow wid: UInt32) -> Display? {
+        if let display = display(containingSpace: kex_window_space_id(wid)) { return display }
+        let info = kex_window_info(wid)
+        guard info.exists else { return nil }
+        return displays.first { $0.frame.contains(CGPoint(x: info.frame.midX, y: info.frame.midY)) }
+    }
+
+    func display(containingSpace spaceID: UInt64) -> Display? {
+        spaceID == 0 ? nil : displays.first { $0.spaces.contains(spaceID) }
+    }
+
+    /// The Space the display was on before its current one.
+    func previousSpace(on display: Display) -> UInt64? {
+        previousSpaceIDs[display.uuid]
+    }
+
+    /// Takes in the focused display and the Space it has settled on. Called when focus or the Spaces change, with
+    /// the focused window when the caller has just read it.
+    func noteFocus(window: UInt32? = nil) {
+        guard let display = focusedDisplay(window: window) else { return }
+        focusedDisplays.note(display.uuid)
+        if let space = settledSpaceIDs[display.uuid] { focusedSpaces.note(space) }
+    }
+
+    /// The Space focused before the focused one, on any display, if it still exists.
+    var recentSpace: UInt64? {
+        focusedSpaces.previous.flatMap { space in display(containingSpace: space) == nil ? nil : space }
+    }
+
+    /// The display focused before the focused one, if it is still connected.
+    var recentDisplay: Display? {
+        focusedDisplays.previous.flatMap { uuid in displays.first { $0.uuid == uuid } }
+    }
+
+    private func readDisplays() -> [Display] {
+        kex_displays().compactMap { d in
+            // Skip a display that went away between the Space query and now; its bounds would be stale.
+            guard d.displayID != 0, CGDisplayIsOnline(d.displayID) != 0 else { return nil }
+            let frame = CGDisplayBounds(d.displayID)
+            return Display(uuid: d.uuid, id: d.displayID, frame: frame,
+                           visibleArea: visibleArea(of: d.displayID, frame: frame),
+                           isMain: CGDisplayIsMain(d.displayID) != 0,
+                           spaces: d.spaces.map(\.spaceID),
+                           userSpaces: d.spaces.filter(\.isUser).map(\.spaceID),
+                           currentSpaceID: d.currentSpaceID)
+        }
+    }
+}

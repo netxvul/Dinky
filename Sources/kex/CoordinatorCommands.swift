@@ -1,0 +1,269 @@
+import CoreGraphics
+import KexLayout
+
+// What commands ask of the coordinator: tree commands on the focused window's Space, floating, and
+// taking in a window kex moved to another Space.
+extension Coordinator {
+    /// Whether kex floats the window; nil for a window it has not classified.
+    func isFloating(_ id: WindowID) -> Bool? { placements[id]?.floating }
+
+    /// The tree of the display's current Space, if kex has one.
+    func workspace(on display: Display) -> Workspace? {
+        workspaces[treeKey(display.currentSpaceID)]
+    }
+
+    /// The container holding a tiled window.
+    func container(of id: WindowID) -> Container? {
+        placements[id]?.space.flatMap { workspaces[$0]?.container(of: id) }
+    }
+
+    /// The container a window shares its strip column with, in a scrolling workspace: nil for a window alone in its
+    /// column, or not in a strip. `layout` changes it alone, the strip staying.
+    func stripColumn(of id: WindowID) -> Container? {
+        guard let key = placements[id]?.space, let workspace = workspaces[key], workspace.sharesColumn(id) else { return nil }
+        return workspace.container(of: id)
+    }
+
+    /// Whether a tiled window's workspace is laid out as a scrolling strip.
+    func isScrolling(_ id: WindowID) -> Bool {
+        placements[id]?.space.flatMap { workspaces[$0]?.isScrolling } ?? false
+    }
+
+    /// Whether the window shows whole: false only for a column scrolled partly or wholly out of view.
+    func isInView(_ id: WindowID) -> Bool {
+        placements[id]?.space.flatMap { workspaces[$0]?.isInView(id) } ?? true
+    }
+
+    /// Whether the window shows as its strip has it with nothing to scroll for it: wholly in view, or wider than the
+    /// band beside a pin and shown from its start, hanging under the pin.
+    func showsAsFocusing(_ id: WindowID) -> Bool {
+        guard let workspace = placements[id]?.space.flatMap({ workspaces[$0] }) else { return true }
+        return workspace.isInView(id) || workspace.hangsUnderPin(id)
+    }
+
+    /// Switches a tiled window's workspace to the scrolling strip, or back to the tree its config gives it
+    /// (tiles when that is scrolling too). The choice holds until switched again.
+    func setScrolling(_ on: Bool, for id: WindowID) {
+        guard let key = placements[id]?.space else { return }
+        let configured = algorithm(settings(for: key))
+        let new: TilingAlgorithm = on ? .scrolling : configured == .scrolling ? .dwindle(.tiles) : configured
+        edit(key) {
+            $0.chosenAlgorithm = new == configured ? nil : new
+            $0.setAlgorithm(new)
+            $0.focus(id)
+        }
+        flush()
+    }
+
+    /// The axis the container holding a tiled window runs along now, `auto` resolved.
+    func containerAxis(of id: WindowID) -> Orientation? {
+        placements[id]?.space.flatMap { workspaces[$0]?.containerAxis(of: id) }
+    }
+
+    /// AeroSpace's name for how a window is laid out: `h_tiles`, `v_tiles`, `h_accordion` or `v_accordion`
+    /// from its container (an `auto` one by the axis it follows now), `fullscreen` for kex's fullscreen,
+    /// `floating` for any window that is not tiled.
+    func layoutName(of id: WindowID) -> String {
+        guard let key = placements[id]?.space, let workspace = workspaces[key],
+              let container = workspace.container(of: id), let axis = workspace.containerAxis(of: id) else { return "floating" }
+        if workspace.fullscreenWindows.contains(id) { return "fullscreen" }
+        return (axis == .horizontal ? "h_" : "v_") + (container.mode == .accordion ? "accordion" : "tiles")
+    }
+
+    /// The layout of a Space's workspace, as the HUD names it: its focused tile's as `layoutName(of:)` gives it,
+    /// `scrolling` for the strip, `free` where kex does not tile (`layout = 'free'` or `tiling = false`), and the
+    /// configured layout for a workspace with nothing tiled yet.
+    func layoutName(ofSpace key: UInt64) -> String {
+        let settings = settings(for: key)
+        guard !isFree(key) else { return "free" }
+        guard let workspace = workspaces[key] else { return settings.layout.rawValue }
+        if workspace.isScrolling { return "scrolling" }
+        if let id = workspace.focused, workspace.contains(id) { return layoutName(of: id) }
+        return settings.layout.rawValue
+    }
+
+    /// Whether kex lays out nothing on the Space: its workspace is `free` or does not tile.
+    func isFree(_ space: UInt64) -> Bool {
+        let settings = settings(for: space)
+        return !settings.tiling || settings.isFree
+    }
+
+    /// Runs a command on the tree of a window (the focused one by default), focused in that tree, and applies
+    /// what changed. Nil if the window is not tiled.
+    func command<T>(on id: WindowID? = nil, _ change: (inout Workspace) -> T) -> T? {
+        let id = id ?? commandFocusedWindow
+        guard let key = placements[id]?.space else { return nil }
+        edit(key) { $0.focus(id) }
+        let result = edit(key, change)
+        flush()
+        return result
+    }
+
+    /// Floats a tiled window where it stands, or tiles a floating one beside the focused tile of its Space.
+    /// A window held as a possible tab is released, so it cannot take over a tile once floated. A window that
+    /// already floats is left as it is, still knowing where `fullscreen` and `grid --toggle` took it from.
+    /// False for a window kex has not classified.
+    @discardableResult
+    func setFloating(_ id: WindowID, _ floating: Bool) -> Bool {
+        guard let placement = placements[id], let window = model.windows[id] else { return false }
+        if floating, placement.floating { return true }
+        // Tiled already and pinned, or marked to be as it scrolls again, it stays where it is, a pin pinned.
+        if !floating, !placement.floating, let space = placement.space,
+           let workspace = workspaces[space], workspace.pinSide(of: id) != nil || workspace.pins.values.contains(id) {
+            return true
+        }
+        changeFloating(window, to: floating)
+        flush()
+        return true
+    }
+
+    /// What `setFloating` does to a window, but for applying it.
+    private func changeFloating(_ window: Window, to floating: Bool) {
+        let id = window.id
+        // Floated, a pin is pinned again as it is tiled back.
+        if let space = placements[id]?.space { edit(space) { floating ? $0.depart(id) : $0.remove(id) } }
+        heldTabs[id] = nil
+        filledFrom[id] = nil
+        griddedFrom[id] = nil
+        endFloatingStage(id)
+        placements[id] = Placement(floating: floating, space: nil)
+        chosenFloating[id] = floating
+        track(window)
+    }
+
+    /// Floats a tiled window, then glides it to cells of a grid over its display's visible area, inside the
+    /// display's gaps; the tiles it leaves close up at the same time. Nil once placed, else why not.
+    func place(_ id: WindowID, on grid: GridPlacement) -> String? {
+        guard enabled else { return "Kex is off" }
+        guard let placement = placements[id], model.windows[id] != nil else { return "no window Kex manages is focused" }
+        guard let display = displays.display(ofWindow: id) else { return "window \(id) is on no display" }
+        if !placement.floating { setFloating(id, true) }
+        placeFloating(id, at: grid.frame(in: display.visibleArea, gaps: gaps(on: display)))
+        return nil
+    }
+
+    // MARK: Floating windows
+
+    /// The tiling commands on a floating window: `change` gets where the window is (or is gliding to) and the
+    /// display's visible area inside its gaps, and returns where it goes, or nil to leave it. Nil once done or
+    /// left, else why not. `resizingOnce` as `placeFloating` takes it.
+    func floating(_ id: WindowID, resizingOnce: Bool = false,
+                  _ change: (_ frame: CGRect, _ area: CGRect) -> CGRect?) -> String? {
+        guard enabled else { return "Kex is off" }
+        guard placements[id]?.floating == true else { return "the focused window does not float" }
+        guard let display = displays.display(ofWindow: id), let frame = floatingFrame(of: id) else {
+            return "window \(id) is on no display"
+        }
+        if let target = change(frame, gaps(on: display).inset(display.visibleArea)), target != frame {
+            placeFloating(id, at: target, resizingOnce: resizingOnce)
+        }
+        return nil
+    }
+
+    /// `fullscreen` for a floating window: fill the display, or go back to the frame it had before.
+    func toggleFloatingFullscreen(_ id: WindowID) -> String? {
+        floating(id, resizingOnce: true) { frame, area in
+            let filled = FloatingFrame.filling(area)
+            // By where kex sent it: an app that snaps to a grid (Terminal) never lands on the frame exactly.
+            if let before = filledFrom[id], floatingTargets[id] == filled {
+                filledFrom[id] = nil
+                return before
+            }
+            filledFrom[id] = frame
+            return filled
+        }
+    }
+
+    /// Whether the window is on a `free` workspace, where nothing it does can tile it.
+    func isOnFreeWorkspace(_ id: WindowID) -> Bool {
+        model.windows[id].map { settings(for: $0.spaceID).isFree } ?? false
+    }
+
+    /// `grid --toggle` for a window of a `free` workspace, which cannot go back to a tile: place it on the
+    /// grid, or put it back where it was when it is still where the grid sent it.
+    func toggleGrid(_ id: WindowID, on grid: GridPlacement) -> String? {
+        guard let display = displays.display(ofWindow: id) else { return "window \(id) is on no display" }
+        let placed = grid.frame(in: display.visibleArea, gaps: gaps(on: display))
+        return floating(id) { frame, _ in
+            if let before = griddedFrom[id], floatingTargets[id] == placed {
+                griddedFrom[id] = nil
+                return before
+            }
+            griddedFrom[id] = frame
+            return placed
+        }
+    }
+
+    /// The tree of the Space a window is on now, tiled or not, for workspace-wide commands. Nil if it has none.
+    func spaceKey(of id: WindowID) -> UInt64? {
+        placements[id]?.space ?? displays.display(ofWindow: id).map(\.currentSpaceID)
+    }
+
+    /// Runs a change on a whole Space's tree and applies it. Nil if the Space has no tree.
+    func command<T>(onSpace key: UInt64, _ change: (inout Workspace) -> T) -> T? {
+        let result = edit(key, change)
+        flush()
+        return result
+    }
+
+    /// The window switcher's reorder: `id` into `zone` of `target`, in the tree of `key`, as a window dropped there goes
+    /// (`Workspace.drop`). Applied; focus stays where it was, and the strip with it. False where the tree refuses, or
+    /// either window is not in it.
+    func reorder(_ id: WindowID, onto target: WindowID, _ zone: DropZone, in key: UInt64) -> Bool {
+        guard let tree = workspaces[key], tree.contains(id), tree.contains(target) else { return false }
+        let pinned = Set(tree.pinnedWindows)
+        let moved = command(onSpace: key) { workspace -> Bool in
+            let focused = workspace.focused
+            guard workspace.drop(id, onto: target, zone) else { return false }
+            if let focused, focused != id { workspace.focus(focused) }
+            return true
+        } ?? false
+        // A pin the move took apart was unpinned by hand: its rule leaves it so.
+        unpinnedByHand.formUnion(pinned.subtracting(workspaces[key]?.pinnedWindows ?? []))
+        return moved
+    }
+
+    /// The window switcher's floating of a tiled window: as `setFloating`, gliding on to the middle of its display, its
+    /// size kept up to `floatShare` of it each way, should `centered`, even from a scrolled-away column.
+    func floatFromSwitcher(_ id: WindowID, centered: Bool) -> Bool {
+        guard setFloating(id, true) else { return false }
+        if centered {
+            _ = floating(id, resizingOnce: true) { frame, area in
+                FloatingFrame.centered(frame.size, atMost: Self.floatShare, in: area)
+            }
+        }
+        return true
+    }
+    private static let floatShare = 0.8
+
+    /// The window switcher's drop of a floating window among a tree's windows: tiled, into `zone` of `target`, in the tree
+    /// of `key`, as `reorder` puts it, all applied at once, so it does not go by where a new window would; focus stays
+    /// where it was, and the strip with it. One tiling takes back to a pin, or holds as a possible tab, goes there
+    /// instead. False where it does not float or `target` is not in that tree.
+    func tile(_ id: WindowID, onto target: WindowID, _ zone: DropZone, in key: UInt64) -> Bool {
+        guard placements[id]?.floating == true, let window = model.windows[id],
+              let tree = workspaces[key], tree.contains(target) else { return false }
+        changeFloating(window, to: false)
+        if let focused = tree.focused { edit(key) { $0.focus(focused) } }
+        if workspaces[key]?.contains(id) == true, workspaces[key]?.pinSide(of: id) == nil {
+            _ = reorder(id, onto: target, zone, in: key)
+        } else {
+            flush()
+        }
+        return true
+    }
+
+    /// Moves a window kex just moved to another Space into that Space's tree now, rather than on the next event.
+    /// macOS leaves keyboard focus with the moved window, so unless we are about to follow it, focus the window
+    /// that took its place in the tree it left.
+    func windowMoved(_ id: WindowID, refocus: Bool = true) {
+        guard model.windows[id] != nil else { return }
+        // The tree's own record: by now macOS has already re-pointed the app's frontmost window elsewhere.
+        let from = placements[id]?.space
+        let hadFocus = from.flatMap { workspaces[$0]?.focused } == id
+        // Re-reads its Space; the update it publishes reaches handle, which tracks the window and flushes.
+        model.refresh(id)
+        guard refocus, hadFocus, let from, let successor = workspaces[from]?.focused, successor != id else { return }
+        focus(successor)
+    }
+}

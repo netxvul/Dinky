@@ -1,4 +1,4 @@
-# dinky v1: daily driver
+# kex v1: daily driver
 
 A SIP-on tiling window manager for macOS built on native Spaces. The spike (RESULTS.md) proved the mechanics: mimi's augmented Dock swipe switches Spaces in about 70 ms, the bridged SkyLight operation moves windows between Spaces in about 4 ms, AX raise focuses, AX frame writes tile. This plan takes that to something usable every day on the author's machines.
 
@@ -8,7 +8,7 @@ Agreed 25 September 2026. Work is tracked with `tk` in `.tickets/`; `tk ready` l
 
 | Area | Decision |
 |---|---|
-| Workspaces | Native Spaces, numbered 1..N across displays. `[workspace-to-display]` puts some on other displays, AeroSpace style. dinky ties each workspace to a Space ID and arranges the Spaces (create, move windows, remove empty ones) at launch, on reload and when displays change. |
+| Workspaces | Native Spaces, numbered 1..N across displays. `[workspace-to-display]` puts some on other displays, AeroSpace style. kex ties each workspace to a Space ID and arranges the Spaces (create, move windows, remove empty ones) at launch, on reload and when displays change. |
 | Displays | Multi-display from the start. Each display has its own Spaces and its own layout trees. Bindings act on the focused display. Windows can be moved between displays. |
 | New windows | Tiled automatically as they appear. Sheets, dialogs, utility panels and per-app rules float. |
 | Layouts | Tiles with widest-axis insertion, stable split axes. Accordion as a container mode, AeroSpace style: children overlap, neighbours peek out by `accordion-padding`. |
@@ -22,17 +22,17 @@ Agreed 25 September 2026. Work is tracked with `tk` in `.tickets/`; `tk ready` l
 | Mouse | No focus-follows-mouse in v1. |
 | Menu bar | Current Space number plus the action menu, as in the spike. |
 | App | Signed bundle, launch at login, Accessibility onboarding, restore-on-quit. Direct build, no updater. |
-| CLI | `dinky <command>` talks to the app over a unix socket. Bindings and CLI share one command vocabulary. |
-| Config | `~/.config/dinky/dinky.toml`, parsed with TOMLDecoder, reloaded on change and by `reload-config`. |
+| CLI | `kex <command>` talks to the app over a unix socket. Bindings and CLI share one command vocabulary. |
+| Config | `~/.config/kex/kex.toml`, parsed with TOMLDecoder, reloaded on change and by `reload-config`. |
 
 ## Config draft
 
-The draft that was here was a close copy of AeroSpace's format. On 27 September 2026 the format was redone for dinky alone: flatter keys, `[hooks]`, `[[rules]]`, `[mode.<name>]` and `[display.<pattern>]` overrides. The current file is in [docs/configuration.md](docs/configuration.md) and `Sources/DinkyConfig/DefaultConfig.swift`.
+The draft that was here was a close copy of AeroSpace's format. On 27 September 2026 the format was redone for kex alone: flatter keys, `[hooks]`, `[[rules]]`, `[mode.<name>]` and `[display.<pattern>]` overrides. The current file is in [docs/configuration.md](docs/configuration.md) and `Sources/KexConfig/DefaultConfig.swift`.
 
 ## Architecture
 
 ```text
-dinky.app (menu bar, accessory)            dinky CLI ── unix socket ──┐
+Kex.app (menu bar, accessory)            kex CLI ── unix socket ──┐
   Config (TOML, watched) ─► Hotkeys (event tap, modes) ─► Commands ◄──┘
   WindowServer events (SLSRegisterNotifyProc) ─► Window model, Display/Space model
   Layout engine (pure, one tree per Space) ─► Frame applier (AX, per-app coalescing, gaps)

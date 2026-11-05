@@ -16,7 +16,7 @@ Install, permissions, config keys with defaults, command list, known limits (SIP
 
 ## Acceptance Criteria
 
-A new user can install and configure dinky from the README alone.
+A new user can install and configure kex from the README alone.
 
 
 ## Notes

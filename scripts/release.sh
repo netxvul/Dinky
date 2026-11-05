@@ -9,19 +9,19 @@ version="${1:-}"
 version="${version#v}"
 repo=mikker/Dinky
 
-# Puts dist/dinky.rb into the tap through a temporary clone, so a local tap checkout is left alone.
+# Puts dist/kex.rb into the tap through a temporary clone, so a local tap checkout is left alone.
 update_tap() (
   local checkout
-  checkout="$(mktemp -d "${TMPDIR:-/tmp}/dinky-tap.XXXXXX")"
+  checkout="$(mktemp -d "${TMPDIR:-/tmp}/kex-tap.XXXXXX")"
   trap 'rm -rf "$checkout"' EXIT
   git clone --quiet --depth 1 git@github.com:mikker/homebrew-tap.git "$checkout"
-  cp dist/dinky.rb "$checkout/Casks/dinky.rb"
-  git -C "$checkout" add Casks/dinky.rb
+  cp dist/kex.rb "$checkout/Casks/kex.rb"
+  git -C "$checkout" add Casks/kex.rb
   if ! git -C "$checkout" diff --cached --quiet; then
-    git -C "$checkout" commit -q -m "Update dinky to $version"
+    git -C "$checkout" commit -q -m "Update kex to $version"
     git -C "$checkout" push -q
   fi
-  echo "==> tap: dinky $version"
+  echo "==> tap: kex $version"
 )
 
 # Prints the body of a `## ` section of CHANGELOG.md, without surrounding blank lines.
@@ -89,7 +89,7 @@ changelog_section "$version" > dist/release-notes.md
 # A published release only gets its tap update retried; its archive is never replaced.
 if [[ "$(gh release view "$tag" -R "$repo" --json isDraft --jq .isDraft 2>/dev/null || true)" == false ]]; then
   [[ "$latest" == "$tag" ]] || { echo "$tag is already published and is not the latest release" >&2; exit 1; }
-  gh release download "$tag" -R "$repo" -p dinky.rb -D dist --clobber
+  gh release download "$tag" -R "$repo" -p kex.rb -D dist --clobber
   update_tap
   exit 0
 fi
@@ -103,9 +103,9 @@ git push origin "$tag"
 if gh release view "$tag" -R "$repo" >/dev/null 2>&1; then
   gh release edit "$tag" -R "$repo" --notes-file dist/release-notes.md
 else
-  gh release create "$tag" -R "$repo" --verify-tag --draft --title "dinky $version" --notes-file dist/release-notes.md
+  gh release create "$tag" -R "$repo" --verify-tag --draft --title "Kex $version" --notes-file dist/release-notes.md
 fi
-gh release upload "$tag" -R "$repo" dist/dinky.app.zip dist/appcast.xml dist/dinky.rb --clobber
+gh release upload "$tag" -R "$repo" dist/Kex.app.zip dist/appcast.xml dist/kex.rb --clobber
 gh release edit "$tag" -R "$repo" --draft=false --latest
 echo "==> https://github.com/$repo/releases/tag/$tag"
 update_tap
