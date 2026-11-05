@@ -33,7 +33,7 @@ permalink: /configuration/
 | `menu-bar-icon` | `'blocks'` | `'blocks'` shows a block per display in the menu bar, left to right, with the workspace it shows: filled for the focused display, outlined for the others, corner marks for a full-screen Space. `'text'` shows the focused display's workspace number. `'none'` hides the menu bar item; the `kex` CLI and key bindings still work. |
 | `hide-menu-bar-icon` | `'never'` | When to hide Kex's menu bar item. `'single-display'` hides it while only one display is connected and shows it again once a second one is. `'always'` hides it, as `menu-bar-icon = 'none'` does. `'never'` leaves it to `menu-bar-icon`. Hidden, the `kex` CLI and key bindings still work. |
 | `scripting-addition` | `true` | Whether Kex may use its Dock scripting addition, which needs SIP off. Where it is injected (see [Scripting addition](scripting-addition.md)), a scrolling strip scrolls through it, its windows sliding past the screen edges; without it the strip moves its windows frame by frame. `false` never touches it, even with SIP off and the addition installed: Kex neither checks for it nor injects it, and the strip moves its windows frame by frame. Takes effect on reload. |
-| `highlight-color` | unset | One highlight colour for everything that has one: `'#rrggbb'`, `'#rrggbbaa'`, or `'accent'` for the accent colour in System Settings. Each highlight a table leaves unset takes it: the pick in both switchers ([`[switcher]`](#switcher)), the focused window's border ([`[borders]`](#borders) `active-color`), the glow of a binding that does nothing ([`[noop-flash]`](#noop-flash) `color`), the ring of pinned windows ([`[borders]`](#borders) `pinned-color`) and a drag's preview ([`[drag]`](#drag) `preview-border-color`). A table's own colour always wins, and its `'accent'` keeps the accent colour there. Unset, each keeps its own default. Like every top-level key, it goes above the first `[table]`. |
+| `highlight-color` | unset | One highlight colour for everything that has one: `'#rrggbb'`, `'#rrggbbaa'`, or `'accent'` for the accent colour in System Settings. Each highlight a table leaves unset takes it: the pick in both switchers ([`[switcher]`](#switcher)), the focused window's border ([`[borders]`](#borders) `active-color`), the glow of a binding that does nothing ([`[noop-flash]`](#noop-flash) `color`), the ring of pinned windows ([`[scrolling.pinned-border]`](#scrollingpinned-border) `color`) and a drag's preview ([`[drag]`](#drag) `preview-border-color`). A table's own colour always wins, and its `'accent'` keeps the accent colour there. Unset, each keeps its own default. Like every top-level key, it goes above the first `[table]`. |
 | `haptic` | `true` | Whether the trackpad taps for Kex, as macOS's own taps feel. Each haptic a table leaves unset takes it: the strip's ticks as columns pass under the fingers ([`[gestures.scroll]`](#gesturesscroll)), the tap as a bound swipe runs ([`[gestures.trackpad]`](#gesturestrackpad)) and the switchers' picks ([`[switcher]`](#switcher)). A table's own always wins. |
 | `haptic-strength` | `'medium'` | How strongly: `'light'`, `'medium'` or `'strong'`. Each `haptic-strength` a table leaves unset takes it. A light tap is barely felt under moving fingers on a built-in trackpad. |
 
@@ -214,6 +214,14 @@ span-displays = true
 
 </div>
 
+### `[scrolling.pinned-border]`
+
+| Key | Default | |
+|---|---|---|
+| `enabled` | `true` | Ring the windows of a [pinned](commands.md#pins) column in `color`, whether they have focus or not, even with [`[borders]`](#borders) `enabled = false` and for windows of `exclude-apps`: each window of a pinned stack, and the shown one of a pinned accordion. Drawn as the other borders are, by `order`, and kept with the pin as it is put back in front of the band; it goes while the pin does not show, minimized, hidden, on another Space, in Mission Control, under a window fullscreen over the pins or outside the scrolling layout. |
+| `color` | [`highlight-color`](#top-level), else `'#d97757'` | Its colour, Claude's orange by default, as the [noop flash](#noop-flash): `'#rrggbb'`, `'#rrggbbaa'` or `'accent'`. |
+| `width` | `2` | Its width in points, from `0`, none, to `8`. |
+
 ## `[fullscreen]`
 
 `fullscreen` makes the focused window fill its workspace over the tree. This
@@ -327,9 +335,6 @@ gaps.outer.top = 44
 | `inactive-color` | `'#494d64'` | |
 | `order` | `'below'` | `'above'` draws a click-through ring over the window. |
 | `exclude-apps` | `[]` | Bundle IDs that get no border. |
-| `pinned` | `true` | Ring the windows of a [pinned](commands.md#pins) column in `pinned-color`, whether they have focus or not, even with `enabled = false` and for windows of `exclude-apps`: each window of a pinned stack, and the shown one of a pinned accordion. Drawn as the other borders are, by `order`, and kept with the pin as it is put back in front of the band; it goes while the pin does not show, minimized, hidden, on another Space, in Mission Control, under a window fullscreen over the pins or outside the scrolling layout. |
-| `pinned-color` | [`highlight-color`](#top-level), else `'#d97757'` | Its colour, Claude's orange by default, as the noop flash: `'#rrggbb'`, `'#rrggbbaa'` or `'accent'`. |
-| `pinned-width` | `2` | Its width in points, from `0`, none, to `8`. |
 
 </div>
 
@@ -1115,6 +1120,11 @@ orientation = 'auto'            # auto: run along the container's longer side | 
 column-width = 0.49             # a new column's share of the display; a lone column fills it
 center-focused-column = 'never' # focusing a column scrolls it: never (just into view) | always (to the middle) | always-fill | on-overflow
 
+[scrolling.pinned-border]
+enabled = true                  # a pinned column's windows get a ring, even with [borders] enabled = false
+# color = '#d97757'             # '#rrggbb', '#rrggbbaa' or 'accent'; unset is highlight-color, else '#d97757'
+width = 2                       # the ring, 0 to 8 points
+
 [floating]
 move-step = 50                  # points `move` shifts a floating window by, unless the binding gives a number
 resize-anchor = 'center'        # what stays put when `resize` sizes a floating window: center | top-left
@@ -1144,9 +1154,6 @@ width = 4
 inactive-color = '#494d64'
 order = 'below'                 # below | above (a click-through ring over the window)
 exclude-apps = []               # bundle IDs whose windows get no border
-pinned = true                   # a pinned column's windows get a ring, even with enabled = false
-# pinned-color = '#d97757'      # '#rrggbb', '#rrggbbaa' or 'accent'; unset is highlight-color, else '#d97757'
-pinned-width = 2                # the pinned windows' ring, 0 to 8 points
 
 # What a binding or gesture that does nothing lights: the window for what it could not do, the display's sides for no
 # workspace to go to, all its edges for no display. Each level's table takes any of these keys, for that level alone.

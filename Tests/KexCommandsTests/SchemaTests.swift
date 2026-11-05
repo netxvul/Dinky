@@ -175,6 +175,11 @@ struct SchemaTests {
         span-height = 'overlap'
         span-height-animate = true
 
+        [scrolling.pinned-border]
+        enabled = true
+        color = '#ff8800'
+        width = 3
+
         [switcher]
         enabled = true
         delay-ms = 150
@@ -313,9 +318,6 @@ struct SchemaTests {
         inactive-color = '#00ff0080'
         order = 'above'
         exclude-apps = ['com.apple.finder']
-        pinned = true
-        pinned-color = '#ff8800'
-        pinned-width = 3
 
         [focus-follows-mouse]
         enabled = true

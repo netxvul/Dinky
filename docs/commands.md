@@ -127,9 +127,9 @@ need; they keep the narrower width and are never unpinned for it.
   app's: a window of the app in use, and the focused window of the pin's own
   app, which is raised after the pin to keep its app's focus, can show over the
   pin while sliding past.
-- A pinned window has a ring around it in `[borders] pinned-color`, Claude's
+- A pinned window has a ring around it in `[scrolling.pinned-border]`'s `color`, Claude's
   orange by default, whether it has focus or not and even with focus borders
-  off; see [`[borders]`](configuration.md#borders) `pinned`.
+  off; see [`[scrolling.pinned-border]`](configuration.md#scrollingpinned-border).
 - `move` leaves a pinned column where it is; `join-with` into a pin stacks the
   window there, and out of a pin of one window unpins it. A window dragged beside
   a pin goes into the band, swapped onto it takes its place.
