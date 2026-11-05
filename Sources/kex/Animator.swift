@@ -289,6 +289,15 @@ final class Animator: NSObject {
         return start.isClose(to: landed.got, within: 1)
     }
 
+    /// Whether a window of `size` has the size `target` asks of it: that size, or the one it came to rest at when last
+    /// asked for it, as an app that keeps its own height does. Moving it takes no resize, whichever way it is moved.
+    func hasSize(_ id: WindowID, _ size: CGSize, for target: CGSize) -> Bool {
+        func close(_ a: CGSize, _ b: CGSize) -> Bool { abs(a.width - b.width) <= 1 && abs(a.height - b.height) <= 1 }
+        if close(size, target) { return true }
+        guard let landed = landed[id], landed.asked.size == target else { return false }
+        return close(size, landed.got.size)
+    }
+
     /// Note where written windows came to rest.
     func noteLanded(_ results: [FrameResult]) {
         for result in results { landed[result.job.id] = result.got.map { (result.job.frame, $0) } }

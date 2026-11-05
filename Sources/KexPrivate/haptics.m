@@ -18,10 +18,23 @@ static ActuatorActuate actuate;
 static ActuatorClose closeActuator;
 
 // The open actuators: found on first use, and again once one fails or a trackpad comes, goes or the Mac wakes
-// (`kex_trackpad_actuators_reset`), so a Magic Trackpad that connects later gets the taps too. Main thread.
+// (`kex_trackpad_actuators_reset`), so a Magic Trackpad that connects later gets the taps too. On `tapQueue` only.
 static NSMutableArray *actuators;
 // When none was found, so a Mac without one is not searched on every tap: again only after a reset or a while.
 static double noneFoundAt;
+
+// Actuating takes the trackpad a few milliseconds, and finding its actuators tens: not on the main thread, where a tap
+// as a column passes under the fingers or as they let go would hold up the frames of what they move.
+static dispatch_queue_t tapQueue(void)
+{
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        queue = dispatch_queue_create("kex.trackpad-tap",
+                                      dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INTERACTIVE, 0));
+    });
+    return queue;
+}
 
 static bool load(void)
 {
@@ -67,11 +80,16 @@ static double now(void)
 // When the actuators were last found afresh because none took a tap.
 static double lastRescanAt;
 
-void kex_trackpad_actuators_reset(void)
+static void resetActuators(void)
 {
     for (id actuator in actuators) closeActuator((__bridge CFTypeRef)actuator);
     actuators = nil;
     noneFoundAt = 0;
+}
+
+void kex_trackpad_actuators_reset(void)
+{
+    dispatch_async(tapQueue(), ^{ resetActuators(); });
 }
 
 // Finds the actuators; none found is remembered (`noneFoundAt`), the array left nil. True when there is one.
@@ -100,11 +118,9 @@ static bool tapAll(int32_t actuation)
     return any;
 }
 
-bool kex_trackpad_tap(int32_t actuation)
+static bool tap(int32_t actuation)
 {
     if (!load()) return false;
-    // So a trackpad coming or going, or a wake, finds them afresh, whether or not a gesture reads touches.
-    kex_devices_watch();
     if (!actuators) {
         if (noneFoundAt != 0 && now() - noneFoundAt < 5) return false;
         if (!find()) return false;
@@ -113,7 +129,17 @@ bool kex_trackpad_tap(int32_t actuation)
     // None took it, as after sleep: found afresh and tried once more, not more than every few seconds.
     if (now() - lastRescanAt < 3) return false;
     lastRescanAt = now();
-    kex_trackpad_actuators_reset();
+    resetActuators();
     if (!find()) return false;
     return tapAll(actuation);
+}
+
+void kex_trackpad_tap(int32_t actuation, void (^done)(bool tapped))
+{
+    // So a trackpad coming or going, or a wake, finds them afresh, whether or not a gesture reads touches.
+    kex_devices_watch();
+    dispatch_async(tapQueue(), ^{
+        bool tapped = tap(actuation);
+        dispatch_async(dispatch_get_main_queue(), ^{ done(tapped); });
+    });
 }

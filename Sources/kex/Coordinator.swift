@@ -1695,12 +1695,12 @@ final class Coordinator {
         let sizes = Dictionary(uniqueKeysWithValues: strip.keys.compactMap { id -> (WindowID, CGSize)? in
             serverFrame(id).map { (id, $0.size) }
         })
-        // Dock moves windows without resizing them: only a strip whose windows all have the sizes it gives them, with
-        // no wall, behind which a window hides at another, can follow the fingers through it.
+        // Dock moves windows without resizing them: only a strip whose windows all have the sizes it gives them, or
+        // rest at the ones their apps took for those, with no wall, behind which a window hides at another, can follow the fingers through it.
         let dock = ScriptingAddition.available && ScriptingAddition.moves && workspace.walls.isEmpty
             && !workspace.spansDisplays
             && strip.allSatisfy { id, frame in
-                sizes[id].map { abs($0.width - frame.width) <= 1 && abs($0.height - frame.height) <= 1 } ?? false
+                sizes[id].map { animator.hasSize(id, $0, for: frame.size) } ?? false
             }
         // A scripting-addition glide under way carries on into the follow through Dock, as a newer pass would take it
         // over: not one through Dock transforms, which would stay over the windows, nor one whose windows would have to
@@ -2358,8 +2358,8 @@ final class Coordinator {
         let change = { [self] (id: WindowID, pushing: Bool) -> Change in
             guard !frozen.contains(id), !leftAlone.contains(id), display != nil, let target = layout.frames[id],
                   let window = model.windows[id],
-                  let frame = frameOf(id), !applier.isBusy(window.pid), !animator.rests(id, at: frame, askedFor: target),
-                  ResizeOnce.resizes(frame, target) else { return .none }
+                  let frame = frameOf(id), !applier.isBusy(window.pid),
+                  !animator.hasSize(id, frame.size, for: target.size) else { return .none }
             let fits = (strip[id] == nil || workspace.isInView(id) && workspace.columns(around: id).own.count == 1)
                 && ResizeOnce.applies(from: frame, to: target,
                                       edge: besidePin(id) ? rightPin!.minX - workspace.gaps.horizontal : edge,
@@ -2667,7 +2667,7 @@ final class Coordinator {
             let saResizing = !special.isEmpty || leftAlone.contains(where: { strip[$0] != nil }) || strip.contains { id, frame in
                 guard !frozen.contains(id), let size = frameNow(id)?.size else { return false }
                 let target = layout.frames[id] ?? frame
-                return abs(size.width - target.width) > 1 || abs(size.height - target.height) > 1
+                return !animator.hasSize(id, size, for: target.size)
             }
             // Fingers that moved the windows through Accessibility hand them on to the window glide below, at their
             // speed.
