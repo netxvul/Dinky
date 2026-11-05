@@ -97,6 +97,16 @@
       "additionalProperties": false,
       "description": "The scrolling layout.",
       "properties": {
+        "pinned-border": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "The ring round a pinned column's shown windows, focused or not. Drawn even when borders are off.",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true, "description": "Ring the windows of a pinned column." },
+            "color": { "$ref": "#/definitions/highlight", "description": "Colour of the ring. Unset, the top-level highlight-color, or #d97757 (Claude's orange) without one." },
+            "width": { "type": "number", "minimum": 0, "maximum": 8, "default": 2, "description": "The ring, in points; 0 leaves it out." }
+          }
+        },
         "column-width": {
           "type": "number",
           "minimum": 0.1,
@@ -236,10 +246,7 @@
           "items": { "type": "string", "minLength": 1 },
           "default": [],
           "description": "Bundle IDs whose windows get no border."
-        },
-        "pinned": { "type": "boolean", "default": true, "description": "Ring the windows of a pinned column in pinned-color, focused or not. Drawn even when borders are off." },
-        "pinned-color": { "$ref": "#/definitions/highlight", "description": "Colour of the pinned windows' ring. Unset, the top-level highlight-color, or #d97757 (Claude's orange) without one." },
-        "pinned-width": { "type": "number", "minimum": 0, "maximum": 8, "default": 2, "description": "The pinned windows' ring, in points; 0 leaves it out." }
+        }
       }
     },
     "noop-flash": {

@@ -41,6 +41,11 @@ extension Config {
     column-width = 0.49             # a new column's share of the display; a lone column fills it
     center-focused-column = 'never' # focusing a column scrolls it: never (just into view) | always (to the middle) | always-fill | on-overflow
 
+    [scrolling.pinned-border]
+    enabled = true                  # a pinned column's windows get a ring, even with [borders] enabled = false
+    # color = '#d97757'             # '#rrggbb', '#rrggbbaa' or 'accent'; unset is highlight-color, else '#d97757'
+    width = 2                       # the ring, 0 to 8 points
+
     [floating]
     move-step = 50                  # points `move` shifts a floating window by, unless the binding gives a number
     resize-anchor = 'center'        # what stays put when `resize` sizes a floating window: center | top-left
@@ -70,9 +75,6 @@ extension Config {
     inactive-color = '#494d64'
     order = 'below'                 # below | above (a click-through ring over the window)
     exclude-apps = []               # bundle IDs whose windows get no border
-    pinned = true                   # a pinned column's windows get a ring, even with enabled = false
-    # pinned-color = '#d97757'      # '#rrggbb', '#rrggbbaa' or 'accent'; unset is highlight-color, else '#d97757'
-    pinned-width = 2                # the pinned windows' ring, 0 to 8 points
 
     # What a binding or gesture that does nothing lights: the window for what it could not do, the display's sides for no
     # workspace to go to, all its edges for no display. Each level's table takes any of these keys, for that level alone.

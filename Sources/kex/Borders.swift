@@ -5,13 +5,15 @@ import KexPrivate
 
 // din-nt98: focus borders. One BorderWindow per document window on a visible Space; the
 // focused window's border gets the active colour, the rest the inactive one (JankyBorders'
-// behaviour). A pinned window shown gets its ring in `pinned-color` instead, focused or not, borders on or off.
+// behaviour). A pinned window shown gets its ring in `[scrolling.pinned-border]`'s colour instead, focused or not, borders
+// on or off.
 //
 // The owner feeds it the WindowModel's events through handle(_:). Events only record what needs doing;
 // one flush per run-loop turn does it, in a fixed order: the focus check first, so every border is drawn
 // with the current focus, then the borders of the windows that changed (or all of them).
 final class BorderManager {
     private var config: Borders
+    private var pinnedBorder: PinnedBorder
     private let model: WindowModel
     private var borders: [UInt32: BorderWindow] = [:]
     private var focusedID: UInt32 = 0
@@ -31,9 +33,10 @@ final class BorderManager {
     /// does that and calls `refocus` with the read.
     private let rereads: Bool
 
-    init(config: Borders, model: WindowModel, front: @escaping (Bool) -> UInt32 = { _ in kex_border_focused_window() },
+    init(config: Borders, pinnedBorder: PinnedBorder, model: WindowModel, front: @escaping (Bool) -> UInt32 = { _ in kex_border_focused_window() },
          rereads: Bool = true, isAnimating: @escaping (UInt32) -> Bool) {
         self.config = config
+        self.pinnedBorder = pinnedBorder
         self.model = model
         self.front = front
         self.rereads = rereads
@@ -44,13 +47,14 @@ final class BorderManager {
         syncAll()
         // An active colour of 'accent' follows the accent colour as it changes in System Settings.
         NotificationCenter.default.addObserver(forName: NSColor.systemColorsDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
-            if self?.config.activeColor == .accent || self?.config.pinnedColor == .accent { self?.syncAll() }
+            if self?.config.activeColor == .accent || self?.pinnedBorder.color == .accent { self?.syncAll() }
         }
     }
 
-    func update(config: Borders) {
-        guard config != self.config else { return }
+    func update(config: Borders, pinnedBorder: PinnedBorder) {
+        guard config != self.config || pinnedBorder != self.pinnedBorder else { return }
         self.config = config
+        self.pinnedBorder = pinnedBorder
         focusedID = config.enabled ? front(false) : 0
         syncAll()
     }
@@ -150,7 +154,7 @@ final class BorderManager {
 
     private func sync(_ window: Window) {
         // A pinned window's ring is drawn borders on or off and whatever its app, as the noop flash is.
-        let ring = config.pinned && config.pinnedWidth > 0 && pinned.contains(window.id)
+        let ring = pinnedBorder.enabled && pinnedBorder.width > 0 && pinned.contains(window.id)
         guard window.isDocument, ring || config.enabled && config.decorates(bundleID: window.bundleID) else {
             borders[window.id] = nil
             return
@@ -161,10 +165,10 @@ final class BorderManager {
             return
         }
         let focused = window.id == focusedID
-        let color = ring ? config.pinnedColor.resolved : focused ? config.activeColor.resolved : config.inactiveColor
+        let color = ring ? pinnedBorder.color.resolved : focused ? config.activeColor.resolved : config.inactiveColor
         let border = borders[window.id] ?? BorderWindow(target: window.id)
         borders[window.id] = border
-        border.update(window, color: color, width: ring ? config.pinnedWidth : config.width, config: config,
+        border.update(window, color: color, width: ring ? pinnedBorder.width : config.width, config: config,
                       moveOnly: isAnimating(window.id))
     }
 

@@ -417,12 +417,12 @@ final class Coordinator {
         modifierDrag.update(modifiers: config.drag.mouseModifier, sides: config.modifiers)
         mouseStripScroll.update(config.gestures.mouseScroll, sides: config.modifiers)
         // Pinned windows' rings are drawn by the border manager too, focus borders on or off.
-        if config.borders.enabled || config.borders.pinned {
-            borders = borders ?? BorderManager(config: config.borders, model: model,
+        if config.borders.enabled || config.scrolling.pinnedBorder.enabled {
+            borders = borders ?? BorderManager(config: config.borders, pinnedBorder: config.scrolling.pinnedBorder, model: model,
                                                front: { [unowned self] fresh in frontWindow(fresh: fresh) },
                                                rereads: false,
                                                isAnimating: { [unowned self] id in animator.isAnimating(id) })
-            borders?.update(config: config.borders)
+            borders?.update(config: config.borders, pinnedBorder: config.scrolling.pinnedBorder)
         } else {
             borders = nil
         }

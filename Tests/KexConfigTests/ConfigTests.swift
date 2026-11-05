@@ -733,25 +733,38 @@ struct ConfigTests {
     }
 
     @Test func `Pinned windows' ring`() throws {
-        let defaults = Borders()
-        #expect(defaults.pinned)
-        #expect(defaults.pinnedColor == .color(try Color(hex: "#d97757")))
-        #expect(defaults.pinnedWidth == 2)
-        let borders = try Config.parse("""
+        #expect(Config.default.scrolling.pinnedBorder == PinnedBorder())
+        let defaults = PinnedBorder()
+        #expect(defaults.enabled)
+        #expect(defaults.color == .color(try Color(hex: "#d97757")))
+        #expect(defaults.width == 2)
+        let border = try Config.parse("""
         [borders]
         enabled = false
-        pinned = false
-        pinned-color = 'accent'
-        pinned-width = 0
-        """).borders
-        #expect(!borders.pinned)
-        #expect(borders.pinnedColor == .accent)
-        #expect(borders.pinnedWidth == 0)
-        let highlighted = try Config.parse("highlight-color = '#00ff00'\n").borders
-        #expect(highlighted.pinnedColor == .color(try Color(hex: "#00ff00")), "takes the top-level highlight-color")
-        assertError("[borders]\npinned-width = -1\n", path: "borders.pinned-width", line: 2, contains: "0 to 8")
-        assertError("[borders]\npinned-width = 8.5\n", path: "borders.pinned-width", line: 2, contains: "0 to 8")
-        assertError("[borders]\npinned-color = 'pink'\n", path: "borders.pinned-color", line: 2, contains: "'pink' is not a colour")
+
+        [scrolling.pinned-border]
+        enabled = false
+        color = 'accent'
+        width = 0
+        """).scrolling.pinnedBorder
+        #expect(!border.enabled)
+        #expect(border.color == .accent)
+        #expect(border.width == 0)
+        // highlight-color with no [scrolling] at all, with one that leaves it out, and under the table's own.
+        let green = Highlight.color(try Color(hex: "#00ff00"))
+        #expect(try Config.parse("highlight-color = '#00ff00'\n").scrolling.pinnedBorder.color == green)
+        #expect(try Config.parse("highlight-color = '#00ff00'\n[scrolling]\ncolumn-width = 0.5\n").scrolling.pinnedBorder.color == green)
+        #expect(try Config.parse("highlight-color = '#00ff00'\n[scrolling.pinned-border]\nwidth = 3\n").scrolling.pinnedBorder.color == green)
+        #expect(try Config.parse("highlight-color = '#00ff00'\n[scrolling.pinned-border]\ncolor = 'accent'\n").scrolling.pinnedBorder.color == .accent)
+        assertError("[scrolling.pinned-border]\nwidth = -1\n", path: "scrolling.pinned-border.width", line: 2, contains: "0 to 8")
+        assertError("[scrolling.pinned-border]\nwidth = 8.5\n", path: "scrolling.pinned-border.width", line: 2, contains: "0 to 8")
+        assertError("[scrolling.pinned-border]\ncolor = 'pink'\n", path: "scrolling.pinned-border.color", line: 2, contains: "'pink' is not a colour")
+        assertError("[scrolling.pinned-border]\nbright = true\n", path: "scrolling.pinned-border.bright", line: 2, contains: "unknown key")
+        // Moved, with nothing left behind.
+        for key in ["pinned = true", "pinned-color = 'accent'", "pinned-width = 2"] {
+            let name = String(key.prefix { $0 != " " })
+            assertError("[borders]\n\(key)\n", path: "borders.\(name)", line: 2, contains: "unknown key")
+        }
     }
 
     @Test func `Haptics: one global setting, each table's own winning`() throws {

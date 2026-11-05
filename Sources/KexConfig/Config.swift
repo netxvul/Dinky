@@ -140,7 +140,7 @@ public struct Config: Equatable {
         haptic = try t.bool("haptic") ?? haptic
         hapticStrength = try t.choice("haptic-strength") ?? hapticStrength
         accordion = try t.table("accordion").map(Accordion.init) ?? accordion
-        scrolling = try t.table("scrolling").map(Scrolling.init) ?? scrolling
+        scrolling = try Scrolling(t.table("scrolling"), highlight: highlightColor)
         floating = try t.table("floating").map(Floating.init) ?? floating
         fullscreen = try t.table("fullscreen").map(Fullscreen.init) ?? fullscreen
         gaps = try t.table("gaps").map { try gaps.applying(GapsPatch($0)) } ?? gaps
@@ -314,9 +314,14 @@ public struct Scrolling: Equatable {
     /// frame by frame otherwise. `kex doctor` says the key can go.
     public var retiredGlide = false
 
+    /// `[scrolling.pinned-border]`: the ring round a pinned column's shown windows.
+    public var pinnedBorder = PinnedBorder()
+
     public init() {}
 
-    init(_ t: Table) throws {
+    init(_ t: Table?, highlight: Highlight?) throws {
+        pinnedBorder = try PinnedBorder(t?.table("pinned-border"), highlight: highlight)
+        guard let t else { return }
         columnWidth = try t.double("column-width") ?? columnWidth
         guard (0.1...1).contains(columnWidth) else { throw ConfigError(path: t.path("column-width"), "must be 0.1 to 1") }
         centerFocusedColumn = try t.choice("center-focused-column") ?? centerFocusedColumn
@@ -1001,6 +1006,29 @@ public enum BorderOrder: String, CaseIterable {
     case below, above
 }
 
+/// `[scrolling.pinned-border]`: a pinned column's shown windows get a ring of their own, focused or not, borders on or
+/// off and whatever their app.
+public struct PinnedBorder: Equatable {
+    public var enabled = true
+    /// The top-level `highlight-color` when the table leaves it out and that is set, else Claude's orange, as the noop
+    /// flash.
+    public var color = Highlight.color(try! Color(hex: "#d97757"))
+    /// In points; 0 leaves it out.
+    public var width = 2.0
+
+    public init() {}
+
+    init(_ t: Table?, highlight: Highlight?) throws {
+        color = highlight ?? color
+        guard let t else { return }
+        enabled = try t.bool("enabled") ?? enabled
+        color = try t.highlight("color") ?? color
+        width = try t.double("width") ?? width
+        guard (0...8).contains(width) else { throw ConfigError(path: t.path("width"), "must be 0 to 8") }
+        try t.done()
+    }
+}
+
 public struct Borders: Equatable {
     public var enabled = true
     public var width = 4.0
@@ -1010,19 +1038,11 @@ public struct Borders: Equatable {
     public var order = BorderOrder.below
     /// Bundle IDs whose windows get no border.
     public var excludeApps: [String] = []
-    /// Whether a pinned column's shown windows get a ring of their own, borders on or off, focused or not.
-    public var pinned = true
-    /// The pinned windows' ring: the top-level `highlight-color` when the table leaves it out and that is set, else
-    /// Claude's orange, as the noop flash.
-    public var pinnedColor = Highlight.color(try! Color(hex: "#d97757"))
-    /// The pinned windows' ring, in points; 0 leaves it out.
-    public var pinnedWidth = 2.0
 
     public init() {}
 
     init(_ t: Table?, highlight: Highlight?) throws {
         activeColor = highlight ?? activeColor
-        pinnedColor = highlight ?? pinnedColor
         guard let t else { return }
         enabled = try t.bool("enabled") ?? enabled
         width = try t.double("width") ?? width
@@ -1030,10 +1050,6 @@ public struct Borders: Equatable {
         inactiveColor = try t.color("inactive-color") ?? inactiveColor
         order = try t.choice("order") ?? order
         excludeApps = try t.strings("exclude-apps") ?? excludeApps
-        pinned = try t.bool("pinned") ?? pinned
-        pinnedColor = try t.highlight("pinned-color") ?? pinnedColor
-        pinnedWidth = try t.double("pinned-width") ?? pinnedWidth
-        guard (0...8).contains(pinnedWidth) else { throw ConfigError(path: t.path("pinned-width"), "must be 0 to 8") }
         try t.done()
     }
 
