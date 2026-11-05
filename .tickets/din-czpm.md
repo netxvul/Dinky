@@ -23,4 +23,4 @@ Idea: the arrival activation is always of an app with a window on the new Space 
 
 **2026-09-25T22:44:28Z**
 
-The 1 s blanket quiet period is gone: only the first activation within 300 ms of a Space change (noted by dinky's own switch, the Space-change event, or the check on each activation) is taken as the arrival's and ignored. VM: TextEdit a.txt on 3; workspace 5 (empty), 0.5 s, open -a TextEdit follows to 3; the same with a posted Cmd-Tab; and after 1.5 s. Empty workspace 4 with a Finder window on 6 still stays (bounce check).
+The 1 s blanket quiet period is gone: only the first activation within 300 ms of a Space change (noted by kex's own switch, the Space-change event, or the check on each activation) is taken as the arrival's and ignored. VM: TextEdit a.txt on 3; workspace 5 (empty), 0.5 s, open -a TextEdit follows to 3; the same with a posted Cmd-Tab; and after 1.5 s. Empty workspace 4 with a Finder window on 6 still stays (bounce check).

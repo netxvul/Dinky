@@ -1,0 +1,4 @@
+interface:
+  display_name: "kex Release"
+  short_description: "Review kex changes and release notes, then publish"
+  default_prompt: "Use $kex-release to review kex release readiness; publish only when requested."

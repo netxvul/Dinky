@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Changelog
-description: What changed in each dinky release.
+description: What changed in each Kex release.
 permalink: /changelog/
 ---
 

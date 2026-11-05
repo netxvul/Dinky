@@ -11,11 +11,11 @@ tags: [layout, spaces]
 ---
 # Fix follower, hidden apps, reload hook and small leftovers from wave five
 
-Collected from agent reports: (1) the Cmd-Tab follower jumps to a window on another Space even when the app has a window on the current Space; prefer a window on the current Space of the focused display, follow only when there is none. (2) Windows of an app hidden with Cmd-H stay in their tree and leave empty tiles; on hide (816) remove from the tree, on unhide (815) re-insert. (3) ensureWorkspaceCount is not re-run on config reload; add it to the reload path. (4) Queued frame writes are not cancelled on enable off; give FrameApplier a cancel and call it. (5) Layout has no public initializer; add one and use it in Recovery. (6) dinky help does not list recover.
+Collected from agent reports: (1) the Cmd-Tab follower jumps to a window on another Space even when the app has a window on the current Space; prefer a window on the current Space of the focused display, follow only when there is none. (2) Windows of an app hidden with Cmd-H stay in their tree and leave empty tiles; on hide (816) remove from the tree, on unhide (815) re-insert. (3) ensureWorkspaceCount is not re-run on config reload; add it to the reload path. (4) Queued frame writes are not cancelled on enable off; give FrameApplier a cancel and call it. (5) Layout has no public initializer; add one and use it in Recovery. (6) kex help does not list recover.
 
 ## Acceptance Criteria
 
-Cmd-Tab to an app with a window on the current Space stays put. Cmd-H then unhide re-tiles without empty tiles. Raising workspaces in the config and reloading creates Spaces. enable off leaves no late frame writes. dinky help lists recover.
+Cmd-Tab to an app with a window on the current Space stays put. Cmd-H then unhide re-tiles without empty tiles. Raising workspaces in the config and reloading creates Spaces. enable off leaves no late frame writes. kex help lists recover.
 
 
 ## Notes

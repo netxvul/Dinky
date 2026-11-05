@@ -1,20 +1,20 @@
 ---
 layout: default
 title: Configuration
-description: dinky's TOML config, every key and its default, and the key syntax.
+description: Kex's TOML config, every key and its default, and the key syntax.
 permalink: /configuration/
 ---
 
 # Configuration
 
-`~/.config/dinky/dinky.toml`, written on first run and reloaded on save.
+`~/.config/kex/kex.toml`, written on first run and reloaded on save.
 
 - Every key is optional; a missing key keeps the default below. Without
   `[mode.main]` there are no bindings, without `[[rules]]` no rules.
 - Unknown keys are errors. A broken config does not load: the previous one
   stays and the error shows in the menu.
-- `dinky doctor [--config <path>]` also checks commands, modes and key names.
-- The [JSON Schema](schemas/dinky.json) gives completion in editors that read
+- `kex doctor [--config <path>]` also checks commands, modes and key names.
+- The [JSON Schema](schemas/kex.json) gives completion in editors that read
   Taplo's `#:schema` line, such as Zed or VS Code with Even Better TOML.
 
 ## Top level
@@ -24,16 +24,16 @@ permalink: /configuration/
 | Key | Default | |
 |---|---|---|
 | `start-at-login` | `true` | Register as a login item. |
-| `workspaces` | `5` | Workspaces across all displays, one native Space each. dinky creates and removes Spaces to match. |
+| `workspaces` | `5` | Workspaces across all displays, one native Space each. Kex creates and removes Spaces to match. |
 | `default-layout` | `'tiles'` | `'tiles'` (the existing dwindle layout), `'dwindle'`, `'accordion'`, `'fixed'`, `'scrolling'`, or `'free'`, which tiles nothing (see [`[workspace.<number>]`](#workspacenumber)). |
 | `default-tiling` | `true` | Set `false` to leave workspaces untiled unless overridden. |
 | `follow-app-activation` | `true` | Cmd-Tab and Dock clicks switch Spaces the fast way. Needs the macOS "switch to a Space with open windows" setting off. |
 | `float-windows-without-fullscreen` | `true` | Float windows that can't go full screen, such as Finder's copy progress, About This Mac and Calculator. Terminals and editors that can hide their title bar still tile. A `layout tiling` rule tiles a window anyway. |
-| `menu-bar-icon` | `'blocks'` | `'blocks'` shows a block per display in the menu bar, left to right, with the workspace it shows: filled for the focused display, outlined for the others, corner marks for a full-screen Space. `'text'` shows the focused display's workspace number. `'none'` hides the menu bar item; the `dinky` CLI and key bindings still work. |
-| `hide-menu-bar-icon` | `'never'` | When to hide dinky's menu bar item. `'single-display'` hides it while only one display is connected and shows it again once a second one is. `'always'` hides it, as `menu-bar-icon = 'none'` does. `'never'` leaves it to `menu-bar-icon`. Hidden, the `dinky` CLI and key bindings still work. |
-| `scripting-addition` | `true` | Whether dinky may use its Dock scripting addition, which needs SIP off. Where it is injected (see [Scripting addition](scripting-addition.md)), a scrolling strip scrolls through it, its windows sliding past the screen edges; without it the strip moves its windows frame by frame. `false` never touches it, even with SIP off and the addition installed: dinky neither checks for it nor injects it, and the strip moves its windows frame by frame. Takes effect on reload. |
+| `menu-bar-icon` | `'blocks'` | `'blocks'` shows a block per display in the menu bar, left to right, with the workspace it shows: filled for the focused display, outlined for the others, corner marks for a full-screen Space. `'text'` shows the focused display's workspace number. `'none'` hides the menu bar item; the `kex` CLI and key bindings still work. |
+| `hide-menu-bar-icon` | `'never'` | When to hide Kex's menu bar item. `'single-display'` hides it while only one display is connected and shows it again once a second one is. `'always'` hides it, as `menu-bar-icon = 'none'` does. `'never'` leaves it to `menu-bar-icon`. Hidden, the `kex` CLI and key bindings still work. |
+| `scripting-addition` | `true` | Whether Kex may use its Dock scripting addition, which needs SIP off. Where it is injected (see [Scripting addition](scripting-addition.md)), a scrolling strip scrolls through it, its windows sliding past the screen edges; without it the strip moves its windows frame by frame. `false` never touches it, even with SIP off and the addition installed: Kex neither checks for it nor injects it, and the strip moves its windows frame by frame. Takes effect on reload. |
 | `highlight-color` | unset | One highlight colour for everything that has one: `'#rrggbb'`, `'#rrggbbaa'`, or `'accent'` for the accent colour in System Settings. Each highlight a table leaves unset takes it: the pick in both switchers ([`[switcher]`](#switcher)), the focused window's border ([`[borders]`](#borders) `active-color`), the glow of a binding that does nothing ([`[borders]`](#borders) `noop-flash-color`), the ring of pinned windows ([`[borders]`](#borders) `pinned-color`) and a drag's preview ([`[drag]`](#drag) `preview-border-color`). A table's own colour always wins, and its `'accent'` keeps the accent colour there. Unset, each keeps its own default. Like every top-level key, it goes above the first `[table]`. |
-| `haptic` | `true` | Whether the trackpad taps for dinky, as macOS's own taps feel. Each haptic a table leaves unset takes it: the strip's ticks as columns pass under the fingers ([`[gestures.scroll]`](#gesturesscroll)), the tap as a bound swipe runs ([`[gestures.trackpad]`](#gesturestrackpad)) and the switchers' picks ([`[switcher]`](#switcher)). A table's own always wins. |
+| `haptic` | `true` | Whether the trackpad taps for Kex, as macOS's own taps feel. Each haptic a table leaves unset takes it: the strip's ticks as columns pass under the fingers ([`[gestures.scroll]`](#gesturesscroll)), the tap as a bound swipe runs ([`[gestures.trackpad]`](#gesturestrackpad)) and the switchers' picks ([`[switcher]`](#switcher)). A table's own always wins. |
 | `haptic-strength` | `'medium'` | How strongly: `'light'`, `'medium'` or `'strong'`. Each `haptic-strength` a table leaves unset takes it. A light tap is barely felt under moving fingers on a built-in trackpad. |
 
 </div>
@@ -48,7 +48,7 @@ numbered workspace.
 | Key | Default | |
 |---|---|---|
 | `tiling` | `default-tiling` | Whether the workspace tiles. |
-| `layout` | `default-layout` | Its layout, with the same values. `'free'` lays nothing out: every window on the workspace floats where it stands, those opened there and those moved there, whatever `tiling` says, so `move`, `resize`, `fullscreen` and `cycle-size` work on them from the first press. One it floated tiles again on a workspace with another layout. There `layout` and `join-with` answer that the workspace is free instead of tiling a window, and `grid --toggle` puts a window back where it was before the grid placed it. `tiling = false` instead leaves the windows alone: dinky neither tiles nor floats them. |
+| `layout` | `default-layout` | Its layout, with the same values. `'free'` lays nothing out: every window on the workspace floats where it stands, those opened there and those moved there, whatever `tiling` says, so `move`, `resize`, `fullscreen` and `cycle-size` work on them from the first press. One it floated tiles again on a workspace with another layout. There `layout` and `join-with` answer that the workspace is free instead of tiling a window, and `grid --toggle` puts a window back where it was before the grid placed it. `tiling = false` instead leaves the windows alone: Kex neither tiles nor floats them. |
 | `columns`, `rows` | `1` | A fixed layout's template. |
 | `expand` | `'columns'` | What a fixed layout does when every cell is taken. |
 
@@ -115,7 +115,7 @@ stacks its windows one above the other.
 `resize width` (and `smart`) changes the column's width, `resize height` the
 window's share of its column; `balance-sizes` resets them all. Hover focus
 leaves columns that are not wholly in view alone; a click scrolls to them. A
-click on a parked column's sliver goes to dinky rather than the app: the column
+click on a parked column's sliver goes to Kex rather than the app: the column
 scrolls in and is focused once it rests there. A click that moves focus anywhere
 else reaches the app as usual, and the strip scrolls once the button is up.
 
@@ -126,7 +126,7 @@ layout = 'scrolling'
 
 `pin left` and `pin right` hold the focused window's column at a side of the
 screen while the others scroll in the band between, after SlideScroll; see
-[Pins](commands.md#pins). Pins are not kept across a restart of dinky: a
+[Pins](commands.md#pins). Pins are not kept across a restart of kex: a
 [rule](#rules) such as `run = 'pin right'` pins a window again: a rule's `pin`
 takes only a free side and leaves a window you unpinned alone.
 
@@ -151,12 +151,12 @@ A prototype, off unless `[scrolling] span-displays = true`. With exactly two
 displays side by side, while both show a scrolling workspace, the two run one
 strip across both displays: the left one's columns, then the right one's. The
 Nth Space of one display is the partner of the Nth of the other: switching
-either display to a Space, from dinky or with a swipe, switches the other to
+either display to a Space, from Kex or with a swipe, switches the other to
 its partner, so with workspaces 1 to 3 on the left
 display and 4 to 6 on the right, 1 and 4 go together, 2 and 5, 3 and 6. A
 display with no workspaces of its own, as a second display usually is, gets
 an unnumbered companion Space for each scrolling workspace on the other, at
-its place, laid out as that workspace; dinky makes them as needed and keeps
+its place, laid out as that workspace; Kex makes them as needed and keeps
 them while the option is on. Turned off, their windows go back to their
 workspaces. Switched to a workspace that is not scrolling, the other display
 still goes to its companion, so it never shows another workspace's windows,
@@ -286,7 +286,7 @@ What the tiling commands do to a floating window; see
 
 Which display a workspace lives on, by number. A display pattern is `main`,
 `secondary` (the other one, when there are two), or part of the name from
-`dinky list-displays`. A list tries each in turn. Unlisted workspaces, and
+`kex list-displays`. A list tries each in turn. Unlisted workspaces, and
 listed ones whose display isn't connected, live on the main display.
 
 ```toml
@@ -295,7 +295,7 @@ listed ones whose display isn't connected, live on the main display.
 4 = ['dell', 'lg']
 ```
 
-When a display comes or goes, dinky moves the workspace's windows, layout
+When a display comes or goes, Kex moves the workspace's windows, layout
 included, to a Space on its display and removes the Space left behind. Empty
 leftover Spaces are removed; ones with windows are left alone, unnumbered. A
 display with no workspaces keeps one unnumbered Space. Windows macOS piles onto
@@ -366,7 +366,7 @@ gaps.outer.top = 44
 critically damped at `damping = 1`, it sets off at once and eases into place
 without overshooting, most of the way there in about a quarter of a second and
 settled within a point in about half of one. `duration-ms = 150` with
-`damping = 0.9` is the quicker spring dinky had before. A command pressed
+`damping = 0.9` is the quicker spring Kex had before. A command pressed
 again mid-glide bends the motion towards the new place, keeping its speed.
 Glides step at the full rate of the display the windows are on, 120 times a
 second on a ProMotion display.
@@ -403,7 +403,7 @@ Over a gap the nearest tile counts, and over the menu bar, the Dock or an outer
 gap the tile along that edge. Dragged onto another display, the window drops
 into the tree of the workspace shown there the same way, or comes in as a new
 window does where that has no window yet; one it swaps with goes back to the
-display it came from. Dropped on its own place, or over a workspace dinky does
+display it came from. Dropped on its own place, or over a workspace Kex does
 not tile, the window goes back.
 
 <div class="wide-table" markdown="1">
@@ -416,7 +416,7 @@ not tile, the window goes back.
 | `preview-border-width` | `3` | Points, from `0` to `20`, for every border while you drag: the preview, a swap's, and the outline of where the window goes back to. |
 | `preview-blur` | `true` | Whether dragging a card in [`[window-switcher]`](#window-switcher) frosts the part of the card under the mark of where it would go. `false` shows only the mark's fill. The mark on a card takes `preview-fill-color` and has no border; the line in a gap takes `preview-border-color`. A window's own drag preview doesn't blur. |
 | `home-outline` | `true` | While a drag would put the window back, outline in grey the tile it goes back to. `false` shows nothing then. |
-| `mouse-modifier` | `'none'` | Hold it to drag a window from anywhere in it, not only by its title bar: `'alt'`, `'ctrl'`, `'cmd'` or `'shift'`, or several joined by `-` such as `'ctrl-cmd'`, held exactly. A tiled window drops as above; a floating one just moves. Once it is set, only a drag with it held drops onto a tile on the window's own display and shows where it will go: a tiled window dragged by its title bar alone goes back to its tile there, though it still drops onto another display, and dragging its edges still resizes it. The press goes to dinky, not the app, so pick modifiers your apps don't click with: `cmd` opens links, `ctrl` is a right click. Each key's side follows [`[modifiers]`](#modifiers), and it can't be a switcher's `modifier`. `'none'` turns it off. |
+| `mouse-modifier` | `'none'` | Hold it to drag a window from anywhere in it, not only by its title bar: `'alt'`, `'ctrl'`, `'cmd'` or `'shift'`, or several joined by `-` such as `'ctrl-cmd'`, held exactly. A tiled window drops as above; a floating one just moves. Once it is set, only a drag with it held drops onto a tile on the window's own display and shows where it will go: a tiled window dragged by its title bar alone goes back to its tile there, though it still drops onto another display, and dragging its edges still resizes it. The press goes to Kex, not the app, so pick modifiers your apps don't click with: `cmd` opens links, `ctrl` is a right click. Each key's side follows [`[modifiers]`](#modifiers), and it can't be a switcher's `modifier`. `'none'` turns it off. |
 
 </div>
 
@@ -427,7 +427,7 @@ shows the new layout, such as `h_accordion` or `scrolling`, or the new mode's
 name, for a moment on the focused display, then fades out. When a display moves
 to another workspace, it shows there the workspace's number and layout, such as
 `2 · v_accordion`: the layout of its focused tile, `scrolling`, `free` for a
-workspace dinky does not tile, or the configured layout of an empty one. Another change while
+workspace Kex does not tile, or the configured layout of an empty one. Another change while
 it shows replaces the text and restarts the count. On macOS 26 and later it is
 Liquid Glass; earlier, the HUD material.
 
@@ -535,7 +535,7 @@ alt-tab = 'window-switcher'
 ```
 
 Thumbnails need Screen Recording (System Settings, Privacy & Security), asked
-for the first time the capsule shows; dinky may need a restart after it is
+for the first time the capsule shows; Kex may need a restart after it is
 granted. Without it each window shows as its app's icon. Thumbnails are kept
 per window, so the capsule draws at once and fresh ones fade in.
 
@@ -544,7 +544,7 @@ per window, so the capsule draws at once and fresh ones fade in.
 | Key | Default | |
 |---|---|---|
 | `modifier` | `'none'` | `'alt'`, `'ctrl'`, `'cmd'`, `'shift'` or `'hyper'`, [`[modifiers]`](#modifiers)' `hyper` held together. `'none'` turns holding it off; a binding still shows the capsule. Which key of the pair counts follows [`[modifiers]`](#modifiers). |
-| `layouts` | `['scrolling', 'tiles']` | The layouts it shows for: `'scrolling'`, `'tiles'` (dwindle), `'accordion'`, `'fixed'` and `'free'`, a workspace dinky does not tile. |
+| `layouts` | `['scrolling', 'tiles']` | The layouts it shows for: `'scrolling'`, `'tiles'` (dwindle), `'accordion'`, `'fixed'` and `'free'`, a workspace Kex does not tile. |
 | `tiles-style` | `'map'` | How a tiles or fixed workspace shows: `'map'`, its tiles as they are, or `'row'`, a row like a scrolling workspace's. |
 | `show-single` | `true` | Whether the capsule shows for a workspace with a lone tiled window (on a free workspace, a lone window), held or from a binding. `false` shows it only with two or more. |
 | `show-floating` | `true` | Whether a row shows the floating windows over a tiled workspace after its tiled ones, past a line down the middle of a wider gap, left to right as they stand. Not on a map (`tiles-style = 'map'`), nor in the glance as fingers let go of a strip. They count towards `show-single`. |
@@ -610,7 +610,7 @@ swipes the display to that Space and focuses the window there.
 
 Thumbnails are the [window-switcher](#window-switcher)'s and need Screen Recording too.
 macOS draws no Space but the ones on screen, so a workspace's windows are
-captured as they lose focus and as dinky switches away from it, and the ones
+captured as they lose focus and as Kex switches away from it, and the ones
 on screen as the capsule shows; a window not captured yet shows its app's icon.
 
 <div class="wide-table" markdown="1">
@@ -651,12 +651,12 @@ swipe-left = 'workspace-switcher'
 Fingers that swipe or scroll the strip also scroll, as far as macOS is
 concerned, and the app under the pointer would scroll with them. While as
 many fingers as a bound swipe or `[gestures.scroll]` uses are down on a
-trackpad, or on a Magic Mouse with `[gestures.mouse]` on, dinky keeps those
+trackpad, or on a Magic Mouse with `[gestures.mouse]` on, Kex keeps those
 scrolls from the app: a stroke begun with them down is swallowed whole, the
 momentum after they lift with it, and a stroke they join, as a third finger
 landing on two that scroll, ends there for the app, so a page pulled past its
 edge springs back. A wheel without phases is swallowed while they are down.
-Fewer fingers scroll as ever, and never pass through dinky. A stroke with
+Fewer fingers scroll as ever, and never pass through kex. A stroke with
 `[gestures.mouse-scroll]`'s modifier held is that table's.
 
 | Key | Default | |
@@ -683,7 +683,7 @@ fingers down again and slide them. Esc closes the capsule.
 
 Two fingers also scroll, so three is the default. macOS swipes three fingers
 across to switch Spaces and up for Mission Control unless that is off or set
-to four fingers in System Settings, Trackpad, More Gestures; `dinky doctor`
+to four fingers in System Settings, Trackpad, More Gestures; `kex doctor`
 says when a bound swipe clashes. The built-in trackpad and Magic Trackpads
 work alike.
 
@@ -709,7 +709,7 @@ Two fingers swipe there by default: held as a mouse is, it seldom feels a
 third, which lies along its edge. Fingers resting on the mouse as it is held
 count: the swipe starts as the last of them lands. One finger scrolls and
 macOS swipes two across the mouse between full-screen apps unless that is off
-in System Settings, Mouse; `dinky doctor` says when a bound swipe clashes.
+in System Settings, Mouse; `kex doctor` says when a bound swipe clashes.
 Swiping with more, two fingers move nothing while they drive a switcher.
 
 A stroke across the mouse goes only so far, so fingers lifted off it may land
@@ -784,7 +784,7 @@ once when they lift.
 
 macOS swipes three or four fingers across between full-screen apps, and three
 between pages or to drag, unless that is off in System Settings, Trackpad,
-More Gestures; `dinky doctor` says when the fingers clash. Four fingers, the
+More Gestures; `kex doctor` says when the fingers clash. Four fingers, the
 default, clash with nothing once "Swipe between full-screen applications" is
 off.
 
@@ -834,7 +834,7 @@ scroll direction, as the content of any window does. With two fingers bound in
 `[gestures.trackpad]`, a two-finger stroke with the modifier scrolls the strip
 and does not run `swipe-left` or `swipe-right` as well.
 
-The press, its drag and release, and the scrolls go to dinky alone. Without
+The press, its drag and release, and the scrolls go to Kex alone. Without
 the modifier, over a strip whose columns all fit, or on another layout, they
 go to the app as ever, and so do the notches; nor does the mouse take a strip
 while a Space changes, in Mission Control, or, for a press, under a switcher
@@ -847,7 +847,7 @@ holds two. It can't be `[drag] mouse-modifier` while `drag` is on, nor the
 `'alt'` can scroll the strip and double-tap the window switcher. Zoom's "Use
 scroll gesture with modifier keys to zoom", in System Settings, Accessibility,
 Zoom, Advanced, zooms with Control unless changed, and would zoom with this one
-too; `dinky doctor` says so. A mouse has nothing to tap, so it has no haptic.
+too; `kex doctor` says so. A mouse has nothing to tap, so it has no haptic.
 
 With `drag` and `cursor` on, the pointer shows an open hand over a window a
 press with the modifier would drag, once the modifier has been held a moment,
@@ -858,7 +858,7 @@ and the hand goes with it. Another app's window in front of a strip window,
 even one that lets clicks through, keeps the press and the hand away there;
 not an overlay over a whole display of an app not in front, nor the screen
 saver's level and above, which are looked through.
-macOS lets dinky set the pointer over another app's window only through a
+macOS lets Kex set the pointer over another app's window only through a
 private setting; where that is missing, the pointer stays the app's.
 
 <div class="wide-table" markdown="1">
@@ -910,12 +910,12 @@ environment `exec-and-forget` gets.
 
 | Key | Runs |
 |---|---|
-| `startup` | Once, after dinky has read the windows and displays. |
-| `workspace-changing` | When a dinky switch starts, before it lands, and again when a burst of switches changes the target. |
+| `startup` | Once, after Kex has read the windows and displays. |
+| `workspace-changing` | When a Kex switch starts, before it lands, and again when a burst of switches changes the target. |
 | `workspace-changed` | When a display's workspace changes, or a switch gives up. |
 | `focus-changed` | When focus changes, debounced 50 ms. |
-| `mode-changed` | When the binding mode changes, including back to `main` when the config reloads. Sets `DINKY_MODE` and `DINKY_PREV_MODE`. |
-| `display-changed` | When a display connects or disconnects, once the displays have settled and dinky has arranged the workspaces on them (or tried to), about a second later. Sets `DINKY_DISPLAYS` and `DINKY_PREV_DISPLAYS`, how many displays there are now and were before. |
+| `mode-changed` | When the binding mode changes, including back to `main` when the config reloads. Sets `KEX_MODE` and `KEX_PREV_MODE`. |
+| `display-changed` | When a display connects or disconnects, once the displays have settled and Kex has arranged the workspaces on them (or tried to), about a second later. Sets `KEX_DISPLAYS` and `KEX_PREV_DISPLAYS`, how many displays there are now and were before. |
 
 </div>
 
@@ -927,10 +927,10 @@ screen float too while `float-windows-without-fullscreen` is on, unless a
 `layout tiling` rule tiles them. On a `free` workspace every window floats,
 whatever its rules say.
 
-Windows already open when dinky starts are not new: `layout floating`,
+Windows already open when Kex starts are not new: `layout floating`,
 `layout tiling` and `grid` still float or tile them, and `pin` and `unpin` still
 run, since pins are not kept across a restart, but no other command runs, so
-restarting dinky moves, resizes and follows nothing else. A rule's `pin` takes
+restarting Kex moves, resizes and follows nothing else. A rule's `pin` takes
 only a free side, never moves or unpins a pinned column, and leaves a window you
 unpinned alone.
 
@@ -994,7 +994,7 @@ run = 'cycle-size 60%'
 
 ## `[mode.<name>]`
 
-Key bindings. dinky starts in `main`; `mode <name>` switches. Each key maps to
+Key bindings. Kex starts in `main`; `mode <name>` switches. Each key maps to
 a command or a list of commands. Bound keys are swallowed.
 
 ### By layout
@@ -1040,8 +1040,8 @@ The default `alt-` bindings take over Option-letter characters; set
 ## Default config
 
 ```toml
-#:schema https://dinky.rodeo/schemas/dinky.json
-# ~/.config/dinky/dinky.toml. Saved changes take effect at once.
+#:schema https://dinky.rodeo/schemas/kex.json
+# ~/.config/kex/kex.toml. Saved changes take effect at once.
 # A key you leave out keeps the value shown here.
 # Every key and command: https://dinky.rodeo/configuration/
 
@@ -1056,7 +1056,7 @@ hide-menu-bar-icon = 'never'    # never | always (as menu-bar-icon = 'none') | s
 scripting-addition = true       # scroll strips through the Dock scripting addition where it is injected (SIP off);
                                 # without it, or false, their windows move frame by frame
 # highlight-color = '#7aa2f7'  # what every highlight left unset takes: the switchers' pick, the focused border, the noop glow, a drag's preview
-haptic = true                   # the trackpad taps for dinky; what every haptic left unset takes
+haptic = true                   # the trackpad taps for kex; what every haptic left unset takes
 haptic-strength = 'medium'      # light | medium | strong; what every haptic-strength left unset takes
 
 # Example: only tile workspace 2 in a fixed 2x3 template.
@@ -1090,7 +1090,7 @@ scrolling = 'push'              # on a scrolling workspace: push (neighbours sli
 inner = 8                       # or { horizontal = 8, vertical = 8 }
 outer = 8                       # or { top = 8, bottom = 8, left = 8, right = 8 }
 
-# Display patterns: main, secondary, or part of a name as `dinky list-displays` prints it.
+# Display patterns: main, secondary, or part of a name as `kex list-displays` prints it.
 # A workspace lives on the first display its patterns match, else on the main display.
 # [workspace-to-display]
 # 5 = 'secondary'
@@ -1233,9 +1233,9 @@ cmd = 'both'
 shift = 'both'
 hyper = 'alt-ctrl-cmd-shift'     # what a switcher's modifier = 'hyper' holds together, two or more, either side
 
-# dinky commands run on events. exec-and-forget gets $DINKY_WORKSPACE, $DINKY_PREV_WORKSPACE and $DINKY_DISPLAY
-# in the workspace hooks, $DINKY_MODE, $DINKY_PREV_MODE in mode-changed, and $DINKY_DISPLAYS,
-# $DINKY_PREV_DISPLAYS (how many displays) in display-changed.
+# kex commands run on events. exec-and-forget gets $KEX_WORKSPACE, $KEX_PREV_WORKSPACE and $KEX_DISPLAY
+# in the workspace hooks, $KEX_MODE, $KEX_PREV_MODE in mode-changed, and $KEX_DISPLAYS,
+# $KEX_PREV_DISPLAYS (how many displays) in display-changed.
 # [hooks]
 # startup = ['exec-and-forget brew services restart sketchybar']
 # workspace-changed = ['exec-and-forget sketchybar --trigger workspace_change']

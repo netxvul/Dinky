@@ -16,11 +16,11 @@ Try SLSBridgedSpaceCreateOperation (initWithOptions:values:) through the bridged
 
 ## Acceptance Criteria
 
-A written result in RESULTS.md: works or not, on which build, with the exact call. If it works, a dinky function that creates one Space on a given display.
+A written result in RESULTS.md: works or not, on which build, with the exact call. If it works, a kex function that creates one Space on a given display.
 
 
 ## Notes
 
 **2026-09-25T10:16:38Z**
 
-Works on 26A5416b (VM): SLSBridgedSpaceCreateOperation initWithOptions:0 values:@{type:0, 'Display Identifier':uuid} sent through the non-exported sync dispatcher __ZL54_SLSPerformSynchronousBridgedWindowManagementOperation... returns a SpaceIDResult. Shows in SLSCopyManagedDisplaySpaces and in Mission Control right away, usable with move and switch, and survives killall Dock. Needs AppKit loaded in the process (a bare Foundation process gets nil). Exported SLSSpaceCreate returns 0. Destroy (bridged op or SLSSpaceDestroy) does nothing from a client. Host with SIP on not tested. Full write-up in RESULTS.md 'Space creation spike'. dinky_create_space in spaces.m is the real function.
+Works on 26A5416b (VM): SLSBridgedSpaceCreateOperation initWithOptions:0 values:@{type:0, 'Display Identifier':uuid} sent through the non-exported sync dispatcher __ZL54_SLSPerformSynchronousBridgedWindowManagementOperation... returns a SpaceIDResult. Shows in SLSCopyManagedDisplaySpaces and in Mission Control right away, usable with move and switch, and survives killall Dock. Needs AppKit loaded in the process (a bare Foundation process gets nil). Exported SLSSpaceCreate returns 0. Destroy (bridged op or SLSSpaceDestroy) does nothing from a client. Host with SIP on not tested. Full write-up in RESULTS.md 'Space creation spike'. kex_create_space in spaces.m is the real function.

@@ -1,12 +1,12 @@
 > Superseded on 24 September 2026 by PLAN.md, which cuts this down to a minimal mechanics spike. Kept unchanged as the research archive and as the fuller plan to return to if the spike passes.
 
-# dinky
+# kex
 
 A standalone, SIP-on tiling window manager for macOS.
 
 Created 24 September 2026. Status: research complete enough to start a feasibility spike; no implementation or live window-management validation yet.
 
-This is the first project file. The decisions and implementation sequence below are authoritative. The appendices preserve the complete prior investigations, including alternatives considered before the direction was narrowed. Earlier references to building inside Tuna, scrolling-first layouts, capture renderers, or a privileged edition are research history, not instructions for dinky.
+This is the first project file. The decisions and implementation sequence below are authoritative. The appendices preserve the complete prior investigations, including alternatives considered before the direction was narrowed. Earlier references to building inside Tuna, scrolling-first layouts, capture renderers, or a privileged edition are research history, not instructions for kex.
 
 ## Goal
 
@@ -20,7 +20,7 @@ Build the smallest useful experiment that can disprove the architecture before i
 
 | Decision | Meaning |
 |---|---|
-| Name and location | `dinky`, at `~/dev/dinky`. |
+| Name and location | `kex`, at `~/dev/kex`. |
 | Standalone project | Independent app, permissions, lifecycle and codebase. Not a Tuna feature, plugin or extension. |
 | SIP stays enabled | No Dock injection, scripting addition or reduced system protection as a prerequisite. |
 | Native Spaces own workspace visibility | Start with one native Space per workspace. Inactive workspaces do not use corner parking. |
@@ -52,7 +52,7 @@ On the investigated Mac, macOS 27.0 build 26A428 reported SIP enabled. Read-only
 
 ### Hiding and layout are separate concerns
 
-| Mechanism | Evidence | Decision for dinky |
+| Mechanism | Evidence | Decision for kex |
 |---|---|---|
 | Native Spaces | yabai, Amethyst, Glide, mimi, current bobrwm | Primary workspace backend. |
 | Edge/corner parking | AeroSpace, Rift, Paneru, GlazeWM, komorebi and others | Avoid for normal workspaces and layout overflow. |
@@ -90,7 +90,7 @@ The survey covered 84 products/projects, including related tools and historical 
 | Zonogy | Explicit handling of displaced windows and minimization-induced focus side effects. |
 | Parket / other mature implementations | Native tab groups, transient-window admission and recovery deserve first-class treatment. |
 
-The rest of the catalog is useful chiefly for interaction ideas, independent checks and known compromises. Licensing must be checked before copying code: public availability does not mean permissive reuse; KiwiDesk uses BSL and komorebi has source-available/commercial terms. No implementation license for dinky has been selected.
+The rest of the catalog is useful chiefly for interaction ideas, independent checks and known compromises. Licensing must be checked before copying code: public availability does not mean permissive reuse; KiwiDesk uses BSL and komorebi has source-available/commercial terms. No implementation license for kex has been selected.
 
 ## First spike
 
@@ -138,7 +138,7 @@ Gate: three representative windows open, close, focus and retile predictably on 
 - Keep all accordion children inside the usable viewport, overlapping to preserve useful window sizes and visible navigation strips.
 - Raise/expand the focused child while preserving a stable child order; retain prior split ratios for toggling back.
 - Account for minimum sizes and the space consumed by strips. If the container cannot fit, report the constraint and preserve usable geometry; do not park windows as a hidden fallback.
-- Test focus from both dinky commands and native activation, including Cmd-Tab and Dock clicks.
+- Test focus from both kex commands and native activation, including Cmd-Tab and Dock clicks.
 
 Gate: cycling through a three-window accordion repeatedly produces the intended focused/frontmost window and no edge-parking artifacts. Split-to-accordion-to-split is reversible.
 
@@ -205,7 +205,7 @@ Pure tests should cover insertion axes/ties, stable topology, removal, accordion
 
 ## Recovery policy
 
-Snapshot only what dinky needs for recovery. Journal original membership/frames before mutation, plus enough lifetime identity to avoid restoring another window that reused an ID. A recovery journal is not user-facing session persistence.
+Snapshot only what kex needs for recovery. Journal original membership/frames before mutation, plus enough lifetime identity to avoid restoring another window that reused an ID. A recovery journal is not user-facing session persistence.
 
 On normal disable/quit, cancel outstanding work and restore original frames on still-valid displays/Spaces where feasible. If explicitly moved windows are to return to their original Spaces, that action must use a confirmed transfer capability; the exact normal-exit membership policy is still open. Do not create/delete Spaces or close apps to simulate recovery. If an original display/Space is gone, preserve a reachable placement and report what could not be restored. After a crash, reconcile live identities before offering restoration.
 
@@ -228,7 +228,7 @@ Proceed beyond the spike only if switching, transfers, focus, frame settlement a
 
 ## Research archive
 
-The appendices below preserve findings and citations as of 24 September 2026. They are not live compatibility guarantees. Appendix A predates the decision to drop scrolling and contains superseded prototype recommendations; Appendix B predates the standalone-project correction and occasionally calls the future project Tuna. Read both as evidence and alternatives, with the dinky decisions above taking precedence.
+The appendices below preserve findings and citations as of 24 September 2026. They are not live compatibility guarantees. Appendix A predates the decision to drop scrolling and contains superseded prototype recommendations; Appendix B predates the standalone-project correction and occasionally calls the future project Tuna. Read both as evidence and alternatives, with the kex decisions above taking precedence.
 
 ## Appendix A — API and compositor feasibility investigation
 

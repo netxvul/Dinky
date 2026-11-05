@@ -1,4 +1,0 @@
-interface:
-  display_name: "dinky Release"
-  short_description: "Review dinky changes and release notes, then publish"
-  default_prompt: "Use $dinky-release to review dinky release readiness; publish only when requested."

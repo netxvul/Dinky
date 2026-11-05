@@ -1,0 +1,142 @@
+#include <dlfcn.h>
+#import "query.h"
+#import "skylight.h"
+
+@implementation KexSpace
+- (BOOL)isUser { return self.type == KexSpaceTypeUser; }
+- (BOOL)isFullscreen { return self.type == KexSpaceTypeFullscreen; }
+@end
+
+@implementation KexDisplay
+@end
+
+int kex_connection(void)
+{
+    static int cid = 0;
+    if (!cid) cid = SLSMainConnectionID();
+    return cid;
+}
+
+static uint64_t number_u64(CFNumberRef n)
+{
+    uint64_t v = 0;
+    if (n) CFNumberGetValue(n, kCFNumberSInt64Type, &v);
+    return v;
+}
+
+// "Main" is what SLSCopyManagedDisplaySpaces reports when displays do not have separate Spaces.
+static NSString *real_uuid(NSString *identifier, CGDirectDisplayID *outID)
+{
+    if ([identifier isEqualToString:@"Main"]) {
+        *outID = CGMainDisplayID();
+        CFUUIDRef uuid = CGDisplayCreateUUIDFromDisplayID(*outID);
+        NSString *s = CFBridgingRelease(CFUUIDCreateString(NULL, uuid));
+        CFRelease(uuid);
+        return s;
+    }
+    CFUUIDRef uuid = CFUUIDCreateFromString(NULL, (__bridge CFStringRef)identifier);
+    *outID = uuid ? CGDisplayGetDisplayIDFromUUID(uuid) : 0;
+    if (uuid) CFRelease(uuid);
+    return identifier;
+}
+
+NSArray<KexDisplay *> *kex_displays(void)
+{
+    int cid = kex_connection();
+    NSMutableArray *result = [NSMutableArray array];
+    NSArray *managed = CFBridgingRelease(SLSCopyManagedDisplaySpaces(cid));
+
+    for (NSDictionary *entry in managed) {
+        NSString *identifier = entry[@"Display Identifier"];
+        KexDisplay *display = [KexDisplay new];
+        CGDirectDisplayID did = 0;
+        display.uuid = real_uuid(identifier, &did);
+        display.displayID = did;
+        display.currentSpaceID = SLSManagedDisplayGetCurrentSpace(cid, (__bridge CFStringRef)identifier);
+
+        NSMutableArray *spaces = [NSMutableArray array];
+        for (NSDictionary *spaceDict in entry[@"Spaces"]) {
+            KexSpace *space = [KexSpace new];
+            space.spaceID = number_u64((__bridge CFNumberRef)spaceDict[@"id64"]);
+            space.type = SLSSpaceGetType(cid, space.spaceID);
+            [spaces addObject:space];
+        }
+        display.spaces = spaces;
+        [result addObject:display];
+    }
+    return result;
+}
+
+NSArray<NSNumber *> *kex_current_space_ids(void)
+{
+    int cid = kex_connection();
+    NSMutableArray *result = [NSMutableArray array];
+    NSArray *managed = CFBridgingRelease(SLSCopyManagedDisplaySpaces(cid));
+    for (NSDictionary *entry in managed) {
+        CFStringRef identifier = (__bridge CFStringRef)entry[@"Display Identifier"];
+        [result addObject:@(SLSManagedDisplayGetCurrentSpace(cid, identifier))];
+    }
+    return result;
+}
+
+uint64_t kex_current_space_id(CFStringRef displayUUID)
+{
+    return SLSManagedDisplayGetCurrentSpace(kex_connection(), displayUUID);
+}
+
+bool kex_display_is_animating(CFStringRef displayUUID)
+{
+    static bool (*isAnimating)(int, CFStringRef);
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        isAnimating = (bool (*)(int, CFStringRef))dlsym(RTLD_DEFAULT, "SLSManagedDisplayIsAnimating");
+    });
+    return isAnimating ? isAnimating(kex_connection(), displayUUID) : false;
+}
+
+uint64_t kex_window_space_id(uint32_t windowID)
+{
+    NSArray *windows = @[@(windowID)];
+    NSArray *spaces = CFBridgingRelease(SLSCopySpacesForWindows(kex_connection(), 0x7, (__bridge CFArrayRef)windows));
+    return spaces.count ? number_u64((__bridge CFNumberRef)spaces[0]) : 0;
+}
+
+// yabai space_window_list_for_connection with owner 0. yabai also keeps any window its
+// window manager already tracks; we have no such table, so only the tag filter applies.
+NSArray<NSNumber *> *kex_space_window_ids(uint64_t spaceID, bool includeMinimized)
+{
+    int cid = kex_connection();
+    uint64_t set_tags = 0;
+    uint64_t clear_tags = 0;
+    uint32_t options = includeMinimized ? 0x7 : 0x2;
+
+    NSArray *spaces = @[@(spaceID)];
+    CFArrayRef windows = SLSCopyWindowsWithOptionsAndTags(cid, 0, (__bridge CFArrayRef)spaces, options, &set_tags, &clear_tags);
+    if (!windows) return @[];
+
+    NSMutableArray *result = [NSMutableArray array];
+    int count = (int)CFArrayGetCount(windows);
+    if (count) {
+        CFTypeRef query = SLSWindowQueryWindows(cid, windows, count);
+        CFTypeRef iterator = SLSWindowQueryResultCopyWindows(query);
+
+        while (SLSWindowIteratorAdvance(iterator)) {
+            uint64_t tags = SLSWindowIteratorGetTags(iterator);
+            uint64_t attributes = SLSWindowIteratorGetAttributes(iterator);
+            uint32_t parent = SLSWindowIteratorGetParentID(iterator);
+            uint32_t wid = SLSWindowIteratorGetWindowID(iterator);
+            int level = SLSWindowIteratorGetLevel(iterator);
+
+            if (parent != 0) continue;
+            if (!(level == 0 || level == 3 || level == 8)) continue;
+
+            bool shown = kex_is_visible(attributes, tags) || (includeMinimized && kex_is_minimized(attributes, tags));
+            if (shown && kex_has_document_tags(tags)) [result addObject:@(wid)];
+        }
+
+        CFRelease(query);
+        CFRelease(iterator);
+    }
+    CFRelease(windows);
+    return result;
+}

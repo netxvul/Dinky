@@ -1,24 +1,24 @@
-<img src="docs/assets/icon.png" alt="dinky" width="128">
+<img src="docs/assets/icon.png" alt="Kex" width="128">
 
-# dinky
+# Kex
 
 > oh wow. you moved a rectangle.
 
 A tiling window manager for macOS that leaves System Integrity Protection on.
 
 ```sh
-brew install --cask mikker/tap/dinky
+brew install --cask mikker/tap/kex
 ```
 
 [Documentation](https://dinky.rodeo)
 
 ## Quick start
 
-Open dinky and grant Accessibility when asked. Windows tile as they open.
+Open Kex and grant Accessibility when asked. Windows tile as they open.
 
-- `dinky workspace 3`: Switch to workspace 3.
-- `dinky layout accordion`: Stack the focused container.
-- `dinky doctor`: Check the config, the macOS settings dinky needs, and that no other tiler is running.
+- `kex workspace 3`: Switch to workspace 3.
+- `kex layout accordion`: Stack the focused container.
+- `kex doctor`: Check the config, the macOS settings Kex needs, and that no other tiler is running.
 
 Learn more:
 
