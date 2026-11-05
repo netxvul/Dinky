@@ -313,11 +313,6 @@ struct SchemaTests {
         inactive-color = '#00ff0080'
         order = 'above'
         exclude-apps = ['com.apple.finder']
-        noop-flash = true
-        noop-flash-color = 'accent'
-        noop-flash-width = 3.5
-        noop-flash-spread = 20
-        noop-flash-opacity = 0.5
         pinned = true
         pinned-color = '#ff8800'
         pinned-width = 3
@@ -350,7 +345,34 @@ struct SchemaTests {
         on-layout-change = true
         on-mode-change = false
         on-workspace-change = false
-        on-noop = true
+
+        [noop-flash]
+        enabled = true
+        color = 'accent'
+        width = 3.5
+        spread = 20
+        opacity = 0.5
+
+        [noop-flash.window]
+        enabled = true
+        color = '#59168b'
+        width = 1
+        spread = 40
+        opacity = 0.4
+
+        [noop-flash.workspace]
+        enabled = true
+        color = '#59168b'
+        width = 1
+        spread = 40
+        opacity = 0.4
+
+        [noop-flash.display]
+        enabled = true
+        color = '#59168b'
+        width = 1
+        spread = 40
+        opacity = 0.4
 
         [modifiers]
         alt = 'left'

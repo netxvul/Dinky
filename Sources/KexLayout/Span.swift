@@ -344,19 +344,12 @@ extension Workspace {
         return (column.start + column.width / 2 - ((from + to) / 2 - area.minX)).rounded()
     }
 
-    /// The end of a strip across two displays that `commands`, a binding that did nothing, ran into with `id` focused:
-    /// left or right, for a `focus`, `move` or `join-with` that way from the column at that end. Nil for anything else,
-    /// and on one display.
-    public func endRunInto(by commands: [String], from id: WindowID) -> Direction? {
-        guard spansDisplays, bandIndex(of: id) != nil else { return nil }
+    /// Whether a step `toward` a side from `id`, which found nothing there, ran into that end of a strip across two
+    /// displays. False for any other way, for a column with others that way, and on one display.
+    public func endRunInto(toward direction: Direction, from id: WindowID) -> Bool {
+        guard spansDisplays, bandIndex(of: id) != nil else { return false }
         let around = columns(around: id)
-        for command in commands {
-            let words = command.split(separator: " ").map(String.init)
-            guard words.count >= 2, ["focus", "move", "join-with"].contains(words[0]) else { continue }
-            if words[1] == "left", around.left.isEmpty { return .left }
-            if words[1] == "right", around.right.isEmpty { return .right }
-        }
-        return nil
+        return direction == .left ? around.left.isEmpty : direction == .right && around.right.isEmpty
     }
 
     /// The display a window at `frame` belongs on across the seam: left of it (true) where most of it is left of it.

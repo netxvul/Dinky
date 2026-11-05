@@ -44,26 +44,39 @@ final class Coordinator {
     private var borders: BorderManager?
     /// The noop flash's glow, over any window and its border: borders on or off, its app excluded or not.
     private lazy var noopGlow = NoopGlow { [weak self] id in self?.borders?.border(above: id) }
-    /// The glow along a display's side as fingers push its strip on past an end.
+    /// The glow along a display's sides or round its whole edge, as fingers push its strip on past an end, or for a
+    /// binding that found no workspace or display to go to.
     private lazy var edgeGlow = EdgeGlow()
     func isBorderWindow(_ id: WindowID) -> Bool { borders?.isBorder(id) == true || noopGlow.isBorder(id) }
 
-    /// For a binding that did nothing, `commands`: in a strip across two displays, a step past its left or right end
-    /// glows the outer edge of the display at that end, as fingers pushing past it do, rather than the window, which can
-    /// be on the other display; anything else `flashBorder`. Unless `[borders] noop-flash` is off.
-    func flashNoop(of id: WindowID, commands: [String]) {
-        if config.borders.noopFlash, let key = placements[id]?.space,
-           let side = workspaces[key]?.endRunInto(by: commands, from: id),
-           let uuid = spanEndDisplay(key, last: side == .right) {
-            return flashStripEnd(on: uuid, last: side == .right)
+    /// For a binding that did nothing, the flash its `scope` asks for, in that level's `[noop-flash]` settings, where
+    /// they leave it on. For a window, `id`: in a strip across two displays, a step past its left or right end glows the
+    /// outer edge of the display at that end, as fingers pushing past it do, rather than the window, which can be on the
+    /// other display.
+    func flashNoop(_ scope: NoopScope, of id: WindowID) {
+        switch scope {
+        case .window(let toward):
+            guard config.noopFlash.window.enabled else { return }
+            if let toward, let key = placements[id]?.space, workspaces[key]?.endRunInto(toward: toward, from: id) == true,
+               let uuid = spanEndDisplay(key, last: toward == .right) {
+                return flashStripEnd(on: uuid, last: toward == .right, keyed: true)
+            }
+            guard let window = model.windows[id], window.isDocument else { return }
+            noopGlow.flash(id, look: config.noopFlash.window, model: model)
+        case .workspace(let sides, let uuid):
+            guard config.noopFlash.workspace.enabled else { return }
+            let mouse = NSEvent.mouseLocation
+            guard let screen = uuid.flatMap(screenOfDisplay) ?? NSScreen.screens.first(where: { $0.frame.contains(mouse) })
+                    ?? NSScreen.main else { return }
+            edgeGlow.flash(on: screen, .sides(sides), look: config.noopFlash.workspace, keyed: true)
+        case .display(let uuid):
+            guard config.noopFlash.display.enabled, let screen = screenOfDisplay(uuid) else { return }
+            edgeGlow.flash(on: screen, .ring, look: config.noopFlash.display, keyed: true)
         }
-        flashBorder(of: id)
     }
 
-    /// Makes a window's edge glow once, for a binding that did nothing, unless `[borders] noop-flash` is off.
-    func flashBorder(of id: WindowID) {
-        guard config.borders.noopFlash, let window = model.windows[id], window.isDocument else { return }
-        noopGlow.flash(id, config: config.borders, model: model)
+    private func screenOfDisplay(_ uuid: String) -> NSScreen? {
+        displays.displays.first { $0.uuid == uuid }.flatMap { screen(of: $0.id) }
     }
     private(set) var workspaces: [UInt64: Workspace] = [:]
     /// The two Spaces running one strip across two displays (`[scrolling] span-displays`), if any. See SpanDisplays.swift.
@@ -1847,12 +1860,12 @@ final class Coordinator {
     }
 
     /// The fingers push the strip on display `uuid` on past an end, its `last` or its first: the display's side there
-    /// glows, its right or its left, as a binding that does nothing makes a window glow, held while they push. Unless
-    /// `edge-flash` is off for what holds it, whatever `[borders] noop-flash` says.
-    private func flashStripEnd(on uuid: String, last: Bool) {
-        guard let display = displays.displays.first(where: { $0.uuid == uuid }),
-              let screen = screen(of: display.id) else { return }
-        edgeGlow.flash(on: screen, right: last, config: config.borders)
+    /// glows, its right or its left, in `[noop-flash.workspace]`'s look, held while they push, or as a held key repeats
+    /// when `keyed`. The caller has asked `edge-flash`, or `[noop-flash.window]` for a binding: `[noop-flash.workspace]`
+    /// only says how it looks here.
+    private func flashStripEnd(on uuid: String, last: Bool, keyed: Bool = false) {
+        guard let screen = screenOfDisplay(uuid) else { return }
+        edgeGlow.flash(on: screen, .sides(last ? .right : .left), look: config.noopFlash.workspace, keyed: keyed)
     }
 
     /// Has the strip's windows follow it to where the fingers have it now: a window already moving bends towards its
