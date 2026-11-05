@@ -22,6 +22,7 @@ public struct Config: Equatable {
     public var followAppActivation = true
     /// Float standard windows whose fullscreen button is missing or disabled, as AeroSpace does.
     public var floatWindowsWithoutFullscreen = true
+    public var floatPosition = FloatPosition.normal
     /// What the menu bar item shows.
     public var menuBarIcon = MenuBarIcon.blocks
     /// When kex hides its menu bar item: never, always, or while only one display is connected.
@@ -130,6 +131,7 @@ public struct Config: Equatable {
         }
         followAppActivation = try t.bool("follow-app-activation") ?? followAppActivation
         floatWindowsWithoutFullscreen = try t.bool("float-windows-without-fullscreen") ?? floatWindowsWithoutFullscreen
+        floatPosition = try t.choice("float-position") ?? floatPosition
         menuBarIcon = try t.choice("menu-bar-icon") ?? menuBarIcon
         hideMenuBarIcon = try t.choice("hide-menu-bar-icon") ?? hideMenuBarIcon
         scriptingAddition = try t.bool("scripting-addition") ?? scriptingAddition
@@ -352,6 +354,11 @@ public enum SwitcherTrigger: String, CaseIterable {
 /// How the switcher shows a tiles or fixed workspace: a map of its tiles, or a row like a strip's.
 public enum SwitcherTilesStyle: String, CaseIterable {
     case map, row
+}
+
+/// Where a new window that floats opens: `normal` where its app put it, `center` in the middle of its display.
+public enum FloatPosition: String, CaseIterable {
+    case normal, center
 }
 
 /// Where a window floated from the window switcher's row goes: the middle of its display, or nowhere.

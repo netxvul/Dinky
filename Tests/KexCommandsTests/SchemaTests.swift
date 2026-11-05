@@ -84,6 +84,7 @@ struct SchemaTests {
         #expect(layouts["enum"] as! [String] == SwitcherLayoutKind.allCases.map(\.rawValue))
         #expect(switcher["tiles-style"]!["enum"] as! [String] == SwitcherTilesStyle.allCases.map(\.rawValue))
         #expect(switcher["float-position"]!["enum"] as! [String] == SwitcherFloatPosition.allCases.map(\.rawValue))
+        #expect(properties["float-position"]!["enum"] as! [String] == FloatPosition.allCases.map(\.rawValue))
         #expect(switcher["position"]!["enum"] as! [String] == SwitcherPosition.allCases.map(\.rawValue))
         let shared = properties["switcher"]!["properties"] as! [String: [String: Any]]
         #expect(shared["position"]!["enum"] as! [String] == SwitcherPosition.allCases.map(\.rawValue))
@@ -142,6 +143,7 @@ struct SchemaTests {
         default-tiling = true
         follow-app-activation = false
         float-windows-without-fullscreen = false
+        float-position = 'center'
         menu-bar-icon = 'text'
         hide-menu-bar-icon = 'always'
         scripting-addition = false

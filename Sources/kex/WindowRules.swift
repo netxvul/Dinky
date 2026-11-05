@@ -40,6 +40,7 @@ extension Coordinator {
         // they left it, and running them again would move it, resize it and follow it about. `pin` and `unpin` run
         // for it all the same: pins are not kept across a restart, and a rule is how they come back.
         let isNew = window.identity.firstSeen > model.seededAt
+        var commands: [(rule: WindowRule, command: Command, holdsNow: Bool)] = []
         for rule in config.rules(for: window, kind: kind, title: title, element: element) {
             let holdsNow = !rule.asksWorkspace || matchesWorkspace(rule, space: window.spaceID)
             for command in rule.run.compactMap({ try? Command.parse($0) }) {
@@ -49,16 +50,7 @@ extension Coordinator {
                 default:
                     if holdsNow, case .grid = command { floats = true }
                     guard isNew || command.isPin else { continue }
-                    if holdsNow { runsRules = true }
-                    DispatchQueue.main.async { [weak self] in
-                        guard let self else { return }
-                        if rule.asksWorkspace {
-                            let space = kex_window_space_id(window.id)
-                            guard matchesWorkspace(rule, space: space != 0 ? space : window.spaceID) else { return }
-                        }
-                        let reply = Dispatcher.run(command, window: window.id)
-                        if !reply.ok { fputs("rule: \(reply.text)\n", stderr) }
-                    }
+                    commands.append((rule, command, holdsNow))
                 }
             }
         }
@@ -67,7 +59,58 @@ extension Coordinator {
         let floating = kind != .normal || !resizable.boolValue
             || (floats ?? (InputMethodApps.contains(window.pid)
                 || config.floatWindowsWithoutFullscreen && lacksFullscreen(element, bundleID: window.bundleID)))
+        for (rule, command, holdsNow) in commands {
+            // A rule sizing an app's column says nothing of the windows of that app that float on their own, such as
+            // its settings: they stay where the app put them. One a rule floats takes the size, as it asked.
+            if case .cycleSize = command, floating, floats != true { continue }
+            if holdsNow { runsRules = true }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if rule.asksWorkspace {
+                    let space = kex_window_space_id(window.id)
+                    guard matchesWorkspace(rule, space: space != 0 ? space : window.spaceID) else { return }
+                }
+                let reply = Dispatcher.run(command, window: window.id)
+                if !reply.ok { fputs("rule: \(reply.text)\n", stderr) }
+            }
+        }
+        // Sheets and panels stay with what they belong to; a rule that places the window has the last word.
+        let placedByRule = commands.contains { entry in
+            guard entry.holdsNow else { return false }
+            switch entry.command {
+            case .grid, .cycleSize, .move: return true
+            default: return false
+            }
+        }
+        if config.floatPosition == .center, isNew, floating, kind == .normal || kind == .dialog, !placedByRule {
+            centeringOnOpen.insert(window.id)
+            // After the rules queued above, which may take it to another display.
+            DispatchQueue.main.async { [weak self] in self?.centerOnOpen(window.id) }
+        }
         return (floating, runsRules)
+    }
+
+    /// Puts a new floating window in the middle of its display, at once: it has only just appeared, so a glide would
+    /// show as the window sliding away from where it opened. Moving to the focused display, it goes when it arrives.
+    /// One larger than the display's area, such as a screenshot tool's overlay, stays.
+    func centerOnOpen(_ id: WindowID) {
+        guard centeringOnOpen.contains(id), !adopting.contains(id) else { return }
+        centeringOnOpen.remove(id)
+        guard !isOnFreeWorkspace(id), placements[id]?.floating == true,
+              let display = displays.display(ofWindow: id), let frame = floatingFrame(of: id) else { return }
+        let area = gaps(on: display).inset(display.visibleArea)
+        guard frame.width <= area.width, frame.height <= area.height else { return }
+        let target = FloatingFrame.centered(frame.size, atMost: 1, in: area)
+        if target != frame { placeFloating(id, at: target, animated: false) }
+    }
+
+    /// Whether the app lets the window's size be set. True when that cannot be read, so the attempt decides.
+    func isResizable(_ id: WindowID) -> Bool {
+        guard let window = model.windows[id],
+              let element = axWindow(pid: window.pid, wid: id, timeout: FrameApplier.timeout) else { return true }
+        var settable: DarwinBoolean = false
+        guard AXUIElementIsAttributeSettable(element, kAXSizeAttribute as CFString, &settable) == .success else { return true }
+        return settable.boolValue
     }
 }
 

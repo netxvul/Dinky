@@ -58,6 +58,12 @@
       "default": true,
       "description": "When Cmd-Tab or a Dock click activates an app on another Space, switch there with the fast switch."
     },
+    "float-position": {
+      "type": "string",
+      "enum": ["normal", "center"],
+      "default": "normal",
+      "description": "Where a new window that floats opens: normal, where its app put it, or center, in the middle of its display's visible area."
+    },
     "float-windows-without-fullscreen": {
       "type": "boolean",
       "default": true,

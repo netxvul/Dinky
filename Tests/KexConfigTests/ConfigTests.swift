@@ -12,6 +12,7 @@ struct ConfigTests {
         #expect(config.defaultTiling)
         #expect(config.followAppActivation)
         #expect(config.floatWindowsWithoutFullscreen)
+        #expect(config.floatPosition == .normal)
         #expect(config.menuBarIcon == .blocks)
         #expect(config.accordion.padding == 30)
         #expect(config.accordion.orientation == .auto)
@@ -55,6 +56,7 @@ struct ConfigTests {
         default-layout = 'accordion'
         follow-app-activation = false
         float-windows-without-fullscreen = false
+        float-position = 'center'
         menu-bar-icon = 'text'
         hide-menu-bar-icon = 'single-display'
         scripting-addition = false
@@ -64,6 +66,7 @@ struct ConfigTests {
         #expect(config.defaultLayout == .accordion)
         #expect(!config.followAppActivation)
         #expect(!config.floatWindowsWithoutFullscreen)
+        #expect(config.floatPosition == .center)
         #expect(config.menuBarIcon == .text)
         #expect(config.hideMenuBarIcon == .singleDisplay)
         #expect(!config.scriptingAddition)

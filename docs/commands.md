@@ -62,7 +62,7 @@ size it. With animations on, it glides.
 | `move <direction> [<points>]` | Moves it that many points, or [`[floating] move-step`](configuration.md#floating) (50 by default) without a number, the same size. It stops at the edge of the display's visible area, inside the outer gaps. A tile ignores the number. |
 | `resize width\|height <+n\|-n>` | Grows or shrinks it by n points along that axis, about its centre, so a centred window stays centred, or from its top-left corner with [`[floating] resize-anchor = 'top-left'`](configuration.md#floating). |
 | `resize smart <+n\|-n>` | The same, in both width and height. |
-| `cycle-size <percent>...` | Centres it at the next of the sizes, that share of the visible area's width and height inside the outer gaps. |
+| `cycle-size <percent>...` | Centres it at the next of the sizes, that share of the visible area's width and height inside the outer gaps. An error for a window whose app does not let its size change, which stays where it is. |
 | `fullscreen` | Fills the display's visible area inside the outer gaps, as fullscreen does for a tile. Again, it goes back to where it was. The place is remembered until Kex quits. |
 | `balance-sizes`, `flatten-workspace-tree` | Act on the tiles of its workspace. |
 | `join-with <direction>` | An error: a floating window has no neighbour in the tree. Tile it first. On a [free](configuration.md#workspacenumber) workspace, where nothing tiles, it answers that the workspace is free. |
@@ -216,7 +216,7 @@ alt-c = 'cycle-size 50% 30% 60%'
 
 | Window | What changes |
 |---|---|
-| Floating | Centred on its display at that share of the visible area's width and height, inside the outer gaps. |
+| Floating | Centred on its display at that share of the visible area's width and height, inside the outer gaps. A window whose app does not let its size change stays where it is, and the command answers with an error. |
 | Tile | Its width, along the nearest container whose tiles sit side by side; its siblings give or take the difference as `resize width` has them. A window with no side-by-side neighbour has nothing to resize. |
 | Scrolling column | The column's width, as a share of the screen. A lone column always fills the screen, or the band beside a pin. |
 
