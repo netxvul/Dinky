@@ -370,11 +370,6 @@ enabled = false
 spread = 160
 ```
 
-The older `[borders]` keys `noop-flash`, `noop-flash-color`, `noop-flash-width`,
-`noop-flash-spread` and `noop-flash-opacity` still set what `[noop-flash]` leaves
-out, and `[hud] on-noop` is still accepted and does nothing; `kex doctor` warns
-about them all.
-
 ## `[focus-follows-mouse]`
 
 <div class="wide-table" markdown="1">

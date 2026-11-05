@@ -150,7 +150,7 @@ public struct Config: Equatable {
             }
         }
         borders = try Borders(t.table("borders"), highlight: highlightColor)
-        noopFlash = try NoopFlash(t.table("noop-flash"), retired: borders.retiredNoopFlash, highlight: highlightColor)
+        noopFlash = try NoopFlash(t.table("noop-flash"), highlight: highlightColor)
         focusFollowsMouse = try t.table("focus-follows-mouse").map(FocusFollowsMouse.init) ?? focusFollowsMouse
         animations = try t.table("animations").map(Animations.init) ?? animations
         drag = try t.table("drag").map(Drag.init) ?? drag
@@ -1010,10 +1010,6 @@ public struct Borders: Equatable {
     public var order = BorderOrder.below
     /// Bundle IDs whose windows get no border.
     public var excludeApps: [String] = []
-    /// `noop-flash` and `noop-flash-*`, moved to `[noop-flash]`, which takes them where it leaves a key out.
-    var retiredNoopFlash = NoopFlashKeys()
-    /// Whether the table sets any of those.
-    public var setsRetiredNoopFlash: Bool { !retiredNoopFlash.isEmpty }
     /// Whether a pinned column's shown windows get a ring of their own, borders on or off, focused or not.
     public var pinned = true
     /// The pinned windows' ring: the top-level `highlight-color` when the table leaves it out and that is set, else
@@ -1034,7 +1030,6 @@ public struct Borders: Equatable {
         inactiveColor = try t.color("inactive-color") ?? inactiveColor
         order = try t.choice("order") ?? order
         excludeApps = try t.strings("exclude-apps") ?? excludeApps
-        retiredNoopFlash = try NoopFlashKeys(t, enabled: "noop-flash", prefix: "noop-flash-")
         pinned = try t.bool("pinned") ?? pinned
         pinnedColor = try t.highlight("pinned-color") ?? pinnedColor
         pinnedWidth = try t.double("pinned-width") ?? pinnedWidth
@@ -1163,8 +1158,6 @@ public struct Hud: Equatable {
     public var onModeChange = true
     /// Shown when a display moves to another workspace, with that workspace's layout.
     public var onWorkspaceChange = true
-    /// Whether the table still sets `on-noop`, which no longer does anything, as the noop flash says it all.
-    public var retiredOnNoop = false
 
     public init() {}
 
@@ -1178,7 +1171,6 @@ public struct Hud: Equatable {
         onLayoutChange = try t.bool("on-layout-change") ?? onLayoutChange
         onModeChange = try t.bool("on-mode-change") ?? onModeChange
         onWorkspaceChange = try t.bool("on-workspace-change") ?? onWorkspaceChange
-        retiredOnNoop = t.retired("on-noop")
         try t.done()
     }
 }

@@ -5,8 +5,8 @@
 ### New
 
 - The noop flash now shows how far what a binding found missing reaches, with no capsule. The focused window's edge glows for what a window could not do, as before. The focused display's right or left side glows for `workspace next` or `prev` with no workspace that way, and both sides for one with no direction, such as a workspace number past `workspaces`. All four edges of a display glow, as one ring over the menu bar and the Dock, for no display to go to, or for `move-window-to-display` to one showing a full-screen app.
-- New `[noop-flash]` table: `enabled`, `color`, `width`, `spread` and `opacity`, and `[noop-flash.window]`, `[noop-flash.workspace]` and `[noop-flash.display]` to set them for one level. A strip's end, pushed past, glows in `[noop-flash.workspace]`'s look. `[borders] noop-flash`, `noop-flash-color`, `noop-flash-width`, `noop-flash-spread` and `noop-flash-opacity` still set what `[noop-flash]` leaves out, and `kex doctor` warns about them.
-- `[hud] on-noop` is gone: it is accepted and does nothing, with a warning from `kex doctor`. The flash says what the capsule did.
+- New `[noop-flash]` table: `enabled`, `color`, `width`, `spread` and `opacity`, and `[noop-flash.window]`, `[noop-flash.workspace]` and `[noop-flash.display]` to set them for one level. A strip's end, pushed past, glows in `[noop-flash.workspace]`'s look. It replaces `[borders] noop-flash`, `noop-flash-color`, `noop-flash-width`, `noop-flash-spread` and `noop-flash-opacity`, which are now unknown keys: move them there.
+- `[hud] on-noop` is gone, and is now an unknown key: remove it. The flash says what the capsule did.
 - `float-position = 'center'` opens new floating standard windows and dialogs in the middle of their display, at their own size. The default, `'normal'`, leaves them where their app put them.
 
 ### Fixes

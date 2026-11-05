@@ -237,11 +237,6 @@
           "default": [],
           "description": "Bundle IDs whose windows get no border."
         },
-        "noop-flash": { "type": "boolean", "deprecated": true, "description": "Moved to [noop-flash] enabled, which takes this where it leaves it unset." },
-        "noop-flash-color": { "$ref": "#/definitions/highlight", "deprecated": true, "description": "Moved to [noop-flash] color, which takes this where it leaves it unset." },
-        "noop-flash-width": { "type": "number", "minimum": 0, "maximum": 8, "deprecated": true, "description": "Moved to [noop-flash] width, which takes this where it leaves it unset." },
-        "noop-flash-spread": { "type": "number", "minimum": 8, "maximum": 160, "deprecated": true, "description": "Moved to [noop-flash] spread, which takes this where it leaves it unset." },
-        "noop-flash-opacity": { "type": "number", "minimum": 0, "maximum": 1, "deprecated": true, "description": "Moved to [noop-flash] opacity, which takes this where it leaves it unset." },
         "pinned": { "type": "boolean", "default": true, "description": "Ring the windows of a pinned column in pinned-color, focused or not. Drawn even when borders are off." },
         "pinned-color": { "$ref": "#/definitions/highlight", "description": "Colour of the pinned windows' ring. Unset, the top-level highlight-color, or #d97757 (Claude's orange) without one." },
         "pinned-width": { "type": "number", "minimum": 0, "maximum": 8, "default": 2, "description": "The pinned windows' ring, in points; 0 leaves it out." }
@@ -605,8 +600,7 @@
         "offset": { "type": "number", "minimum": 0, "maximum": 200, "default": 16, "description": "Points between the capsule and the Dock or menu bar." },
         "on-layout-change": { "type": "boolean", "default": true, "description": "Show it after the layout command." },
         "on-mode-change": { "type": "boolean", "default": true, "description": "Show it when the binding mode changes." },
-        "on-workspace-change": { "type": "boolean", "default": true, "description": "Show the workspace's number and layout when a display moves to another workspace." },
-        "on-noop": { "type": "boolean", "deprecated": true, "description": "No longer does anything: a binding that does nothing shows it with [noop-flash] alone." }
+        "on-workspace-change": { "type": "boolean", "default": true, "description": "Show the workspace's number and layout when a display moves to another workspace." }
       }
     },
     "gestures": {

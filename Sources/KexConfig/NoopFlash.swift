@@ -37,9 +37,8 @@ public struct NoopFlash: Equatable {
 
     public init() {}
 
-    /// `retired` is what `[borders]` still sets from before this table, which `t` goes over.
-    init(_ t: Table?, retired: NoopFlashKeys, highlight: Highlight?) throws {
-        let shared = try (t.map { try NoopFlashKeys($0) } ?? NoopFlashKeys()).over(retired)
+    init(_ t: Table?, highlight: Highlight?) throws {
+        let shared = try t.map { try NoopFlashKeys($0) } ?? NoopFlashKeys()
         func level(_ key: String) throws -> Look {
             guard let table = try t?.table(key) else { return Look(NoopFlashKeys(), shared: shared, highlight: highlight) }
             let own = try NoopFlashKeys(table)
@@ -53,9 +52,8 @@ public struct NoopFlash: Equatable {
     }
 }
 
-/// What one table of noop flash settings sets, nil where it leaves a key out. `[borders]` spells them `noop-flash`,
-/// `noop-flash-color` and so on, from before `[noop-flash]`.
-struct NoopFlashKeys: Equatable {
+/// What one table of noop flash settings sets, nil where it leaves a key out.
+struct NoopFlashKeys {
     var enabled: Bool?
     var color: Highlight?
     var width: Double?
@@ -64,27 +62,14 @@ struct NoopFlashKeys: Equatable {
 
     init() {}
 
-    init(_ t: Table, enabled enabledKey: String = "enabled", prefix: String = "") throws {
-        enabled = try t.bool(enabledKey)
-        color = try t.highlight(prefix + "color")
-        width = try t.double(prefix + "width")
-        spread = try t.double(prefix + "spread")
-        opacity = try t.double(prefix + "opacity")
-        if let width, !(0...8).contains(width) { throw ConfigError(path: t.path(prefix + "width"), "must be 0 to 8") }
-        if let spread, !(8...160).contains(spread) { throw ConfigError(path: t.path(prefix + "spread"), "must be 8 to 160") }
-        if let opacity, !(0...1).contains(opacity) { throw ConfigError(path: t.path(prefix + "opacity"), "must be 0 to 1") }
-    }
-
-    var isEmpty: Bool { self == NoopFlashKeys() }
-
-    /// These keys, and for those left out, `other`'s.
-    func over(_ other: NoopFlashKeys) -> NoopFlashKeys {
-        var keys = self
-        keys.enabled = enabled ?? other.enabled
-        keys.color = color ?? other.color
-        keys.width = width ?? other.width
-        keys.spread = spread ?? other.spread
-        keys.opacity = opacity ?? other.opacity
-        return keys
+    init(_ t: Table) throws {
+        enabled = try t.bool("enabled")
+        color = try t.highlight("color")
+        width = try t.double("width")
+        spread = try t.double("spread")
+        opacity = try t.double("opacity")
+        if let width, !(0...8).contains(width) { throw ConfigError(path: t.path("width"), "must be 0 to 8") }
+        if let spread, !(8...160).contains(spread) { throw ConfigError(path: t.path("spread"), "must be 8 to 160") }
+        if let opacity, !(0...1).contains(opacity) { throw ConfigError(path: t.path("opacity"), "must be 0 to 1") }
     }
 }

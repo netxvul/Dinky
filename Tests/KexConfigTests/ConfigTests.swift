@@ -723,52 +723,13 @@ struct ConfigTests {
         }
     }
 
-    @Test func `Old noop flash keys`() throws {
-        // [borders]' keys fill in what [noop-flash] leaves out, and go over highlight-color.
-        let old = try Config.parse("""
-        highlight-color = '#59168b'
-        [borders]
-        noop-flash = false
-        noop-flash-color = 'accent'
-        noop-flash-width = 0
-        noop-flash-spread = 8
-        noop-flash-opacity = 0
-        """)
-        #expect(old.borders.setsRetiredNoopFlash)
-        #expect(!old.noopFlash.window.enabled && !old.noopFlash.workspace.enabled && !old.noopFlash.display.enabled)
-        for look in [old.noopFlash.window, old.noopFlash.workspace, old.noopFlash.display] {
-            #expect(look.color == .accent)
-            #expect(look.width == 0)
-            #expect(look.spread == 8)
-            #expect(look.opacity == 0)
+    @Test func `Old noop flash keys are gone`() {
+        for key in ["noop-flash = true", "noop-flash-color = 'accent'", "noop-flash-width = 2", "noop-flash-spread = 8",
+                    "noop-flash-opacity = 0"] {
+            let name = String(key.prefix { $0 != " " })
+            assertError("[borders]\n\(key)\n", path: "borders.\(name)", line: 2, contains: "unknown key")
         }
-        let both = try Config.parse("""
-        [borders]
-        noop-flash = false
-        noop-flash-width = 5
-        noop-flash-spread = 40
-        [noop-flash]
-        enabled = true
-        width = 1
-        [noop-flash.display]
-        spread = 20
-        """)
-        #expect(both.noopFlash.window.enabled)
-        #expect(both.noopFlash.window.width == 1)
-        #expect(both.noopFlash.window.spread == 40)
-        #expect(both.noopFlash.display.spread == 20)
-        #expect(try !Config.parse("[borders]\nwidth = 2\n").borders.setsRetiredNoopFlash)
-        // Accepted, and ignored.
-        #expect(try Config.parse("[hud]\non-noop = true\n").hud.retiredOnNoop)
-        #expect(try !Config.parse("[hud]\nenabled = true\n").hud.retiredOnNoop)
-
-        assertError("[borders]\nnoop-flash-width = -1\n", path: "borders.noop-flash-width", line: 2, contains: "0 to 8")
-        assertError("[borders]\nnoop-flash-spread = 7\n", path: "borders.noop-flash-spread", line: 2, contains: "8 to 160")
-        assertError("[borders]\nnoop-flash-opacity = 1.5\n", path: "borders.noop-flash-opacity", line: 2, contains: "0 to 1")
-        assertError("[borders]\nnoop-flash-color = 'pink'\n", path: "borders.noop-flash-color", line: 2, contains: "'pink' is not a colour")
-        // Gone with the glow that held at full between breaths, and with the one that breathed more than once.
-        assertError("[borders]\nnoop-flash-ms = 80\n", path: "borders.noop-flash-ms", line: 2, contains: "unknown key")
-        assertError("[borders]\nnoop-flash-count = 2\n", path: "borders.noop-flash-count", line: 2, contains: "unknown key")
+        assertError("[hud]\non-noop = true\n", path: "hud.on-noop", line: 2, contains: "unknown key")
     }
 
     @Test func `Pinned windows' ring`() throws {
