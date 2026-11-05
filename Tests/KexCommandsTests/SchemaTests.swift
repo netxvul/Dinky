@@ -431,6 +431,91 @@ struct SchemaTests {
         try covers(TOMLTable(source: Self.everyKey), Self.schema, at: "")
     }
 
+    /// Calls `visit` with the table and key of every scalar the schema names, in tables reached by name from the top.
+    private func scalars(_ schema: [String: Any], at table: String, _ visit: (String, String, [String: Any]) -> Void) {
+        for (key, child) in object(schema)["properties"] as? [String: [String: Any]] ?? [:] {
+            let node = object(child)
+            if node["properties"] != nil {
+                scalars(node, at: table.isEmpty ? key : "\(table).\(key)", visit)
+            } else {
+                visit(table, key, node)
+            }
+        }
+    }
+
+    /// The config that sets one key.
+    private func toml(_ table: String, _ key: String, _ value: String) -> String {
+        table.isEmpty ? "\(key) = \(value)\n" : "[\(table)]\n\(key) = \(value)\n"
+    }
+
+    private func parses(_ toml: String) -> Bool { (try? Config.parse(toml)) != nil }
+
+    /// Below zero means nothing for these, which the schema says and the config does not check.
+    private static let onlySchemaLimits: Set = ["accordion.padding", "borders.width", "gaps.inner.horizontal", "gaps.inner.vertical",
+                                                "gaps.outer.top", "gaps.outer.bottom", "gaps.outer.left", "gaps.outer.right"]
+
+    @Test func `Schema ranges are the config's`() {
+        scalars(Self.schema, at: "") { table, key, node in
+            let integer = node["type"] as? String == "integer"
+            let step = integer ? 1.0 : 0.01
+            func value(_ number: Double) -> String { integer ? String(Int(number)) : String(number) }
+            if let minimum = node["minimum"] as? Double {
+                #expect(parses(toml(table, key, value(minimum))), "\(table).\(key) = \(minimum)")
+                let here = table.isEmpty ? key : "\(table).\(key)"
+                if !Self.onlySchemaLimits.contains(here) {
+                    #expect(!parses(toml(table, key, value(minimum - step))), "\(here) below \(minimum)")
+                }
+            }
+            if let maximum = node["maximum"] as? Double {
+                #expect(parses(toml(table, key, value(maximum))), "\(table).\(key) = \(maximum)")
+                #expect(!parses(toml(table, key, value(maximum + step))), "\(table).\(key) above \(maximum)")
+            }
+        }
+    }
+
+    @Test func `Schema choices are the config's`() {
+        scalars(Self.schema, at: "") { table, key, node in
+            guard let choices = node["enum"] as? [String] else { return }
+            for choice in choices { #expect(parses(toml(table, key, "'\(choice)'")), "\(table).\(key) = \(choice)") }
+            #expect(!parses(toml(table, key, "'no-such-choice'")), "\(table).\(key)")
+        }
+    }
+
+    @Test func `Schema defaults are the shipped config's`() throws {
+        let shipped = try TOMLTable(source: Config.defaultTOML)
+        scalars(Self.schema, at: "") { table, key, node in
+            guard let expected = node["default"] else { return }
+            var here: TOMLTable? = shipped
+            if !table.isEmpty { for part in table.split(separator: ".") { here = try? here?.table(forKey: String(part)) } }
+            guard let here, here.contains(key: key) else { return }
+            switch expected {
+            case let text as String: #expect((try? here.string(forKey: key)) == text, "\(table).\(key)")
+            case let number as NSNumber where node["type"] as? String == "boolean":
+                #expect((try? here.bool(forKey: key)) == number.boolValue, "\(table).\(key)")
+            case let number as NSNumber:
+                let value = (try? here.integer(forKey: key)).map { Double($0) } ?? (try? here.float(forKey: key))
+                #expect(value == number.doubleValue, "\(table).\(key)")
+            default: break
+            }
+        }
+    }
+
+    /// `Schema and config know every key` catches what the schema has and the config does not, this the other way.
+    @Test func `Schema names every key the config reads`() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let schema = try String(contentsOf: root.appending(path: "docs/schemas/kex.json"), encoding: .utf8)
+        let sources = root.appending(path: "Sources/KexConfig")
+        let reads = try NSRegularExpression(pattern: #"\.(?:bool|int|ints|double|string|choice|highlight|color|strings|commands|stringOrStrings|intOrInts|table|tables)\("([a-z0-9-]+)"\)"#)
+        for file in try FileManager.default.contentsOfDirectory(at: sources, includingPropertiesForKeys: nil)
+        where file.lastPathComponent != "DefaultConfig.swift" {
+            let text = try String(contentsOf: file, encoding: .utf8) as NSString
+            for match in reads.matches(in: text as String, range: NSRange(location: 0, length: text.length)) {
+                let key = text.substring(with: match.range(at: 1))
+                #expect(schema.contains("\"\(key)\":"), "\(file.lastPathComponent): \(key)")
+            }
+        }
+    }
+
     /// Every key in `table` is in the schema, at the same path.
     private func check(_ table: TOMLTable, _ schema: [String: Any], at path: String) {
         let schema = object(schema)

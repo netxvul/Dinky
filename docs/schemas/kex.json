@@ -88,7 +88,7 @@
     },
     "highlight-color": {
       "$ref": "#/definitions/highlight",
-      "description": "What every highlight left unset takes: the switchers' pick, the focused window's border, the noop glow and a drag's preview. Unset, each keeps its own default."
+      "description": "What every highlight left unset takes: the switchers' pick, the focused window's border, the noop flash, a pinned window's ring and a drag's preview. Unset, each keeps its own default."
     },
     "haptic": { "type": "boolean", "default": true, "description": "Whether the trackpad taps for kex: what every haptic left unset takes, the strip's ticks ([gestures.scroll]), a bound swipe's tap ([gestures.trackpad]) and the switchers' picks ([switcher])." },
     "haptic-strength": { "$ref": "#/definitions/hapticStrength", "default": "medium", "description": "How strongly: what every haptic-strength left unset takes." },
@@ -257,7 +257,7 @@
         "enabled": { "type": "boolean", "default": true, "description": "false turns all three levels off, whatever their own tables say." },
         "color": { "$ref": "#/definitions/highlight", "description": "Colour of the ring at the edge and of the glow inside it. Unset, the top-level highlight-color, or #d97757 (Claude's orange) without one." },
         "width": { "type": "number", "minimum": 0, "maximum": 8, "default": 2, "description": "The ring at the edge, in points; 0 leaves it out." },
-        "spread": { "type": "number", "minimum": 8, "maximum": 160, "default": 100, "description": "How far the glow inside the ring reaches in, fading as it goes, in points." },
+        "spread": { "type": "number", "minimum": 8, "maximum": 160, "default": 100, "description": "How far the glow inside the ring reaches in, fading as it goes, in points, and at most a quarter of the window's shorter side, or of the display's." },
         "opacity": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.6, "description": "The glow's opacity at the edge, as a share of the colour's own; 0 leaves it out." },
         "window": { "$ref": "#/definitions/noopFlashLevel", "description": "The focused window's edge, for what a window could not do. Any key left out is [noop-flash]'s." },
         "workspace": { "$ref": "#/definitions/noopFlashLevel", "description": "The focused display's left and right sides, for no workspace to go to, and how a strip's end glows as it is pushed past. Any key left out is [noop-flash]'s." },
@@ -599,7 +599,7 @@
     "hud": {
       "type": "object",
       "additionalProperties": false,
-      "description": "A glass capsule naming the new layout or binding mode for a moment after it changes.",
+      "description": "A glass capsule naming the new layout, binding mode or workspace for a moment after it changes.",
       "properties": {
         "enabled": { "type": "boolean", "default": true, "description": "Show the capsule." },
         "position": { "enum": ["bottom", "top"], "default": "bottom", "description": "bottom: above the Dock, or near the bottom of the screen when the Dock hides or sits at a side. top: below the menu bar." },
@@ -662,7 +662,7 @@
             "speed": { "type": "number", "minimum": 0.25, "maximum": 5, "default": 1.5, "description": "How many screens the strip moves as the fingers cross the whole trackpad." },
             "show-switcher": { "type": "boolean", "default": true, "description": "Whether the window switcher shows the strip once it rests after the fingers let go, the window taking focus picked." },
             "switcher-ms": { "type": "integer", "minimum": 100, "maximum": 5000, "default": 1000, "description": "Milliseconds the window switcher shows the strip with show-switcher." },
-            "edge-flash": { "type": "boolean", "default": true, "description": "Whether the display glows along its left or right side as the fingers push the strip on past that end, in the noop flash's look." },
+            "edge-flash": { "type": "boolean", "default": true, "description": "Whether the display glows along its left or right side as the fingers push the strip on past that end, in [noop-flash.workspace]'s look." },
             "haptic": { "type": "boolean", "description": "Whether the trackpad ticks each time the column a let-go would settle on changes under the fingers. Unset, the top-level haptic." },
             "haptic-strength": { "$ref": "#/definitions/hapticStrength", "description": "How strongly. Unset, the top-level haptic-strength." }
           }
@@ -825,7 +825,7 @@
         "enabled": { "type": "boolean", "description": "false turns this level off. true does not bring it back from [noop-flash] enabled = false." },
         "color": { "$ref": "#/definitions/highlight", "description": "Colour of the ring at the edge and of the glow inside it. Unset, [noop-flash]'s, then the top-level highlight-color, or #d97757 (Claude's orange) without one." },
         "width": { "type": "number", "minimum": 0, "maximum": 8, "description": "The ring at the edge, in points; 0 leaves it out." },
-        "spread": { "type": "number", "minimum": 8, "maximum": 160, "description": "How far the glow inside the ring reaches in, fading as it goes, in points." },
+        "spread": { "type": "number", "minimum": 8, "maximum": 160, "description": "How far the glow inside the ring reaches in, fading as it goes, in points, and at most a quarter of the window's shorter side, or of the display's." },
         "opacity": { "type": "number", "minimum": 0, "maximum": 1, "description": "The glow's opacity at the edge, as a share of the colour's own; 0 leaves it out." }
       }
     },
