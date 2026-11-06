@@ -498,14 +498,21 @@ extension Workspace {
         // Across a seam, while fullscreen pushes too: the other display shows the strip as ever.
         let reaching: (left: Int?, right: Int?) = (pushed.isEmpty || spansDisplays) && freeScrollFrom == nil
             ? reachingWalls(edges, in: area) : (nil, nil)
+        // Beside a pin, where the sliver there is tucked under it as the strip rests (`parked`), the column in view
+        // nearest it reaches over the room the sliver leaves, up to a gap from the pin. Not while fingers scroll the
+        // strip, nor while fullscreen pushes.
+        let pinReach: (left: Int?, right: Int?) = pushed.isEmpty && freeScrollFrom == nil
+            ? reachingPins(edges, in: area) : (nil, nil)
         result.containerRects[[]] = inset
         let reach = stripInset
         for i in stripStackingOrder {
             let trail = i < last || beside.right ? gap / 2 : 0
             let x = area.minX + spans[i].start - offset
             // Beside a pin, still half a gap from its own half (only across a seam does a column reach towards a pin).
-            let a = i != reaching.left ? edges[i].left : beside.left ? (reach.minX + gap / 2).rounded() : reach.minX
-            let b = i != reaching.right ? edges[i].right : beside.right ? (reach.maxX - gap / 2).rounded() : reach.maxX
+            let a = i == reaching.left ? beside.left ? (reach.minX + gap / 2).rounded() : reach.minX
+                : i == pinReach.left ? (reach.minX + gap / 2).rounded() : edges[i].left
+            let b = i == reaching.right ? beside.right ? (reach.maxX - gap / 2).rounded() : reach.maxX
+                : i == pinReach.right ? (reach.maxX - gap / 2).rounded() : edges[i].right
             // A pinned column stays at its side whatever the scroll. Across a seam, as tall as the display it is on; with
             // `spanHeight` `atRest`, while fingers hold the strip, the one it was on as they took hold.
             let held = spanHeight == .atRest && band.contains(i)
@@ -583,6 +590,46 @@ extension Workspace {
                 && reaches(inset.maxX - edges[i].right - (beside.right ? half : 0)) ? i : nil
         }
         return (left, right)
+    }
+
+    /// The column in view nearest each pin that reaches over the room a sliver tucked under that pin leaves (see
+    /// `straddlingPins`), out to a whole gap from the pin, its other edge where it is. Only less room than the narrowest
+    /// column takes (`reachesOver`), and only a column whose windows go that wide (`maximumWidths`). Not on a side with
+    /// a wall, where nothing tucks, nor where the column in view reaches out to the wall there (`reachingWalls`).
+    /// `edges` are each column's window edges where the strip has it.
+    func reachingPins(_ edges: [(left: CGFloat, right: CGFloat)], in area: CGRect) -> (left: Int?, right: Int?) {
+        guard hasPins, gaps.horizontal > 0 else { return (nil, nil) }
+        let inset = stripInset, band = bandRange, half = gaps.horizontal / 2, beside = bandNeighbours
+        // Where a column reaches to beside the pin; in view, as far as the band goes on the other side, where the end
+        // column there reaches the outer gap.
+        let start = (inset.minX + half).rounded(), end = (inset.maxX - half).rounded()
+        let inView = band.filter {
+            edges[$0].left >= (beside.left ? start : inset.minX) - 1 && edges[$0].right <= (beside.right ? end : inset.maxX) + 1
+        }
+        func reaching(_ side: PinSide) -> Int? {
+            guard let p = pinnedIndex(side), !walls.contains(side.direction) else { return nil }
+            let pin = pinRect(p)
+            let sliver = band.contains { j in
+                !hangsUnderPin(column: j) && sliverBeside(pin, side, left: edges[j].left, right: edges[j].right, in: area)
+            }
+            guard sliver, let i = side == .left ? inView.first : inView.last else { return nil }
+            let room = side == .left ? edges[i].left - start : end - edges[i].right
+            guard room > 0.5, reachesOver(room, in: area) else { return nil }
+            let width = side == .left ? edges[i].right - start : end - edges[i].left
+            let capped = root.children[i].windows.contains { maximumWidths[$0].map { $0 < width - 0.5 } ?? false }
+            return capped ? nil : i
+        }
+        return (reaching(.left), reaching(.right))
+    }
+
+    /// Whether a band window or column from `left` to `right` is a sliver beside `pin` on `side`, the rest of it
+    /// under the pin: part of it in the gap between the pin and the band, less of it there than the narrowest column
+    /// takes (`reachesOver`).
+    private func sliverBeside(_ pin: CGRect, _ side: PinSide, left: CGFloat, right: CGFloat, in area: CGRect) -> Bool {
+        let inset = stripInset, half = gaps.horizontal / 2
+        return side == .left
+            ? left < inset.minX + half - 0.5 && right > pin.maxX + 0.5 && reachesOver(right - pin.maxX, in: area)
+            : right > inset.maxX - half + 0.5 && left < pin.minX - 0.5 && reachesOver(pin.minX - left, in: area)
     }
 
     /// Scrolling: the strip's frames before parking, at the current scroll offset. Gliding these and parking them
@@ -765,7 +812,7 @@ extension Workspace {
                                 hanging: Set<WindowID>) -> [WindowID: PinSide] {
         // With no gap there is none to cover, and a column partly in view beside the pin shows as at any edge.
         guard hasPins, freeScrollFrom == nil, gaps.horizontal > 0 else { return [:] }
-        let inset = stripInset, half = gaps.horizontal / 2, area = stripArea
+        let area = stripArea
         let left = pinnedIndex(.left).flatMap { walls.contains(.left) ? nil : pinRect($0) }
         let right = pinnedIndex(.right).flatMap { walls.contains(.right) ? nil : pinRect($0) }
         guard left != nil || right != nil else { return [:] }
@@ -776,11 +823,9 @@ extension Workspace {
                 if let rest = resting?[id], abs(rest.minX - frame.minX) > 0.5 { continue }
                 // Only a sliver, which the column in view could have reached over (`reachesOver`): more of a column
                 // beside the pin is a column's worth, and tucking it would leave that room bare.
-                if let pin = left, frame.minX < inset.minX + half - 0.5, frame.maxX > pin.maxX + 0.5,
-                   reachesOver(frame.maxX - pin.maxX, in: area) {
+                if let pin = left, sliverBeside(pin, .left, left: frame.minX, right: frame.maxX, in: area) {
                     result[id] = .left
-                } else if let pin = right, frame.maxX > inset.maxX - half + 0.5, frame.minX < pin.minX - 0.5,
-                          reachesOver(pin.minX - frame.minX, in: area) {
+                } else if let pin = right, sliverBeside(pin, .right, left: frame.minX, right: frame.maxX, in: area) {
                     result[id] = .right
                 }
             }
