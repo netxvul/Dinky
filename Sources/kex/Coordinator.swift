@@ -152,6 +152,10 @@ final class Coordinator {
     /// Pins kex raised while their app was in the background: raising made each its app's main window, so the app
     /// coming to the front would open on it rather than on the window the user had (see `syncFocus`).
     private var raisedInBackground: Set<WindowID> = []
+    /// A parked window macOS made its app's focused one as a click landed on another window of that app kex does not
+    /// place, as a browser's picture in picture video: the strip stays where it is while focus stays there
+    /// (`parkedBehindClick`).
+    private var heldBehindClick: WindowID?
     /// The last pin `frontWindow` read in front, the window its app had focused, and when.
     private var frontRead: (read: WindowID, focused: WindowID, at: CFTimeInterval)?
     /// Watches the left button come up anywhere, for a click into a pin (see `start`).
@@ -1335,6 +1339,20 @@ final class Coordinator {
         return info.lazy.compactMap { $0[kCGWindowNumber as String] as? UInt32 }.first(where: shows)
     }
 
+    /// The window of app `pid` a click landed on, which made `id`, a column parked off a strip that shows, its focused
+    /// window: one kex does not place, floating over the strip, as a picture in picture video. Clicking or dragging the
+    /// video activates the browser, whose focused window is then the tab's, parked; scrolling the strip to it would take
+    /// the user away from what they were watching it over. Nil without a click, where the click landed on `id` itself
+    /// or on a window kex places, which takes focus itself, and where `id` is in view.
+    private func parkedBehindClick(_ id: WindowID, of pid: pid_t) -> WindowID? {
+        guard clickUnderWay(within: 0.3), let key = placements[id]?.space, isVisible(key),
+              let workspace = workspaces[key], workspace.isScrolling, workspace.focused != id, !workspace.isInView(id),
+              let pointer = CGEvent(source: nil)?.location,
+              let clicked = frontmostWindow(at: pointer, in: onScreenWindowInfo()),
+              clicked.pid == pid, clicked.id != id, placements[clicked.id] == nil else { return nil }
+        return clicked.id
+    }
+
     /// Follows focus into the trees, so new windows land beside the focused one and accordions show it.
     private func syncFocus(fresh: Bool = false, whileMoving: Bool = false) {
         let id = frontWindow(fresh: fresh, whileMoving: whileMoving)
@@ -1365,7 +1383,13 @@ final class Coordinator {
             if let key = placements[id]?.space, let workspace = workspaces[key] { telemetry.passedOver(key, workspace, id) }
             return
         }
+        if id != heldBehindClick { heldBehindClick = nil }
         if id != lastFocused, let pid = model.windows[id]?.pid {
+            if let clicked = parkedBehindClick(id, of: pid) {
+                heldBehindClick = id
+                if let key = placements[id]?.space { telemetry.command(key, "click on \(clicked) focused \(id) parked") }
+                print("\(stamp()) focus: \(id) of \(pid) is parked, the click landed on its window \(clicked): the strip stays")
+            }
             // Its app came to the front on a pin kex raised meanwhile, not one the user chose: back to the window they
             // had. A click on the pin is theirs.
             if raisedInBackground.contains(id), focusing?.id != id, !clickUnderWay(within: 0.3), let used = lastUsed[pid],
@@ -1375,7 +1399,7 @@ final class Coordinator {
                 return focus(used)
             }
             raisedInBackground = raisedInBackground.filter { model.windows[$0]?.pid != pid }
-            if let shown = shownInPlaceOfParked(id, of: pid) {
+            if heldBehindClick != id, let shown = shownInPlaceOfParked(id, of: pid) {
                 if let key = placements[id]?.space { telemetry.command(key, "macOS activated \(id) parked, \(shown) shows") }
                 print("\(stamp()) focus: \(id) of \(pid) is parked, \(shown) of its app shows: focused that")
                 return focus(shown)
@@ -1400,6 +1424,8 @@ final class Coordinator {
         // The window kex is about to activate, read as focused before it is: only its activation, or giving up on
         // it, ends that.
         if let focusing, focusing.id == id, !focusing.activated, Date() < focusing.until {} else { focusing = nil }
+        // Focus went to a parked window by a click on another window of its app: the user did not ask for it to show.
+        if id == heldBehindClick { return }
         guard let key = placements[id]?.space, let workspace = workspaces[key], workspace.focused != id else { return }
         telemetry.focus(key, workspace, to: id, from: workspace.focused, click: clickUnderWay(within: 0.3))
         // While a click holds the pass, a strip stays where it shows, however focusing would scroll it, till
