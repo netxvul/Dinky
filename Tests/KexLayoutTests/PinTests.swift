@@ -174,6 +174,49 @@ struct PinGeometryTests {
         #expect(right.layout().frames[end.key]!.minX == end.value.minX)
     }
 
+    @Test func `Gliding to where it rests a sliver beside a pin, a window slides on under the pin, no jump in view`() throws {
+        for side in [PinSide.left, .right] {
+            let pinnedID: WindowID = side == .left ? 1 : 8
+            var ws = try pinned(strip(8, gaps: spaced), pinnedID, side)
+            let pin = ws.pinRect(side == .left ? 0 : 7)
+            ws.focus(side == .left ? 7 : 2)
+            let from = frames(ws)
+            ws.focus(side == .left ? 8 : 1)
+            let to = frames(ws)
+            // The one that rests a sliver beside the pin, tucked under it at rest.
+            let sliver = try #require(to.first { id, f in
+                id != pinnedID && (side == .left ? f.minX < pin.maxX && f.maxX > pin.maxX + 0.5
+                    : f.maxX > pin.minX && f.minX < pin.minX - 0.5)
+            }).key
+            let steps = 60
+            var last: CGRect?
+            for step in 0...steps {
+                let t = CGFloat(step) / CGFloat(steps)
+                let now = from.merging(to) { a, b in
+                    CGRect(x: a.minX + (b.minX - a.minX) * t, y: b.minY, width: a.width + (b.width - a.width) * t, height: b.height)
+                }
+                let placed = ws.placeStrip(now, resting: to)[sliver]!
+                let shown = side == .left ? placed.maxX > pin.maxX + 0.5 : placed.minX < pin.minX - 0.5
+                if let last, shown {
+                    // While it shows in the band it moves about as the strip does, never jumping.
+                    let strip = abs((to[sliver]!.minX - from[sliver]!.minX) / CGFloat(steps))
+                    #expect(abs(placed.minX - last.minX) <= strip * 1.1 + 1, "\(side) step \(step): \(last) to \(placed)")
+                }
+                if !shown, let last {
+                    let wasShown = side == .left ? last.maxX > pin.maxX + 0.5 : last.minX < pin.minX - 0.5
+                    if wasShown {
+                        // The last frame it showed in was a step from under the pin.
+                        let beyond = side == .left ? last.maxX - pin.maxX : pin.minX - last.minX
+                        let strip = abs((to[sliver]!.minX - from[sliver]!.minX) / CGFloat(steps))
+                        #expect(beyond <= strip * 1.1 + 1, "\(side) step \(step): left the band from \(last)")
+                    }
+                }
+                last = placed
+            }
+            #expect(!(side == .left ? last!.maxX > pin.maxX : last!.minX < pin.minX), "\(side): tucked at rest")
+        }
+    }
+
     @Test func `A lone band column and a pushed one keep a whole gap from the pin`() throws {
         let lone = try pinned(strip(2, gaps: spaced), 1, .left)
         #expect(frames(lone)[2]!.minX == lone.pinRect(0).maxX + 10)
