@@ -3,7 +3,7 @@ import CoreGraphics
 // What a scrolling strip held, kept across a restart of kex, which finds the same windows open but none of its trees.
 // Each window goes back as it arrives, whenever that is: on the first pass, after its app was slow to answer, or as its
 // Space first shows. It goes beside what is there of its neighbours, so anything the user did to the strip meanwhile
-// stays. Only the band: pins come back by rule.
+// stays. A pinned column is pinned again as the window that marked it comes back, unless its side is taken by then.
 
 /// A strip as it was: its columns in order, their widths, and where it was scrolled to.
 public struct StripMemory: Codable, Equatable, Sendable {
@@ -15,11 +15,21 @@ public struct StripMemory: Codable, Equatable, Sendable {
         public var mode: LayoutMode?
     }
 
+    /// A pinned column: the window marking it, and a window of the band columns it was pinned from either side of it.
+    public struct Pin: Codable, Equatable, Sendable {
+        public var side: PinSide
+        public var window: WindowID
+        public var before: WindowID?
+        public var after: WindowID?
+    }
+
     public var columns: [Column]
     /// The widths of columns away from the strip, minimized or hidden, for when they come back.
     public var departedWidths: [WindowID: Double]
     public var focused: WindowID?
     public var scrollOffset: CGFloat
+    /// The pinned columns; nil from a session written before pins were kept.
+    public var pins: [Pin]? = nil
 
     /// Every window it remembers, by its place in the strip, those away last.
     public var windows: [WindowID] {
@@ -36,6 +46,17 @@ public struct StripMemory: Codable, Equatable, Sendable {
         }
         kept.departedWidths = departedWidths.filter { ids.contains($0.key) }
         if let focused, !ids.contains(focused) { kept.focused = nil }
+        // A pin marked by a window gone is marked by another of its column's left, or goes with the column.
+        kept.pins = pins?.compactMap { pin in
+            var pin = pin
+            guard let window = ids.contains(pin.window) ? pin.window
+                    : columns.first(where: { $0.windows.contains(pin.window) })?.windows.first(where: ids.contains)
+            else { return nil }
+            pin.window = window
+            if let before = pin.before, !ids.contains(before) { pin.before = nil }
+            if let after = pin.after, !ids.contains(after) { pin.after = nil }
+            return pin
+        }
         return kept
     }
 }
@@ -50,7 +71,12 @@ extension Workspace {
             return .init(windows: root.children[index].windows, width: width(ofColumn: index),
                          orientation: stack?.orientation, mode: stack?.mode)
         }
-        return StripMemory(columns: columns, departedWidths: departedColumnWidths, focused: focused, scrollOffset: shownOffset)
+        let pinned = PinSide.allCases.compactMap { side -> StripMemory.Pin? in
+            guard pinnedIndex(side) != nil, let id = pins[side] else { return nil }
+            return .init(side: side, window: id, before: pinOrigins[side]?.before, after: pinOrigins[side]?.after)
+        }
+        return StripMemory(columns: columns, departedWidths: departedColumnWidths, focused: focused, scrollOffset: shownOffset,
+                           pins: pinned)
     }
 
     /// `arrive` for a window `memory` remembers: back in its column if another of that column's windows is here, else
@@ -63,7 +89,13 @@ extension Workspace {
         guard let place = memory.columns.firstIndex(where: { $0.windows.contains(id) }) else { return arrive(id) }
         let saved = memory.columns[place]
         let before = focused
-        if let column = saved.windows.compactMap({ bandIndex(of: $0) }).first {
+        // A pinned column's windows go back into it where it is pinned again.
+        let remembered = memory.pins?.first { saved.windows.contains($0.window) }
+        let home = { (other: WindowID) -> Int? in
+            self.bandIndex(of: other)
+                ?? remembered.flatMap { self.pinSide(of: other) == $0.side ? self.pinnedIndex($0.side) : nil }
+        }
+        if let column = saved.windows.compactMap(home).first {
             stack(id, into: column, like: saved)
         } else if let index = memory.slot(ofColumn: place, in: self) {
             root.insert(.window(id), at: index)
@@ -71,6 +103,12 @@ extension Workspace {
             insert(id)
         }
         columnWidths[id] = saved.width
+        // The window marking a pinned column pins it again, from between the columns it was pinned from, unless the
+        // side is taken by now, or the band would be left too little room.
+        if let remembered, remembered.window == id, pinnedIndex(remembered.side) == nil, pinSide(of: id) == nil,
+           pin(remembered.side, window: id) == .changed {
+            pinOrigins[remembered.side] = PinOrigin(before: remembered.before, after: remembered.after)
+        }
         if memory.focused == id {
             focus(id)
         } else if let before, focused != before {

@@ -103,6 +103,71 @@ struct StripMemoryTests {
         #expect(kept.windows == [2, 5])
     }
 
+    /// A strip of `ids` with `pinned`'s column pinned to `side`, in a workspace of real width for the band's room.
+    private func pinnedStrip(_ ids: [WindowID], _ pinned: WindowID, _ side: PinSide) -> Workspace {
+        var ws = Workspace(bounds: CGRect(x: 0, y: 0, width: 1000, height: 800), algorithm: .scrolling)
+        ws.columnWidth = 0.3
+        for id in ids { ws.insert(id) }
+        ws.focus(pinned)
+        let change = ws.pin(side)
+        #expect(change == .changed)
+        return ws
+    }
+
+    @Test(arguments: [[1, 2, 3, 4], [4, 3, 2, 1], [3, 1, 4, 2], [2, 4, 1, 3]] as [[WindowID]])
+    func `A pinned column is pinned again, whichever order the windows arrive in`(arrivals: [WindowID]) {
+        let source = pinnedStrip([1, 2, 3, 4], 2, .left)
+        let saved = source.stripMemory!
+        #expect(saved.pins == [.init(side: .left, window: 2, before: 1, after: 3)])
+        var ws = Workspace(bounds: source.bounds, algorithm: .scrolling)
+        for id in arrivals { ws.arrive(id, remembering: saved) }
+        #expect(ws.pins == [.left: 2])
+        #expect(columns(ws) == columns(source))
+        // Unpinned, it goes back between the columns it was pinned from.
+        let unpinned = ws.unpin(.left)
+        #expect(unpinned == .changed)
+        #expect(columns(ws) == [[1], [2], [3], [4]])
+    }
+
+    @Test func `A right pin comes back too, and a pinned stack together`() {
+        var source = pinnedStrip([1, 2, 3, 4], 4, .right)
+        source.focus(4)
+        source.insert(5)
+        source.focus(5)
+        let joined = source.join(.right)
+        #expect(joined)
+        #expect(source.pinSide(of: 5) == .right)
+        let saved = source.stripMemory!
+        var ws = Workspace(bounds: source.bounds, algorithm: .scrolling)
+        for id in [5, 1, 4, 3, 2] as [WindowID] { ws.arrive(id, remembering: saved) }
+        #expect(ws.pinSide(of: 4) == .right)
+        #expect(ws.pinSide(of: 5) == .right)
+        #expect(columns(ws) == columns(source))
+    }
+
+    @Test func `A pin whose side is taken by then, or whose windows are gone, is dropped`() {
+        let saved = pinnedStrip([1, 2, 3], 1, .left).stripMemory!
+        // Gone: nothing to pin.
+        #expect(saved.keeping([2, 3]).pins == [])
+        var ws = Workspace(bounds: CGRect(x: 0, y: 0, width: 1000, height: 800), algorithm: .scrolling)
+        ws.columnWidth = 0.3
+        ws.insert(9)
+        let change = ws.pin(.left)
+        #expect(change == .changed)
+        for id in [1, 2, 3] as [WindowID] { ws.arrive(id, remembering: saved) }
+        #expect(ws.pins == [.left: 9])
+        #expect(ws.pinSide(of: 1) == nil)
+    }
+
+    @Test func `A session written before pins were kept still reads`() throws {
+        var written = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(memory([[1]]))) as? [String: Any])
+        written["pins"] = nil
+        let old = try JSONSerialization.data(withJSONObject: written)
+        let read = try JSONDecoder().decode(StripMemory.self, from: old)
+        #expect(read.pins == nil)
+        #expect(read.columns.map(\.windows) == [[1]])
+    }
+
     @Test func `It survives being written out`() throws {
         var source = strip([1, 2, 3])
         source.focus(3)
@@ -111,5 +176,7 @@ struct StripMemoryTests {
         let saved = source.stripMemory!
         let read = try JSONDecoder().decode(StripMemory.self, from: JSONEncoder().encode(saved))
         #expect(read == saved)
+        let pinned = pinnedStrip([1, 2, 3], 1, .left).stripMemory!
+        #expect(try JSONDecoder().decode(StripMemory.self, from: JSONEncoder().encode(pinned)) == pinned)
     }
 }
