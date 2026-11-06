@@ -235,6 +235,10 @@ final class Coordinator {
     /// The width each window was last written at and the width it came out at, which an app that snaps its size
     /// leaves a little narrower. See `observedWidths(in:)`.
     private var landedWidths: [WindowID: (asked: CGFloat, got: CGFloat)] = [:]
+    /// The narrower width each tiled window came out at, asked for a wider one at the height it took, and whether a
+    /// second write saw it again: the widest it goes at that height, as a call window keeping its aspect ratio. See
+    /// `noteRefusedWidths(_:)`.
+    private var refusedWidths: [WindowID: (width: CGFloat, height: CGFloat, confirmed: Bool)] = [:]
     /// By scrolling tree, a glide driven by the Dock scripting addition: the windows it holds transformed and the
     /// layout it is gliding to, so a superseding pass clears those transforms. See ScriptingAddition.
     private var saGlides: [UInt64: (token: Int, ids: [WindowID], carry: GlideCarry)] = [:]
@@ -1005,6 +1009,7 @@ final class Coordinator {
         applier.forget(id)
         animator.forget(id)
         landedWidths[id] = nil
+        refusedWidths[id] = nil
         unreachable[id] = nil
         unread[id] = nil
         heldTabs[id] = nil
@@ -2286,6 +2291,7 @@ final class Coordinator {
         guard var workspace = shownByDrag ?? workspaces[key] else { return }
         workspace.minimumSizes = minimumSizes(in: workspace)
         workspace.observedWidths = observedWidths(in: workspace)
+        workspace.maximumWidths = maximumWidths(in: workspace)
         // A band left under a quarter of the screen, as by a pinned window's minimum learned since, takes the room from
         // the pins; a wide band window narrows none: it hangs under them.
         workspace.fitBand()
@@ -2460,6 +2466,7 @@ final class Coordinator {
                     let back = leavingAll.intersection(landed).subtracting(self.workspaces[key]?.fullscreenWindows ?? [])
                     if !back.isEmpty { self.lastFullscreen[key]?.subtract(back) }
                     for result in results { if let got = result.got { self.landedWidths[result.job.id] = (result.job.frame.width, got.width) } }
+                    self.noteRefusedWidths(results)
                     self.noteUnread(results)
                     if let workspace = self.workspaces[key] { self.telemetry.landed(key, workspace, results) }
                     let untucked = layout.screen.map { Self.untucked(results, on: $0) } ?? []
@@ -2468,6 +2475,7 @@ final class Coordinator {
                     self.edit(key) { workspace in
                         workspace.minimumSizes = self.minimumSizes(in: workspace)
                         workspace.observedWidths = self.observedWidths(in: workspace)
+                        workspace.maximumWidths = self.maximumWidths(in: workspace)
                         workspace.untuckable.formUnion(untucked.filter { workspace.contains($0) && !unconfirmed.contains($0) })
                     }
                     self.flush()
@@ -2870,6 +2878,43 @@ final class Coordinator {
         let strip = workspace.stripFrames
         return Dictionary(uniqueKeysWithValues: strip.compactMap { id, frame in
             landedWidths[id].flatMap { $0.asked == frame.width ? (id, $0.got) : nil }
+        })
+    }
+
+    /// Notes the tiled windows that came out much narrower than asked at the height asked, beyond an app snapping its
+    /// size: the same width twice, at the same height, is the widest the window goes there. A window that later takes
+    /// a wider width than that, or is asked for another height, is asked for its tile's again.
+    private func noteRefusedWidths(_ results: [FrameResult]) {
+        for result in results {
+            guard let got = result.got, placements[result.job.id]?.floating == false else { continue }
+            let id = result.job.id, asked = result.job.frame
+            if let refused = refusedWidths[id],
+               abs(asked.height - refused.height) > 2 || got.width > refused.width + 2 && abs(got.width - asked.width) <= 2 {
+                refusedWidths[id] = nil
+            }
+            guard got.width < asked.width - Self.refusedWidthMargin, abs(got.height - asked.height) <= 2 else { continue }
+            if let refused = refusedWidths[id], abs(refused.width - got.width) <= 2 {
+                guard !refused.confirmed else { continue }
+                refusedWidths[id] = (got.width, got.height, true)
+                let name = model.windows[id]?.appName ?? "?"
+                print("\(stamp()) \(id) \(name) goes no wider than \(Int(got.width)) at height \(Int(got.height)), asked \(Int(asked.width)): its column fits it")
+            } else {
+                refusedWidths[id] = (got.width, got.height, false)
+            }
+        }
+    }
+
+    /// How much narrower than asked a window must come out for it to be refusing the width, not snapping it to a grid
+    /// (`Workspace.snapAllowance`).
+    private static let refusedWidthMargin: CGFloat = 16
+
+    /// The widest each window of a strip goes, where it has shown one under its tile's width at the height its tile has
+    /// now (`noteRefusedWidths`).
+    func maximumWidths(in workspace: Workspace) -> [WindowID: CGFloat] {
+        guard workspace.isScrolling else { return [:] }
+        let strip = workspace.stripFrames
+        return Dictionary(uniqueKeysWithValues: strip.compactMap { id, frame in
+            refusedWidths[id].flatMap { $0.confirmed && abs($0.height - frame.height) <= 2 ? (id, $0.width) : nil }
         })
     }
 

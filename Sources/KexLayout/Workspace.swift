@@ -68,6 +68,9 @@ public struct Workspace: Equatable, Sendable {
     /// Scrolling: each window's width as last seen on screen, which an app that snaps its size leaves a little
     /// off its tile's. See `shownWidth(of:_:)`.
     public var observedWidths: [WindowID: CGFloat] = [:]
+    /// Scrolling: the widest each window has shown it goes at its column's height, where it would not go as wide as
+    /// its column, as one that keeps its aspect ratio. Its column is no wider than that. See `columnSpans(in:pushed:)`.
+    public var maximumWidths: [WindowID: CGFloat] = [:]
     /// Scrolling: windows that would not stay tucked under the nearest parked column, so they park at `peek`.
     public var untuckable: Set<WindowID> = []
     /// Scrolling: the width of a new column, as a share of the width inside the outer gaps.
@@ -211,6 +214,7 @@ public struct Workspace: Equatable, Sendable {
         }
         columnWidths[id] = nil
         observedWidths[id] = nil
+        maximumWidths[id] = nil
         untuckable.remove(id)
         let wasFullscreen = fullscreenWindows.contains(id)
         if focused == id {

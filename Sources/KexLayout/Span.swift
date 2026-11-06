@@ -374,6 +374,7 @@ extension Workspace {
         }
         minimumSizes.merge(other.minimumSizes) { mine, _ in mine }
         observedWidths.merge(other.observedWidths) { mine, _ in mine }
+        maximumWidths.merge(other.maximumWidths) { mine, _ in mine }
         untuckable.formUnion(other.untuckable)
         normalize()
         if focused == nil, let id = other.focused ?? windows.first { focus(id) }

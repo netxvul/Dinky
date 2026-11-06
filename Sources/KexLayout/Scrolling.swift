@@ -192,9 +192,14 @@ extension Workspace {
             let minimum = root.children[i].minimumExtent(.horizontal, gap: gap, padding: accordionPadding, minimumSizes)
             narrowest[i] = minimum + insets
             let wide = (base * CGFloat(width(ofColumn: i))).rounded()
+            // A column whose windows all go no wider than some width is no wider than the widest of them, so no gap
+            // shows beside it.
+            let ids = root.children[i].windows
+            let widest = ids.isEmpty || ids.contains { maximumWidths[$0] == nil } ? nil
+                : ids.compactMap { maximumWidths[$0] }.max().map { $0 + insets }
             let share = pushed.contains(i)
                 ? spansDisplays ? room : area.width + endGutters(of: i, area).left + endGutters(of: i, area).right
-                : pinned ? min(wide, room) : wide
+                : min(pinned ? min(wide, room) : wide, widest ?? .infinity)
             // A lone column fills the area, beside a pin no narrower than its windows take: it then hangs under the
             // pin, or is held off a wall (`parked`), rather than growing past it onto the next display. Across a seam,
             // only the display it is on, half an inner gap from the seam.
