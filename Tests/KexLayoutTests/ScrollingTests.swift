@@ -1276,6 +1276,19 @@ struct ScrollingTuckTests {
                 "a width far off is stale, not snapped")
     }
 
+    @Test func `A column is no wider than its window goes, and its neighbour follows it a gap on`() {
+        // All three fit, so none parks and the gaps between them show as they are.
+        var ws = strip(3, width: 0.3, gaps: Gaps(all: 8))
+        let before = ws.layout().frames
+        #expect(before[2]!.width > 200)
+        ws.maximumWidths[2] = 200
+        let after = ws.layout().frames
+        #expect(after[2]!.width == 200)
+        #expect(after[3]!.minX - after[2]!.maxX == before[3]!.minX - before[2]!.maxX, "no gap shows beside it")
+        ws.maximumWidths[2] = 10_000
+        #expect(ws.layout().frames[2]!.width == before[2]!.width, "a wider limit leaves its share")
+    }
+
     @Test func `A pushing fullscreen window's outer neighbours tuck`() {
         var ws = strip(6)
         ws.focus(3)

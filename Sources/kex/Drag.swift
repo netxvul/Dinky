@@ -782,6 +782,7 @@ extension Coordinator {
         var tree = tree
         tree.minimumSizes = minimumSizes(in: tree)
         tree.observedWidths = observedWidths(in: tree)
+        tree.maximumWidths = maximumWidths(in: tree)
         return tree
     }
 
