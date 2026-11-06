@@ -174,46 +174,86 @@ struct PinGeometryTests {
         #expect(right.layout().frames[end.key]!.minX == end.value.minX)
     }
 
-    @Test func `Gliding to where it rests a sliver beside a pin, a window slides on under the pin, no jump in view`() throws {
+    @Test(arguments: [true, false])
+    func `Gliding to or from a sliver tucked beside a pin, a window slides under the pin, no jump in view`(told: Bool) throws {
         for side in [PinSide.left, .right] {
             let pinnedID: WindowID = side == .left ? 1 : 8
             var ws = try pinned(strip(8, gaps: spaced), pinnedID, side)
             let pin = ws.pinRect(side == .left ? 0 : 7)
             ws.focus(side == .left ? 7 : 2)
-            let from = frames(ws)
+            let near = frames(ws)
             ws.focus(side == .left ? 8 : 1)
-            let to = frames(ws)
-            // The one that rests a sliver beside the pin, tucked under it at rest.
-            let sliver = try #require(to.first { id, f in
+            let far = frames(ws)
+            // The one that rests a sliver beside the pin at the far end, tucked under it there.
+            let sliver = try #require(far.first { id, f in
                 id != pinnedID && (side == .left ? f.minX < pin.maxX && f.maxX > pin.maxX + 0.5
                     : f.maxX > pin.minX && f.minX < pin.minX - 0.5)
             }).key
-            let steps = 60
-            var last: CGRect?
-            for step in 0...steps {
-                let t = CGFloat(step) / CGFloat(steps)
-                let now = from.merging(to) { a, b in
-                    CGRect(x: a.minX + (b.minX - a.minX) * t, y: b.minY, width: a.width + (b.width - a.width) * t, height: b.height)
-                }
-                let placed = ws.placeStrip(now, resting: to)[sliver]!
-                let shown = side == .left ? placed.maxX > pin.maxX + 0.5 : placed.minX < pin.minX - 0.5
-                if let last, shown {
-                    // While it shows in the band it moves about as the strip does, never jumping.
-                    let strip = abs((to[sliver]!.minX - from[sliver]!.minX) / CGFloat(steps))
-                    #expect(abs(placed.minX - last.minX) <= strip * 1.1 + 1, "\(side) step \(step): \(last) to \(placed)")
-                }
-                if !shown, let last {
-                    let wasShown = side == .left ? last.maxX > pin.maxX + 0.5 : last.minX < pin.minX - 0.5
-                    if wasShown {
-                        // The last frame it showed in was a step from under the pin.
-                        let beyond = side == .left ? last.maxX - pin.maxX : pin.minX - last.minX
-                        let strip = abs((to[sliver]!.minX - from[sliver]!.minX) / CGFloat(steps))
-                        #expect(beyond <= strip * 1.1 + 1, "\(side) step \(step): left the band from \(last)")
+            let isShown = { (r: CGRect) in side == .left ? r.maxX > pin.maxX + 0.5 : r.minX < pin.minX - 0.5 }
+            let beyond = { (r: CGRect) in side == .left ? r.maxX - pin.maxX : pin.minX - r.minX }
+            // Into the tuck, then out of it. Without where the glide set out (`told`), only into it is smoothed.
+            for (from, to, into) in [(near, far, true), (far, near, false)] where told || into {
+                var glide = ws
+                glide.focus(to == far ? (side == .left ? 8 : 1) : (side == .left ? 7 : 2))
+                let steps = 60
+                let step = abs((to[sliver]!.minX - from[sliver]!.minX) / CGFloat(steps))
+                var last: CGRect?
+                for i in 0...steps {
+                    let t = CGFloat(i) / CGFloat(steps)
+                    let now = from.merging(to) { a, b in
+                        CGRect(x: a.minX + (b.minX - a.minX) * t, y: b.minY, width: a.width + (b.width - a.width) * t,
+                               height: b.height)
                     }
+                    let placed = glide.placeStrip(now, resting: to, from: told ? from : nil)[sliver]!
+                    let what = "\(side) \(into ? "into" : "out of") the tuck, step \(i)"
+                    if let last {
+                        switch (isShown(last), isShown(placed)) {
+                        case (true, true):
+                            // While it shows in the band it moves about as the strip does, never jumping.
+                            #expect(abs(placed.minX - last.minX) <= step * 1.1 + 1, "\(what): \(last) to \(placed)")
+                        case (true, false):
+                            #expect(beyond(last) <= step * 1.1 + 1, "\(what): went under from \(last)")
+                        case (false, true):
+                            #expect(beyond(placed) <= step * 1.1 + 1, "\(what): came out at \(placed)")
+                        case (false, false): break
+                        }
+                    } else if !into {
+                        #expect(!isShown(placed), "\(what): shows as it sets out, at \(placed)")
+                    }
+                    last = placed
                 }
-                last = placed
+                if into { #expect(!isShown(last!), "\(side): tucked at rest") }
             }
-            #expect(!(side == .left ? last!.maxX > pin.maxX : last!.minX < pin.minX), "\(side): tucked at rest")
+        }
+    }
+
+    @Test func `Gliding on further under a pin from a tucked sliver, a window stays tucked`() throws {
+        for side in [PinSide.left, .right] {
+            let pinnedID: WindowID = side == .left ? 1 : 8
+            var ws = try pinned(strip(8, gaps: spaced), pinnedID, side)
+            let pin = ws.pinRect(side == .left ? 0 : 7)
+            // Scrolled as little as shows a column, its neighbour on the pin's side rests a sliver, tucked: then the
+            // strip scrolls on past it, taking it further under the pin.
+            for id in (side == .left ? [8, 2, 3, 4, 5] : [1, 7, 6, 5, 4]) as [WindowID] { ws.focus(id) }
+            let from = frames(ws)
+            let sliver = try #require(from.first { id, f in
+                id != pinnedID && (side == .left ? f.minX < pin.maxX && f.maxX > pin.maxX + 0.5
+                    : f.maxX > pin.minX && f.minX < pin.minX - 0.5)
+            }).key
+            #expect(ws.layout().frames[sliver]! != from[sliver]!, "tucked at rest")
+            ws.focus(side == .left ? 6 : 3)
+            let to = frames(ws)
+            #expect(side == .left ? to[sliver]!.maxX < from[sliver]!.maxX : to[sliver]!.minX > from[sliver]!.minX,
+                    "it goes further under the pin")
+            for i in 0...30 {
+                let t = CGFloat(i) / 30
+                let now = from.merging(to) { a, b in
+                    CGRect(x: a.minX + (b.minX - a.minX) * t, y: b.minY, width: b.width, height: b.height)
+                }
+                let placed = ws.placeStrip(now, resting: to, from: from)[sliver]!
+                let shows = side == .left ? placed.maxX > pin.maxX + 0.5 : placed.minX < pin.minX - 0.5
+                #expect(!shows, "\(side) step \(i): \(placed)")
+            }
         }
     }
 

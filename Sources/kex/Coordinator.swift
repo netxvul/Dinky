@@ -2690,7 +2690,7 @@ final class Coordinator {
                                                shown: { $0 == lead ? frame : shown($0) })
                 }
                 self.orderWallCovers(key, workspace, strip: input, holding: false)
-                var placed = workspace.placeStrip(input, resting: strip)
+                var placed = workspace.placeStrip(input, resting: strip, from: starts)
                 // Placed as the guard has it: hanging past the screen edge at its size, such a window is no window
                 // scrolled out to be parked. Not past a wall, though: one coming back into view from behind the column
                 // at a wall starts where the strip had it, off the screen, which there is on the other display, and
