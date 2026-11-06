@@ -752,8 +752,27 @@ extension Workspace {
             var x = frame.minX
             x = min(x, walls.contains(.right) ? bounds.maxX - frame.width : rightLimit[id] ?? bounds.maxX - Self.peek)
             x = max(x, walls.contains(.left) ? bounds.minX : leftLimit[id] ?? bounds.minX + Self.peek - frame.width)
+            x = clearOfPinGaps(id, x: x, frame)
             return (id, CGRect(x: x, y: frame.minY, width: frame.width, height: frame.height))
         })
+    }
+
+    /// `x` for a band window placed at `x` with `frame`'s width, moved so the width it comes out at keeps it out of the
+    /// gap beside a pin: an app that snaps its size a little wider than asked (`observedWidths`, up to
+    /// `snapAllowance`) grows on the right, past a left pin's edge from under it, or into the gap before a right pin
+    /// from the band's end. So it is placed by the width it takes, its edge there where its tile's would be.
+    func clearOfPinGaps(_ id: WindowID, x: CGFloat, _ frame: CGRect) -> CGFloat {
+        guard hasPins, pinSide(of: id) == nil, let seen = observedWidths[id], seen > frame.width + 0.5,
+              seen - frame.width <= Self.snapAllowance else { return x }
+        let right = x + frame.width
+        if let pin = pinnedIndex(.left).map(pinRect), right <= pin.maxX + 0.5, x + seen > pin.maxX + 0.5 {
+            return pin.maxX - seen
+        }
+        if let pin = pinnedIndex(.right).map(pinRect) {
+            let edge = pin.minX - gaps.horizontal
+            if right <= edge + 0.5, x + seen > edge + 0.5 { return edge - seen }
+        }
+        return x
     }
 
     /// The biggest window of a column shown whole, and the frames of that column's windows.

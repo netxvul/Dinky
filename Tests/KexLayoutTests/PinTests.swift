@@ -148,6 +148,32 @@ struct PinGeometryTests {
         #expect(after.minX == plain.minX)
     }
 
+    @Test func `A window that comes out a little wider than its tile keeps out of the gap beside a pin`() throws {
+        // Left pin: a column scrolled to end under the pin, its window snapping a point wider, would reach past the
+        // pin's edge into the gap. It goes a point left instead.
+        var left = try pinned(strip(8, gaps: spaced), 1, .left)
+        let pinL = left.pinRect(0)
+        left.focus(8)
+        left.focus(4)
+        let under = frames(left)[3]!
+        #expect(under.maxX == pinL.maxX, "it ends at the pin's edge")
+        left.observedWidths[3] = under.width + 1
+        let moved = left.layout().frames[3]!
+        #expect(moved.minX + under.width + 1 == pinL.maxX, "\(moved)")
+        #expect(moved.width == under.width, "still asked for its tile's width")
+        // Right pin: the band's end column, a gap before the pin, grows into that gap on the right; it goes left.
+        var right = try pinned(strip(8, gaps: spaced), 8, .right)
+        let pinR = right.pinRect(7)
+        right.focus(1)
+        right.focus(5)
+        let end = try #require(frames(right).first { $0.key != 8 && $0.value.maxX == pinR.minX - 10 })
+        right.observedWidths[end.key] = end.value.width + 1
+        #expect(right.layout().frames[end.key]!.minX + end.value.width + 1 == pinR.minX - 10)
+        // One that came out its tile's width, or narrower, stays where its tile is.
+        right.observedWidths[end.key] = end.value.width - 2
+        #expect(right.layout().frames[end.key]!.minX == end.value.minX)
+    }
+
     @Test func `A lone band column and a pushed one keep a whole gap from the pin`() throws {
         let lone = try pinned(strip(2, gaps: spaced), 1, .left)
         #expect(frames(lone)[2]!.minX == lone.pinRect(0).maxX + 10)
