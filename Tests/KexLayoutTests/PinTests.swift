@@ -56,6 +56,27 @@ struct PinGeometryTests {
         #expect(shown[3]!.maxX <= pin.maxX, "its neighbour ends under the pin")
     }
 
+    @Test func `Scrolled the other way no band column shows in part in the gap beside the pin`() throws {
+        for side in [PinSide.left, .right] {
+            let pinnedID: WindowID = side == .left ? 1 : 8
+            var ws = try pinned(strip(8, gaps: spaced), pinnedID, side)
+            let pin = ws.pinRect(side == .left ? 0 : 7)
+            // Out to the far end, where a column is left over beside the pin, then back to the pin and one column at a
+            // time away from it: each step scrolls as little as shows the new column, which leaves its neighbour on
+            // the pin's side part under the pin. Either goes wholly under it as the strip rests.
+            let order: [WindowID] = side == .left ? [8, 2, 3, 4, 5, 6, 7] : [1, 7, 6, 5, 4, 3, 2]
+            for id in order {
+                ws.focus(id)
+                for (other, frame) in ws.layout().frames where other != pinnedID {
+                    let clear = side == .left
+                        ? frame.maxX <= pin.maxX || frame.minX >= pin.maxX + 10
+                        : frame.minX >= pin.minX || frame.maxX <= pin.minX - 10
+                    #expect(clear, "\(side) pin, focus \(id): \(other) at \(frame)")
+                }
+            }
+        }
+    }
+
     @Test func `A lone band column and a pushed one keep a whole gap from the pin`() throws {
         let lone = try pinned(strip(2, gaps: spaced), 1, .left)
         #expect(frames(lone)[2]!.minX == lone.pinRect(0).maxX + 10)

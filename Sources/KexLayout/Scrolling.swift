@@ -685,7 +685,15 @@ extension Workspace {
             }
         }
         let hanging = hangingUnderPins(frames)
+        let straddling = straddlingPins(frames, resting: resting, hanging: hanging)
         return Dictionary(uniqueKeysWithValues: frames.map { id, frame in
+            // A band window resting part under a pin goes wholly under it, tucked off the screen's edge there, so its
+            // part beside the pin does not fill the gap between the pin and the band.
+            if let side = straddling[id] {
+                let x = side == .left ? leftLimit[id] ?? bounds.minX + Self.tuck - frame.width
+                    : rightLimit[id] ?? bounds.maxX - Self.tuck
+                return (id, CGRect(x: x, y: frame.minY, width: frame.width, height: frame.height))
+            }
             if let wall = wallParking(frame, covers: covers), !hanging.contains(id),
                let cover = wall == .left ? covers.left : covers.right {
                 if let curtain = curtain(frame, at: wall, under: cover), !keepsSize {
@@ -744,6 +752,40 @@ extension Workspace {
         guard offLeft != offRight else { return nil }
         let wall: Direction = offLeft ? .left : .right
         return walls.contains(wall) && (wall == .left ? covers.left : covers.right) != nil ? wall : nil
+    }
+
+    /// The band windows that rest part under a pin, part in the gap between it and the band, by the side of that pin:
+    /// a column the strip scrolled as little as shows its neighbour, or one left over at an end of the strip. macOS
+    /// cannot clip a window at the pin's edge, so the part beside it would cover the gap. Only at rest: as `frames`
+    /// are where a glide ends (`resting`, or none given), and not while fingers scroll the strip, so a column glides
+    /// on under the pin and is tucked as it lands. Only a sliver of it beside the pin, less than the narrowest column
+    /// takes, and only with an inner gap to cover. Not one hanging under the pin (`hanging`), nor on a side with a
+    /// wall, where a window cannot leave the screen.
+    private func straddlingPins(_ frames: [WindowID: CGRect], resting: [WindowID: CGRect]?,
+                                hanging: Set<WindowID>) -> [WindowID: PinSide] {
+        // With no gap there is none to cover, and a column partly in view beside the pin shows as at any edge.
+        guard hasPins, freeScrollFrom == nil, gaps.horizontal > 0 else { return [:] }
+        let inset = stripInset, half = gaps.horizontal / 2, area = stripArea
+        let left = pinnedIndex(.left).flatMap { walls.contains(.left) ? nil : pinRect($0) }
+        let right = pinnedIndex(.right).flatMap { walls.contains(.right) ? nil : pinRect($0) }
+        guard left != nil || right != nil else { return [:] }
+        var result: [WindowID: PinSide] = [:]
+        for i in bandRange {
+            for id in root.children[i].windows where !hanging.contains(id) {
+                guard let frame = frames[id] else { continue }
+                if let rest = resting?[id], abs(rest.minX - frame.minX) > 0.5 { continue }
+                // Only a sliver, which the column in view could have reached over (`reachesOver`): more of a column
+                // beside the pin is a column's worth, and tucking it would leave that room bare.
+                if let pin = left, frame.minX < inset.minX + half - 0.5, frame.maxX > pin.maxX + 0.5,
+                   reachesOver(frame.maxX - pin.maxX, in: area) {
+                    result[id] = .left
+                } else if let pin = right, frame.maxX > inset.maxX - half + 0.5, frame.minX < pin.minX - 0.5,
+                          reachesOver(pin.minX - frame.minX, in: area) {
+                    result[id] = .right
+                }
+            }
+        }
+        return result
     }
 
     /// The band windows hanging under a pin, held off a wall rather than parked at it.
