@@ -49,13 +49,20 @@ extension Dispatcher {
             }
             return focus(recent, window: windowToFocus(on: recent))
         }
-        let line = target.direction.map { displays(inLineWith: from, $0.orientation, model.displays) }
-            ?? model.displays.sorted { ($0.frame.minX, $0.frame.minY) < ($1.frame.minX, $1.frame.minY) }
-        let forward = target.direction?.isForward ?? (target == .next)
-        let index = line.firstIndex(of: from)! + (forward ? 1 : -1)
+        guard let direction = target.direction else {
+            // next and prev step through the displays in `list-monitors` order, wrapping around, as
+            // `move-window-to-display` does.
+            let all = model.displays
+            guard all.count > 1, let i = all.firstIndex(of: from) else {
+                return .nothing("no other display", ok: false, scope: .display(from.uuid))
+            }
+            let to = all[(i + (target == .next ? 1 : -1) + all.count) % all.count]
+            return focus(to, window: windowToFocus(on: to))
+        }
+        let line = displays(inLineWith: from, direction.orientation, model.displays)
+        let index = line.firstIndex(of: from)! + (direction.isForward ? 1 : -1)
         guard line.indices.contains(index) else {
-            return .nothing(target.direction == nil ? "no \(target.rawValue) display" : "no display \(target.rawValue) of the focused one",
-                            ok: false, scope: .display(from.uuid))
+            return .nothing("no display \(target.rawValue) of the focused one", ok: false, scope: .display(from.uuid))
         }
         return focus(line[index], window: windowToFocus(on: line[index]))
     }

@@ -31,10 +31,12 @@ final class KexApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var signals: [DispatchSourceSignal] = []
     // Only a bundle carries the feed URL; a bare debug binary would otherwise show an "Unable to Check
     // For Updates" alert at launch that blocks the socket until dismissed.
-    private let updater = SPUStandardUpdaterController(startingUpdater: Bundle.main.infoDictionary?["SUFeedURL"] != nil,
-                                                       updaterDelegate: nil, userDriverDelegate: nil)
+    private let updateWindows = UpdateWindows()
+    private lazy var updater = SPUStandardUpdaterController(startingUpdater: Bundle.main.infoDictionary?["SUFeedURL"] != nil,
+                                                            updaterDelegate: nil, userDriverDelegate: updateWindows)
 
     func applicationDidFinishLaunching(_ note: Notification) {
+        _ = updater
         AppState.shared.loadConfig()
         socket = SocketServer(handle: handleCommand)
         // `kill` and logout quit through NSApplication, so windows are restored on the way out.

@@ -317,10 +317,36 @@ enum Dispatcher {
               let to = AppState.shared.displays.display(containingSpace: space) else {
             return .error("workspace \(n) has no Space; see `kex doctor`")
         }
+        if follow, let reply = followFirst(wid, to: space, on: to, workspace: n) { return reply }
         if let reply = relocate(wid, to: space, on: to, destination: "workspace \(n)", follow: follow) { return reply }
         // macOS activates another app when the Space left behind loses the active app's window, so focus the
         // moved window once its workspace shows.
         if follow { _ = show(n) { AppState.shared.coordinator?.focus(wid) } }
+        return .ok("moved window \(wid) to workspace \(n)")
+    }
+
+    /// `move-window-to-workspace --follow` to another Space of the window's own display: switches first and moves the
+    /// window as the display lands there, then focuses it. Moved first, the window leaves the Space on screen a few
+    /// frames before the swipe takes the display away, and the workspace left behind is drawn once without it, its other
+    /// windows over the desktop. Nil for any other move, which goes the usual way.
+    private static func followFirst(_ wid: WindowID, to space: UInt64, on to: Display, workspace n: Int) -> Reply? {
+        guard wid != 0, AppState.shared.displays.display(ofWindow: wid)?.uuid == to.uuid,
+              kex_window_space_id(wid) != space, to.currentSpaceID != space, targetSpaceID(on: to) != space else { return nil }
+        var done = false
+        let arrive = {
+            guard !done else { return }
+            done = true
+            if let reply = relocate(wid, to: space, on: to, destination: "workspace \(n)", follow: true), !reply.ok {
+                fputs("\(stamp()) move-window-to-workspace \(n): \(reply.text)\n", stderr)
+                return
+            }
+            AppState.shared.coordinator?.focus(wid)
+        }
+        guard switchSpace(toSpaceID: space, on: to, landed: arrive) else { return nil }
+        // A newer switch replacing this one drops `arrive`; the window still goes, once the display has settled.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            if !done, AppState.shared.displays.display(containingSpace: space) != nil { arrive() }
+        }
         return .ok("moved window \(wid) to workspace \(n)")
     }
 

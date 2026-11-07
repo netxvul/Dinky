@@ -21,8 +21,8 @@ extension Command {
         Doc(syntax: "move-window-to-workspace <number|prev|next|recent> [--follow]",
             description: "Move the focused window to a workspace. With --follow, switch there too."),
         Doc(syntax: "move-window-to-display <next|prev|recent> [--follow]",
-            description: "Move the focused window to the current workspace of the next or previous display, or of the one "
-                + "focused before the focused one. With --follow, focus it there."),
+            description: "Move the focused window to the current workspace of the next or previous display, in list-monitors "
+                + "order and wrapping around, or of the one focused before the focused one. With --follow, focus it there."),
         Doc(syntax: "focus <left|down|up|right> [--boundaries workspace|all-monitors-outer-frame] "
                 + "[--boundaries-action stop|fail|wrap-around-the-workspace|wrap-around-all-monitors]",
             description: "Focus the neighbouring window in a direction in the layout tree. At the workspace edge, "
@@ -31,7 +31,8 @@ extension Command {
                 + "side of the workspace, or, with all-monitors-outer-frame, to the display at the far side. "
                 + "--wrap-around is short for --boundaries-action wrap-around-the-workspace. Never switches workspace."),
         Doc(syntax: "focus-monitor <left|down|up|right|next|prev|recent|N>",
-            description: "Focus the display in a direction, the next or previous one, the one focused before it, or display N as list-monitors numbers it: its most recently focused window, "
+            description: "Focus the display in a direction (stopping at the last one), the next or previous one in list-monitors order "
+                + "(wrapping around, as move-window-to-display does), the one focused before it, or display N as list-monitors numbers it: its most recently focused window, "
                 + "or the display itself when its workspace is empty, so workspace commands act on it."),
         Doc(syntax: "move <left|down|up|right> [<points>] [--floating-only]",
             description: "Move the focused window in a direction within the layout tree. "

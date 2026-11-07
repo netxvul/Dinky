@@ -2,7 +2,7 @@ import Foundation
 
 // The config's `[hooks]`: `workspace-changing` when kex starts or retargets a switch, `workspace-changed`
 // when any display's current workspace changes (kex's switches and native ones alike) or a kex switch
-// gives up, `focus-changed` when the focused window changes, debounced, `mode-changed` when the binding mode
+// ends without one (gave up, or came back where it started), `focus-changed` when the focused window changes, debounced, `mode-changed` when the binding mode
 // changes, with the new mode and the previous one, `display-changed` once the workspaces have been arranged after a
 // display connects or disconnects, and `startup` once. Started once the coordinator has read the windows and
 // displays, so startup fires nothing but `startup`. Main thread only.
@@ -12,6 +12,8 @@ final class Hooks {
     private var pendingFocus: DispatchWorkItem?
     /// The displays connected when last seen, by UUID.
     private var connected: Set<String> = []
+    /// Displays whose kex switch announced `workspace-changing` and has not yet reported `workspace-changed`.
+    private var announced: Set<String> = []
 
     func start() {
         let state = AppState.shared
@@ -22,7 +24,8 @@ final class Hooks {
         state.numbers.observe { [weak self] in self?.displaysChanged(AppState.shared.displays) }
         state.numbers.onArranged = { [weak self] in self?.arranged() }
         SpaceSwitcher.shared.onTarget = { [weak self] uuid, target in self?.switchTargeted(uuid, target) }
-        SpaceSwitcher.shared.onGiveUp = { [weak self] uuid in self?.switchGaveUp(uuid) }
+        SpaceSwitcher.shared.onGiveUp = { [weak self] uuid in self?.switchEnded(uuid) }
+        SpaceSwitcher.shared.onLanded = { [weak self] uuid in self?.switchEnded(uuid) }
         state.coordinator?.onFocusChange = { [weak self] in self?.focusChanged() }
         state.hotkeys.onModeChange = { mode, previous in
             Hud.shared.modeChanged(mode)
@@ -44,6 +47,7 @@ final class Hooks {
             // kex's swipe passes through the Spaces in between; report only where it lands.
             if let target = SpaceSwitcher.shared.target(on: display.uuid), target != display.currentSpaceID { continue }
             workspaces[display.uuid] = new
+            announced.remove(display.uuid)
             runWorkspaceHooks(commands, workspace: new, previous: old, display: i)
             Hud.shared.workspaceChanged(on: display, space: display.currentSpaceID)
         }
@@ -65,15 +69,19 @@ final class Hooks {
         guard let i = displays.firstIndex(where: { $0.uuid == uuid }) else { return }
         WorkspaceSwitcher.shared.leaving(space: displays[i].currentSpaceID)
         let workspace = AppState.shared.numbers.label(of: target)
+        announced.insert(uuid)
         runWorkspaceHooks(AppState.shared.config.hooks.workspaceChanging, workspace: workspace, previous: number(displays[i]), display: i)
         Hud.shared.workspaceChanged(on: displays[i], space: target)
     }
 
-    /// A switch that did not land still ends with `workspace-changed`, naming where the display is, so what
-    /// `workspace-changing` announced does not stand.
-    private func switchGaveUp(_ uuid: String) {
+    /// Every switch that announced `workspace-changing` ends with one `workspace-changed`, naming where the display
+    /// is: one that did not land, so what was announced does not stand, and one that landed on the workspace it set
+    /// out from, as a burst going there and back does, which no Space change reports.
+    private func switchEnded(_ uuid: String) {
         let model = AppState.shared.displays
+        // Catching up with the Space change reports it, if there is one to report.
         model.reconcile()
+        guard announced.remove(uuid) != nil else { return }
         guard let i = model.displays.firstIndex(where: { $0.uuid == uuid }) else { return }
         let new = number(model.displays[i])
         let old = workspaces[uuid] ?? new

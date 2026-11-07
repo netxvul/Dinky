@@ -63,6 +63,8 @@ final class SpaceSwitcher {
     var onTarget: ((String, UInt64) -> Void)?
     /// Called with the display UUID when a switch ends without landing on its target.
     var onGiveUp: ((String) -> Void)?
+    /// Called with the display UUID when a switch lands on its newest target.
+    var onLanded: ((String) -> Void)?
 
     func target(on uuid: String) -> UInt64? { flights[uuid]?.target }
 
@@ -136,7 +138,14 @@ final class SpaceSwitcher {
         let flight = flights.removeValue(forKey: uuid)
         if error { fputs("\(stamp()) \(message)\n", stderr) } else { print("\(stamp()) \(message)") }
         fflush(stdout)
-        if landed { flight?.landed?() } else if flight != nil { onGiveUp?(uuid) }
+        guard let flight else { return }
+        if landed {
+            noteOwnArrival()
+            flight.landed?()
+            onLanded?(uuid)
+        } else {
+            onGiveUp?(uuid)
+        }
     }
 
     private func startPolling() {

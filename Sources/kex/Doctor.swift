@@ -105,6 +105,8 @@ func runDoctor(_ args: [String]) -> Int32 {
                         : "\(label) has \(spaces) for workspace\(here.count == 1 ? "" : "s") \(here.map(String.init).joined(separator: ", "))")
     }
 
+    scriptingAdditionCheck(config, ok: ok, warn: warn)
+
     let tilers = runningOtherTilers()
     tilers.isEmpty ? ok("no other tiling window manager is running") : warn(otherTilersWarning(tilers))
 
@@ -197,4 +199,25 @@ func scrollGestureClashes(fingers: Int) -> [String] {
         for clash in found where !clashes.contains(clash) { clashes.append(clash) }
     }
     return clashes
+}
+
+/// Whether the Dock scripting addition answers while `scripting-addition` is on. When it does not, as with SIP on, Kex
+/// falls back to moving each window through Accessibility, so scrolling still works; the warning says why it moves the
+/// way it does and how to stop the retries.
+private func scriptingAdditionCheck(_ config: Config, ok: (String) -> Void, warn: (String) -> Void) {
+    guard config.scriptingAddition else {
+        return ok("scripting-addition is off: windows move one by one through Accessibility")
+    }
+    var moves = false, orders = false
+    if kex_sa_probe(&moves, &orders) {
+        let can = [moves ? "moves windows" : nil, orders ? "orders windows" : nil].compactMap { $0 }
+        return ok("the Dock scripting addition answers" + (can.isEmpty ? "" : " (\(can.joined(separator: ", ")))"))
+    }
+    let installed = FileManager.default.fileExists(atPath: "/Library/ScriptingAdditions/kex.osax/Contents/MacOS/loader")
+    warn("scripting-addition = true, but the Dock scripting addition "
+        + (installed ? "does not answer, and Kex retries loading it every few minutes"
+                     : "is not installed (scripts/build-sa.sh)")
+        + "; until it does, windows move one by one through Accessibility and parked columns show a sliver. "
+        + "It needs SIP's Filesystem Protections and Debugging Restrictions off (see docs/scripting-addition.md); "
+        + "with SIP on, set scripting-addition = false")
 }

@@ -17,9 +17,9 @@ prints it.
 | `workspace <n\|prev\|next\|recent>` | Show a workspace and focus its display. `prev`/`next` step through the focused display's and don't wrap. `recent` is the workspace focused before the current one, on any display, as yabai's `recent`; again, it goes back. |
 | `workspace-back-and-forth` | Switch to the previous workspace of the focused display. |
 | `move-window-to-workspace <n\|prev\|next\|recent> [--follow]` | Move the focused window, and with `--follow` go too. |
-| `move-window-to-display <next\|prev\|recent> [--follow]` | Move the focused window to another display's workspace. `recent` is the display focused before the focused one. |
+| `move-window-to-display <next\|prev\|recent> [--follow]` | Move the focused window to another display's workspace. `next` and `prev` go in `list-monitors` order and wrap around; `recent` is the display focused before the focused one. |
 | `focus <left\|down\|up\|right> [--boundaries <b>] [--boundaries-action <a>]` | Focus the nearest window. `--boundaries` is `workspace` (default) or `all-monitors-outer-frame`, which continues onto the next display. `--boundaries-action` is `stop` (default), `fail`, `wrap-around-the-workspace` (`--wrap-around`) or `wrap-around-all-monitors`, which needs `all-monitors-outer-frame`. |
-| `focus-monitor <left\|down\|up\|right\|next\|prev\|recent\|n>` | Focus a display. `recent` is the one focused before the focused one. |
+| `focus-monitor <left\|down\|up\|right\|next\|prev\|recent\|n>` | Focus a display. A direction stops at the last display that way; `next` and `prev` go in `list-monitors` order and wrap around, as `move-window-to-display` does; `n` is display n in that order; `recent` is the one focused before the focused one. |
 | `move <left\|down\|up\|right> [<points>] [--floating-only]` | Move the focused window in the tree. A floating window moves that many points, `[floating] move-step` without a number; see [Floating windows](#floating-windows). |
 | `join-with <left\|down\|up\|right>` | Put the focused window and its neighbour in a new container. |
 | `resize <smart\|width\|height> <+n\|-n> [--floating-only]` | Resize by n points. A floating window grows about its centre, or its top-left corner with `[floating] resize-anchor`. |
@@ -233,7 +233,7 @@ workspace 1. CLI-only commands:
 | Command | |
 |---|---|
 | `app` | Run the app in the foreground, logging to the terminal. |
-| `doctor [--config <path>]` | Check the config and macOS settings, and that no other tiling window manager is running. |
+| `doctor [--config <path>]` | Check the config and macOS settings, that no other tiling window manager is running, and, with `scripting-addition = true`, that the Dock scripting addition answers. |
 | `recover` | Ask the running app to restore windows a crashed session left tiled. |
 | `debug events\|windows` | Print window events or windows, without the app. |
 | `version`, `-v`, `--version` | Print the version and build number. |

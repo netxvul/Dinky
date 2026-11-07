@@ -130,6 +130,43 @@ private func submitAndWait(_ scheduler: FrameScheduler, _ jobs: [FrameJob],
 }
 
 struct FrameSchedulerTests {
+    @Test func `A window AppKit widens hanging off the left edge is parked by its right edge, then only moved`() {
+        // AppKit, sizing a window with a sliver left on the screen, keeps 24 points of it on: 22 more wide. Moving it
+        // leaves its size alone.
+        let lock = NSLock()
+        var frame = CGRect(x: 100, y: 41, width: 600, height: 869)
+        var calls: [String] = []
+        let scheduler = FrameScheduler(settle: 0, read: { _ in lock.withLock { .frame(frame) } }, write: { job in
+            lock.withLock {
+                calls.append("write")
+                frame = job.frame
+                if frame.maxX < 24 { frame.size.width = 24 - frame.minX }
+            }
+            return true
+        }, move: { job in
+            lock.withLock { calls.append("move"); frame.origin = job.frame.origin }
+            return true
+        }, hangsLeft: { $0.minX < 0 && $0.maxX > 0 })
+        let tucked = FrameJob(pid: 1, id: 10, frame: CGRect(x: -721, y: 41, width: 723, height: 869))
+        let first = submitAndWait(scheduler, [tucked])
+        #expect(lock.withLock { frame } == CGRect(x: -743, y: 41, width: 745, height: 869))
+        #expect(first.first?.matched == true)
+        // Asked again, it is already there: nothing is written.
+        lock.withLock { calls = [] }
+        let again = submitAndWait(scheduler, [tucked])
+        #expect(again.first?.written == false)
+        #expect(lock.withLock { calls }.isEmpty)
+        // Further along the edge it is only moved, keeping the width it has.
+        var further = tucked
+        further.frame.origin.x = -715
+        _ = submitAndWait(scheduler, [further])
+        #expect(lock.withLock { calls } == ["move"])
+        #expect(lock.withLock { frame } == CGRect(x: -737, y: 41, width: 745, height: 869))
+        // On screen it takes its width as asked.
+        _ = submitAndWait(scheduler, [FrameJob(pid: 1, id: 10, frame: CGRect(x: 8, y: 41, width: 723, height: 869))])
+        #expect(lock.withLock { frame } == CGRect(x: 8, y: 41, width: 723, height: 869))
+    }
+
     @Test func `Writes and reads back`() {
         let fake = FakeWindows()
         let results = submitAndWait(fake.scheduler(), [job(1, 10, 0), job(2, 20, 100)])

@@ -37,7 +37,7 @@ nvram boot-args
 
 ## 三、关闭 SIP（如果上一步不满足才需要做）
 
-> 已经满足就跳过。SIP 开着时无法注入，Kex 会**干净回退**到逐帧移动窗口，不影响正常使用。
+> 已经满足就跳过。SIP 开着时无法注入，Kex 会**干净回退**到逐帧移动窗口，不影响正常使用；`kex doctor` 会警告扩展没有应答，日志里每次重新注入都会写 `reinject ran, but the payload does not answer` 或 `reinject failed`，间隔从 30 秒起逐次加倍到 5 分钟。这种情况下把 `scripting-addition` 设成 `false` 就不再尝试。
 
 Apple Silicon：
 
