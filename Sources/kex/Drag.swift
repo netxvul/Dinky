@@ -278,6 +278,8 @@ extension Coordinator {
             flush()
             // Pins the drag held off raising, once it is over.
             DispatchQueue.main.async { [weak self] in self?.raiseCoveredPins() }
+            // A raise that settled while the button was down left its key window for now (`reclaimFocusFromRaise`).
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in self?.reclaimFocusFromRaise() }
         }
         // The drop shown, worked out again on the trees as they are now, unless the pointer has asked for another for
         // `DragSession.settle` and still does; when none showed yet, the one the pointer was asking for; with no feedback

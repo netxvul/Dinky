@@ -136,6 +136,9 @@ final class Coordinator {
         didSet { if drag != nil, oldValue == nil { mouseCursorInterrupted() } }
     }
     var dragging: WindowID? { drag?.id }
+    /// Windows read in front of their app only as kex raised them into order (`syncFocus`), and when the first of them
+    /// was: once the raise settles, macOS may still have one of them key. See `reclaimFocusFromRaise`.
+    var passedOver: (ids: Set<WindowID>, since: CFTimeInterval) = ([], 0)
     /// Whether kex is moving windows now: a glide, a staging or system tiling still settling, a push, a strip held
     /// by fingers or the mouse, or a drag.
     var movesWindows: Bool {
@@ -369,8 +372,10 @@ final class Coordinator {
         // has settled, read it again, in case the user did bring that window forward meanwhile.
         applier.onRaised = { [weak self] in
             DispatchQueue.main.async { [weak self] in
-                self?.syncFocus()
-                self?.flush()
+                guard let self else { return }
+                if reclaimFocusFromRaise() { return }
+                syncFocus()
+                flush()
             }
         }
         animator.onArrive = { [weak self] ids in self?.borders?.arrived(ids) }
@@ -1386,8 +1391,11 @@ final class Coordinator {
         // hold. Focus is read again once the raise has settled (`FrameApplier.onRaised`).
         if applier.echoesRaise(id) {
             if let key = placements[id]?.space, let workspace = workspaces[key] { telemetry.passedOver(key, workspace, id) }
+            if passedOver.ids.isEmpty { passedOver.since = CACurrentMediaTime() }
+            passedOver.ids.insert(id)
             return
         }
+        if holdsPassedOver(id) { return }
         if id != heldBehindClick { heldBehindClick = nil }
         if id != lastFocused, let pid = model.windows[id]?.pid {
             if let clicked = parkedBehindClick(id, of: pid) {
@@ -1437,6 +1445,36 @@ final class Coordinator {
         // the hold lets go (`revealClickedFocus`), so a drag the press starts is measured against the windows where
         // they are.
         edit(key) { $0.focus(id, holdingScroll: clickHold) }
+    }
+
+    /// A raise into order that passed over a window of the app in front can leave it key: the app makes each window it
+    /// raises its key one, and the raise of the window meant to end in front of it is not always among them, as when a
+    /// drop makes room beside the dragged window. Focus stayed on kex's window, but typing went to the one parked and the
+    /// next click took the strip to it. So once the raise settles and the drag is over, if macOS still has a window
+    /// passed over in front, of the app of kex's focused window, and no click came since, kex's window is focused again.
+    /// True when it was.
+    /// Whether `id`, read in front, is a window passed over while the button is still down for a drag: left for the drop
+    /// to settle (`reclaimFocusFromRaise`), not taken for the user's choice once its raise has settled.
+    private func holdsPassedOver(_ id: WindowID) -> Bool {
+        passedOver.ids.contains(id) && (drag != nil || CGEventSource.buttonState(.combinedSessionState, button: .left))
+    }
+
+    @discardableResult
+    func reclaimFocusFromRaise() -> Bool {
+        guard !passedOver.ids.isEmpty, drag == nil, !CGEventSource.buttonState(.combinedSessionState, button: .left) else {
+            return false
+        }
+        let passed = passedOver
+        passedOver = ([], 0)
+        let now = kex_border_focused_window()
+        let sinceClick = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .leftMouseDown)
+        guard passed.ids.contains(now), !applier.echoesRaise(now), lastFocused != now, lastFocused != 0,
+              sinceClick > CACurrentMediaTime() - passed.since,
+              let pid = model.windows[now]?.pid, model.windows[lastFocused]?.pid == pid,
+              let key = placements[lastFocused]?.space, isVisible(key), workspaces[key]?.focused == lastFocused else { return false }
+        print("\(stamp()) focus: \(now) stayed key after kex raised it into order, \(lastFocused) has focus: focused again")
+        focus(lastFocused)
+        return true
     }
 
     /// The tree of a user Space, numbered workspace or not, created on first use. Nil for full-screen Spaces.
