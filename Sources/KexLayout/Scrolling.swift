@@ -498,14 +498,21 @@ extension Workspace {
         // Across a seam, while fullscreen pushes too: the other display shows the strip as ever.
         let reaching: (left: Int?, right: Int?) = (pushed.isEmpty || spansDisplays) && freeScrollFrom == nil
             ? reachingWalls(edges, in: area) : (nil, nil)
+        // Beside a pin, where the sliver there is tucked under it as the strip rests (`parked`), the column in view
+        // nearest it reaches over the room the sliver leaves, up to a gap from the pin. Not while fingers scroll the
+        // strip, nor while fullscreen pushes.
+        let pinReach: (left: Int?, right: Int?) = pushed.isEmpty && freeScrollFrom == nil
+            ? reachingPins(edges, in: area) : (nil, nil)
         result.containerRects[[]] = inset
         let reach = stripInset
         for i in stripStackingOrder {
             let trail = i < last || beside.right ? gap / 2 : 0
             let x = area.minX + spans[i].start - offset
             // Beside a pin, still half a gap from its own half (only across a seam does a column reach towards a pin).
-            let a = i != reaching.left ? edges[i].left : beside.left ? (reach.minX + gap / 2).rounded() : reach.minX
-            let b = i != reaching.right ? edges[i].right : beside.right ? (reach.maxX - gap / 2).rounded() : reach.maxX
+            let a = i == reaching.left ? beside.left ? (reach.minX + gap / 2).rounded() : reach.minX
+                : i == pinReach.left ? (reach.minX + gap / 2).rounded() : edges[i].left
+            let b = i == reaching.right ? beside.right ? (reach.maxX - gap / 2).rounded() : reach.maxX
+                : i == pinReach.right ? (reach.maxX - gap / 2).rounded() : edges[i].right
             // A pinned column stays at its side whatever the scroll. Across a seam, as tall as the display it is on; with
             // `spanHeight` `atRest`, while fingers hold the strip, the one it was on as they took hold.
             let held = spanHeight == .atRest && band.contains(i)
@@ -585,6 +592,46 @@ extension Workspace {
         return (left, right)
     }
 
+    /// The column in view nearest each pin that reaches over the room a sliver tucked under that pin leaves (see
+    /// `straddlingPins`), out to a whole gap from the pin, its other edge where it is. Only less room than the narrowest
+    /// column takes (`reachesOver`), and only a column whose windows go that wide (`maximumWidths`). Not on a side with
+    /// a wall, where nothing tucks, nor where the column in view reaches out to the wall there (`reachingWalls`).
+    /// `edges` are each column's window edges where the strip has it.
+    func reachingPins(_ edges: [(left: CGFloat, right: CGFloat)], in area: CGRect) -> (left: Int?, right: Int?) {
+        guard hasPins, gaps.horizontal > 0 else { return (nil, nil) }
+        let inset = stripInset, band = bandRange, half = gaps.horizontal / 2, beside = bandNeighbours
+        // Where a column reaches to beside the pin; in view, as far as the band goes on the other side, where the end
+        // column there reaches the outer gap.
+        let start = (inset.minX + half).rounded(), end = (inset.maxX - half).rounded()
+        let inView = band.filter {
+            edges[$0].left >= (beside.left ? start : inset.minX) - 1 && edges[$0].right <= (beside.right ? end : inset.maxX) + 1
+        }
+        func reaching(_ side: PinSide) -> Int? {
+            guard let p = pinnedIndex(side), !walls.contains(side.direction) else { return nil }
+            let pin = pinRect(p)
+            let sliver = band.contains { j in
+                !hangsUnderPin(column: j) && sliverBeside(pin, side, left: edges[j].left, right: edges[j].right, in: area)
+            }
+            guard sliver, let i = side == .left ? inView.first : inView.last else { return nil }
+            let room = side == .left ? edges[i].left - start : end - edges[i].right
+            guard room > 0.5, reachesOver(room, in: area) else { return nil }
+            let width = side == .left ? edges[i].right - start : end - edges[i].left
+            let capped = root.children[i].windows.contains { maximumWidths[$0].map { $0 < width - 0.5 } ?? false }
+            return capped ? nil : i
+        }
+        return (reaching(.left), reaching(.right))
+    }
+
+    /// Whether a band window or column from `left` to `right` is a sliver beside `pin` on `side`, the rest of it
+    /// under the pin: part of it in the gap between the pin and the band, less of it there than the narrowest column
+    /// takes (`reachesOver`).
+    private func sliverBeside(_ pin: CGRect, _ side: PinSide, left: CGFloat, right: CGFloat, in area: CGRect) -> Bool {
+        let inset = stripInset, half = gaps.horizontal / 2
+        return side == .left
+            ? left < inset.minX + half - 0.5 && right > pin.maxX + 0.5 && reachesOver(right - pin.maxX, in: area)
+            : right > inset.maxX - half + 0.5 && left < pin.minX - 0.5 && reachesOver(pin.minX - left, in: area)
+    }
+
     /// Scrolling: the strip's frames before parking, at the current scroll offset. Gliding these and parking them
     /// on every frame (`placeStrip`) scrolls the strip as one: a column passing through slides across the screen
     /// where the strip has it, rather than every parked window flying straight from one edge to the other.
@@ -598,8 +645,9 @@ extension Workspace {
     /// Where strip frames, such as `stripFrames` part way through a glide, go on screen: parked as `layout()` parks
     /// them. With `resting`, the strip frames the glide ends at, a window hiding at a wall is sized by where the column
     /// it hides behind rests, so it changes size once on the way rather than with every step of that column's.
-    public func placeStrip(_ frames: [WindowID: CGRect], resting: [WindowID: CGRect]? = nil) -> [WindowID: CGRect] {
-        parked(frames, resting: resting)
+    public func placeStrip(_ frames: [WindowID: CGRect], resting: [WindowID: CGRect]? = nil,
+                           from: [WindowID: CGRect]? = nil) -> [WindowID: CGRect] {
+        parked(frames, resting: resting, from: from)
     }
 
     /// `frame` moved back to a wall it would hang past, for one placed where the strip has it rather than parked: past
@@ -636,7 +684,8 @@ extension Workspace {
     /// no column in view it stays flush at the wall. While fullscreen pushes, the column in view is the fullscreen
     /// window's, so a window hiding behind it grows no bigger than it is rather than to the whole screen's size.
     /// `resting`, the strip frames where a glide ends, sizes a window hiding at a wall (see `hiddenAtWall`).
-    func parked(_ frames: [WindowID: CGRect], resting: [WindowID: CGRect]? = nil) -> [WindowID: CGRect] {
+    func parked(_ frames: [WindowID: CGRect], resting: [WindowID: CGRect]? = nil,
+                from: [WindowID: CGRect]? = nil) -> [WindowID: CGRect] {
         let frames = onDisplays(frames, resting: resting)
         let keepsSize = !pushedColumns.isEmpty
         let columns = root.children.map { $0.windows.filter { frames[$0] != nil } }
@@ -685,7 +734,60 @@ extension Workspace {
             }
         }
         let hanging = hangingUnderPins(frames)
+        let straddling = straddlingPins(frames, resting: resting, hanging: hanging)
+        // Where a band window goes tucked under a pin, off the screen's edge there.
+        func underPin(_ id: WindowID, _ frame: CGRect, _ side: PinSide) -> CGRect {
+            let x = side == .left ? leftLimit[id] ?? bounds.minX + Self.tuck - frame.width
+                : rightLimit[id] ?? bounds.maxX - Self.tuck
+            return CGRect(x: x, y: frame.minY, width: frame.width, height: frame.height)
+        }
+        // `frame` moved `shift` further under the pin on `side`: tucked once wholly under it.
+        func slid(_ id: WindowID, _ frame: CGRect, _ side: PinSide, _ pin: CGRect, by shift: CGFloat) -> CGRect {
+            let x = side == .left ? frame.minX - shift : frame.minX + shift
+            if side == .left ? x + frame.width <= pin.maxX + 0.5 : x >= pin.minX - 0.5 { return underPin(id, frame, side) }
+            let kept = side == .left ? max(x, leftLimit[id] ?? -.infinity) : min(x, rightLimit[id] ?? .infinity)
+            return CGRect(x: kept, y: frame.minY, width: frame.width, height: frame.height)
+        }
+        // A band window gliding from a tuck under a pin: where the glide set out (`from`) it was a sliver beside the
+        // pin. Its side, the pin's frame, the sliver, how far it goes, and whether away from the pin.
+        let area = stripArea
+        func untucking(_ id: WindowID, _ frame: CGRect) -> (PinSide, CGRect, CGFloat, CGFloat, Bool)? {
+            guard hasPins, freeScrollFrom == nil, gaps.horizontal > 0, !hanging.contains(id), bandIndex(of: id) != nil,
+                  let rest = resting?[id], let start = from?[id] else { return nil }
+            let way = abs(rest.minX - start.minX)
+            guard way > 0.5 else { return nil }
+            for side in PinSide.allCases {
+                guard let index = pinnedIndex(side), !walls.contains(side.direction) else { continue }
+                let pin = pinRect(index)
+                let away = side == .left ? rest.minX > start.minX : rest.minX < start.minX
+                guard sliverBeside(pin, side, left: start.minX, right: start.maxX, in: area) else { continue }
+                return (side, pin, side == .left ? start.maxX - pin.maxX : pin.minX - start.minX, way, away)
+            }
+            return nil
+        }
         return Dictionary(uniqueKeysWithValues: frames.map { id, frame in
+            // A band window resting part under a pin goes wholly under it, tucked off the screen's edge there, so its
+            // part beside the pin does not fill the gap between the pin and the band.
+            if let (side, pin) = straddling[id] {
+                guard let rest = resting?[id], abs(rest.minX - frame.minX) > 0.5 else {
+                    return (id, underPin(id, frame, side))
+                }
+                // On the way there it slides with the strip, taking up the sliver it would rest at as it nears its
+                // place, so it ends wholly under the pin; from there it is tucked, under the pin, with no jump in view.
+                // How near is told by where the glide set out (`from`), or failing that by the band's width.
+                let sliver = side == .left ? rest.maxX - pin.maxX : pin.minX - rest.minX
+                let left = abs(frame.minX - rest.minX)
+                let way = from?[id].map { abs(rest.minX - $0.minX) }.flatMap { $0 > 0.5 ? $0 : nil }
+                    ?? max(stripInset.width, sliver + 1)
+                return (id, slid(id, frame, side, pin, by: sliver * min(max(1 - left / way, 0), 1)))
+            }
+            // Coming out of such a tuck, the other way: it set out a sliver beside the pin, tucked under it, and gives
+            // that sliver up as it goes, so it comes out from under the pin rather than showing it at once.
+            // Heading further under the pin, it stays tucked all the way.
+            if let (side, pin, sliver, way, away) = untucking(id, frame), let rest = resting?[id] {
+                guard away else { return (id, underPin(id, frame, side)) }
+                return (id, slid(id, frame, side, pin, by: sliver * min(max(abs(frame.minX - rest.minX) / way, 0), 1)))
+            }
             if let wall = wallParking(frame, covers: covers), !hanging.contains(id),
                let cover = wall == .left ? covers.left : covers.right {
                 if let curtain = curtain(frame, at: wall, under: cover), !keepsSize {
@@ -697,8 +799,27 @@ extension Workspace {
             var x = frame.minX
             x = min(x, walls.contains(.right) ? bounds.maxX - frame.width : rightLimit[id] ?? bounds.maxX - Self.peek)
             x = max(x, walls.contains(.left) ? bounds.minX : leftLimit[id] ?? bounds.minX + Self.peek - frame.width)
+            x = clearOfPinGaps(id, x: x, frame)
             return (id, CGRect(x: x, y: frame.minY, width: frame.width, height: frame.height))
         })
+    }
+
+    /// `x` for a band window placed at `x` with `frame`'s width, moved so the width it comes out at keeps it out of the
+    /// gap beside a pin: an app that snaps its size a little wider than asked (`observedWidths`, up to
+    /// `snapAllowance`) grows on the right, past a left pin's edge from under it, or into the gap before a right pin
+    /// from the band's end. So it is placed by the width it takes, its edge there where its tile's would be.
+    func clearOfPinGaps(_ id: WindowID, x: CGFloat, _ frame: CGRect) -> CGFloat {
+        guard hasPins, pinSide(of: id) == nil, let seen = observedWidths[id], seen > frame.width + 0.5,
+              seen - frame.width <= Self.snapAllowance else { return x }
+        let right = x + frame.width
+        if let pin = pinnedIndex(.left).map(pinRect), right <= pin.maxX + 0.5, x + seen > pin.maxX + 0.5 {
+            return pin.maxX - seen
+        }
+        if let pin = pinnedIndex(.right).map(pinRect) {
+            let edge = pin.minX - gaps.horizontal
+            if right <= edge + 0.5, x + seen > edge + 0.5 { return edge - seen }
+        }
+        return x
     }
 
     /// The biggest window of a column shown whole, and the frames of that column's windows.
@@ -744,6 +865,37 @@ extension Workspace {
         guard offLeft != offRight else { return nil }
         let wall: Direction = offLeft ? .left : .right
         return walls.contains(wall) && (wall == .left ? covers.left : covers.right) != nil ? wall : nil
+    }
+
+    /// The band windows that rest part under a pin, part in the gap between it and the band, by the side of that pin:
+    /// a column the strip scrolled as little as shows its neighbour, or one left over at an end of the strip. macOS
+    /// cannot clip a window at the pin's edge, so the part beside it would cover the gap. Judged where a glide ends
+    /// (`resting`, or `frames` with none given), so one gliding there is told too, with the pin's frame, and slides on
+    /// under the pin (see `parked`); not while fingers scroll the strip. Only a sliver of it beside the pin, less than
+    /// the narrowest column takes, and only with an inner gap to cover. Not one hanging under the pin (`hanging`), nor on a side with a
+    /// wall, where a window cannot leave the screen.
+    private func straddlingPins(_ frames: [WindowID: CGRect], resting: [WindowID: CGRect]?,
+                                hanging: Set<WindowID>) -> [WindowID: (side: PinSide, pin: CGRect)] {
+        // With no gap there is none to cover, and a column partly in view beside the pin shows as at any edge.
+        guard hasPins, freeScrollFrom == nil, gaps.horizontal > 0 else { return [:] }
+        let area = stripArea
+        let left = pinnedIndex(.left).flatMap { walls.contains(.left) ? nil : pinRect($0) }
+        let right = pinnedIndex(.right).flatMap { walls.contains(.right) ? nil : pinRect($0) }
+        guard left != nil || right != nil else { return [:] }
+        var result: [WindowID: (side: PinSide, pin: CGRect)] = [:]
+        for i in bandRange {
+            for id in root.children[i].windows where !hanging.contains(id) {
+                guard frames[id] != nil, let frame = resting?[id] ?? frames[id] else { continue }
+                // Only a sliver, which the column in view could have reached over (`reachesOver`): more of a column
+                // beside the pin is a column's worth, and tucking it would leave that room bare.
+                if let pin = left, sliverBeside(pin, .left, left: frame.minX, right: frame.maxX, in: area) {
+                    result[id] = (.left, pin)
+                } else if let pin = right, sliverBeside(pin, .right, left: frame.minX, right: frame.maxX, in: area) {
+                    result[id] = (.right, pin)
+                }
+            }
+        }
+        return result
     }
 
     /// The band windows hanging under a pin, held off a wall rather than parked at it.

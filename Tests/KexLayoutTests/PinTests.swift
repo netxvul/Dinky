@@ -56,6 +56,207 @@ struct PinGeometryTests {
         #expect(shown[3]!.maxX <= pin.maxX, "its neighbour ends under the pin")
     }
 
+    @Test func `Scrolled the other way no band column shows in part in the gap beside the pin`() throws {
+        for side in [PinSide.left, .right] {
+            let pinnedID: WindowID = side == .left ? 1 : 8
+            var ws = try pinned(strip(8, gaps: spaced), pinnedID, side)
+            let pin = ws.pinRect(side == .left ? 0 : 7)
+            // Out to the far end, where a column is left over beside the pin, then back to the pin and one column at a
+            // time away from it: each step scrolls as little as shows the new column, which leaves its neighbour on
+            // the pin's side part under the pin. Either goes wholly under it as the strip rests.
+            let order: [WindowID] = side == .left ? [8, 2, 3, 4, 5, 6, 7] : [1, 7, 6, 5, 4, 3, 2]
+            for id in order {
+                ws.focus(id)
+                for (other, frame) in ws.layout().frames where other != pinnedID {
+                    let clear = side == .left
+                        ? frame.maxX <= pin.maxX || frame.minX >= pin.maxX + 10
+                        : frame.minX >= pin.minX || frame.maxX <= pin.minX - 10
+                    #expect(clear, "\(side) pin, focus \(id): \(other) at \(frame)")
+                }
+            }
+        }
+    }
+
+    @Test func `The column in view nearest a pin reaches over the room a tucked sliver leaves`() throws {
+        for side in [PinSide.left, .right] {
+            let pinnedID: WindowID = side == .left ? 1 : 8
+            var ws = try pinned(strip(8, gaps: spaced), pinnedID, side)
+            let pin = ws.pinRect(side == .left ? 0 : 7)
+            // Out to the far end, where a sliver is left over beside the pin and tucks under it, then back along the
+            // band a column at a time: the band window nearest the pin is a whole gap from it at every step.
+            let order: [WindowID] = side == .left ? [8, 7, 6, 5, 4, 3, 2] : [1, 2, 3, 4, 5, 6, 7]
+            for id in order {
+                ws.focus(id)
+                let shown = ws.layout().frames.filter { $0.key != pinnedID }
+                let beside = side == .left
+                    ? shown.values.filter { $0.minX >= pin.maxX }.map(\.minX).min()
+                    : shown.values.filter { $0.maxX <= pin.minX }.map(\.maxX).max()
+                let nearest = try #require(beside, "\(side) pin, focus \(id)")
+                #expect(nearest == (side == .left ? pin.maxX + 10 : pin.minX - 10), "\(side) pin, focus \(id)")
+                for (other, frame) in shown {
+                    let clear = side == .left
+                        ? frame.maxX <= pin.maxX || frame.minX >= pin.maxX + 10
+                        : frame.minX >= pin.minX || frame.maxX <= pin.minX - 10
+                    #expect(clear, "\(side) pin, focus \(id): \(other) at \(frame)")
+                }
+            }
+            // At the far end it keeps its other edge where it was: only its edge towards the pin moves.
+            var end = try pinned(strip(8, gaps: spaced), pinnedID, side)
+            end.focus(side == .left ? 8 : 1)
+            let laid = end.layout().frames
+            let reached = try #require(laid.first { side == .left ? $0.value.minX == pin.maxX + 10 : $0.value.maxX == pin.minX - 10 })
+            let next = side == .left ? laid.contains { $0.value.minX == reached.value.maxX + 10 }
+                : laid.contains { $0.value.maxX == reached.value.minX - 10 }
+            #expect(next, "still a gap from its neighbour away from the pin")
+            // Every column has the same share, so the others show the width it had.
+            let others = laid.filter { $0.key != pinnedID && $0.key != reached.key }.map(\.value.width)
+            #expect(laid[reached.key]!.width > others.max()!, "it grew to reach over")
+        }
+    }
+
+    @Test func `With one band column in view, the end column reaches over the room a tucked sliver leaves`() throws {
+        for side in [PinSide.left, .right] {
+            // A pin a little wider than the band's columns, so only one shows whole in the band, with room to spare.
+            var ws = Workspace(bounds: rect(0, 0, 1000, 600), gaps: spaced, algorithm: .scrolling)
+            for id in 1...5 {
+                ws.columnWidth = id == (side == .left ? 1 : 5) ? 0.5 : 0.48
+                ws.insert(WindowID(id))
+            }
+            let pinnedID: WindowID = side == .left ? 1 : 5
+            ws = try pinned(ws, pinnedID, side)
+            let pin = ws.pinRect(side == .left ? 0 : 4)
+            ws.focus(side == .left ? 5 : 1)
+            let laid = ws.layout().frames, far: WindowID = side == .left ? 5 : 1
+            if side == .left { #expect(laid[far]!.minX == pin.maxX + 10, "\(laid[far]!)") }
+            else { #expect(laid[far]!.maxX == pin.minX - 10, "\(laid[far]!)") }
+            for (other, frame) in laid where other != pinnedID && other != far {
+                let clear = side == .left ? frame.maxX <= pin.maxX : frame.minX >= pin.minX
+                #expect(clear, "\(side): \(other) at \(frame)")
+            }
+        }
+    }
+
+    @Test func `A column whose windows go no wider keeps its width beside a tucked sliver`() throws {
+        var ws = try pinned(strip(8, gaps: spaced), 1, .left)
+        ws.focus(8)
+        let before = ws.layout().frames
+        let reached = try #require(before.first { $0.key != 1 && $0.value.minX == ws.pinRect(0).maxX + 10 })
+        let plain = frames(ws)[reached.key]!
+        ws.maximumWidths[reached.key] = plain.width
+        let after = ws.layout().frames[reached.key]!
+        #expect(after.width == plain.width, "it cannot grow to reach over")
+        #expect(after.minX == plain.minX)
+    }
+
+    @Test func `A window that comes out a little wider than its tile keeps out of the gap beside a pin`() throws {
+        // Left pin: a column scrolled to end under the pin, its window snapping a point wider, would reach past the
+        // pin's edge into the gap. It goes a point left instead.
+        var left = try pinned(strip(8, gaps: spaced), 1, .left)
+        let pinL = left.pinRect(0)
+        left.focus(8)
+        left.focus(4)
+        let under = frames(left)[3]!
+        #expect(under.maxX == pinL.maxX, "it ends at the pin's edge")
+        left.observedWidths[3] = under.width + 1
+        let moved = left.layout().frames[3]!
+        #expect(moved.minX + under.width + 1 == pinL.maxX, "\(moved)")
+        #expect(moved.width == under.width, "still asked for its tile's width")
+        // Right pin: the band's end column, a gap before the pin, grows into that gap on the right; it goes left.
+        var right = try pinned(strip(8, gaps: spaced), 8, .right)
+        let pinR = right.pinRect(7)
+        right.focus(1)
+        right.focus(5)
+        let end = try #require(frames(right).first { $0.key != 8 && $0.value.maxX == pinR.minX - 10 })
+        right.observedWidths[end.key] = end.value.width + 1
+        #expect(right.layout().frames[end.key]!.minX + end.value.width + 1 == pinR.minX - 10)
+        // One that came out its tile's width, or narrower, stays where its tile is.
+        right.observedWidths[end.key] = end.value.width - 2
+        #expect(right.layout().frames[end.key]!.minX == end.value.minX)
+    }
+
+    @Test(arguments: [true, false])
+    func `Gliding to or from a sliver tucked beside a pin, a window slides under the pin, no jump in view`(told: Bool) throws {
+        for side in [PinSide.left, .right] {
+            let pinnedID: WindowID = side == .left ? 1 : 8
+            var ws = try pinned(strip(8, gaps: spaced), pinnedID, side)
+            let pin = ws.pinRect(side == .left ? 0 : 7)
+            ws.focus(side == .left ? 7 : 2)
+            let near = frames(ws)
+            ws.focus(side == .left ? 8 : 1)
+            let far = frames(ws)
+            // The one that rests a sliver beside the pin at the far end, tucked under it there.
+            let sliver = try #require(far.first { id, f in
+                id != pinnedID && (side == .left ? f.minX < pin.maxX && f.maxX > pin.maxX + 0.5
+                    : f.maxX > pin.minX && f.minX < pin.minX - 0.5)
+            }).key
+            let isShown = { (r: CGRect) in side == .left ? r.maxX > pin.maxX + 0.5 : r.minX < pin.minX - 0.5 }
+            let beyond = { (r: CGRect) in side == .left ? r.maxX - pin.maxX : pin.minX - r.minX }
+            // Into the tuck, then out of it. Without where the glide set out (`told`), only into it is smoothed.
+            for (from, to, into) in [(near, far, true), (far, near, false)] where told || into {
+                var glide = ws
+                glide.focus(to == far ? (side == .left ? 8 : 1) : (side == .left ? 7 : 2))
+                let steps = 60
+                let step = abs((to[sliver]!.minX - from[sliver]!.minX) / CGFloat(steps))
+                var last: CGRect?
+                for i in 0...steps {
+                    let t = CGFloat(i) / CGFloat(steps)
+                    let now = from.merging(to) { a, b in
+                        CGRect(x: a.minX + (b.minX - a.minX) * t, y: b.minY, width: a.width + (b.width - a.width) * t,
+                               height: b.height)
+                    }
+                    let placed = glide.placeStrip(now, resting: to, from: told ? from : nil)[sliver]!
+                    let what = "\(side) \(into ? "into" : "out of") the tuck, step \(i)"
+                    if let last {
+                        switch (isShown(last), isShown(placed)) {
+                        case (true, true):
+                            // While it shows in the band it moves about as the strip does, never jumping.
+                            #expect(abs(placed.minX - last.minX) <= step * 1.1 + 1, "\(what): \(last) to \(placed)")
+                        case (true, false):
+                            #expect(beyond(last) <= step * 1.1 + 1, "\(what): went under from \(last)")
+                        case (false, true):
+                            #expect(beyond(placed) <= step * 1.1 + 1, "\(what): came out at \(placed)")
+                        case (false, false): break
+                        }
+                    } else if !into {
+                        #expect(!isShown(placed), "\(what): shows as it sets out, at \(placed)")
+                    }
+                    last = placed
+                }
+                if into { #expect(!isShown(last!), "\(side): tucked at rest") }
+            }
+        }
+    }
+
+    @Test func `Gliding on further under a pin from a tucked sliver, a window stays tucked`() throws {
+        for side in [PinSide.left, .right] {
+            let pinnedID: WindowID = side == .left ? 1 : 8
+            var ws = try pinned(strip(8, gaps: spaced), pinnedID, side)
+            let pin = ws.pinRect(side == .left ? 0 : 7)
+            // Scrolled as little as shows a column, its neighbour on the pin's side rests a sliver, tucked: then the
+            // strip scrolls on past it, taking it further under the pin.
+            for id in (side == .left ? [8, 2, 3, 4, 5] : [1, 7, 6, 5, 4]) as [WindowID] { ws.focus(id) }
+            let from = frames(ws)
+            let sliver = try #require(from.first { id, f in
+                id != pinnedID && (side == .left ? f.minX < pin.maxX && f.maxX > pin.maxX + 0.5
+                    : f.maxX > pin.minX && f.minX < pin.minX - 0.5)
+            }).key
+            #expect(ws.layout().frames[sliver]! != from[sliver]!, "tucked at rest")
+            ws.focus(side == .left ? 6 : 3)
+            let to = frames(ws)
+            #expect(side == .left ? to[sliver]!.maxX < from[sliver]!.maxX : to[sliver]!.minX > from[sliver]!.minX,
+                    "it goes further under the pin")
+            for i in 0...30 {
+                let t = CGFloat(i) / 30
+                let now = from.merging(to) { a, b in
+                    CGRect(x: a.minX + (b.minX - a.minX) * t, y: b.minY, width: b.width, height: b.height)
+                }
+                let placed = ws.placeStrip(now, resting: to, from: from)[sliver]!
+                let shows = side == .left ? placed.maxX > pin.maxX + 0.5 : placed.minX < pin.minX - 0.5
+                #expect(!shows, "\(side) step \(i): \(placed)")
+            }
+        }
+    }
+
     @Test func `A lone band column and a pushed one keep a whole gap from the pin`() throws {
         let lone = try pinned(strip(2, gaps: spaced), 1, .left)
         #expect(frames(lone)[2]!.minX == lone.pinRect(0).maxX + 10)

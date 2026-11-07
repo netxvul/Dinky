@@ -2676,21 +2676,34 @@ final class Coordinator {
                     && workspace.columns(around: id).own.count == 1
             }.map { ($0, workspace.columns(around: $0)) }
             let shown = { (id: WindowID) -> CGRect? in serverFrame(id) }
+            // How far the last frame placed each band window reaching under a pin from where the strip had it, sliding
+            // under the pin or tucked there: the guard takes where it shows back by that, rather than follow it off the
+            // screen, which would pull the window beside it over the gap and the pin.
+            var placedAside: [WindowID: CGFloat] = [:]
+            let pins = (left: workspace.pinFrame(.left), right: workspace.pinFrame(.right))
             let place = { (frames: [WindowID: CGRect]) -> [WindowID: CGRect] in
                 var input = strip
                 for (id, frame) in frames where !fullscreen.contains(id) { input[id] = frame }
                 for (lead, beside) in leads {
                     input = ResizeOnce.guarded(input, lead: lead, left: beside.left, right: beside.right, gap: guardGap,
-                                               anchored: growLeft.contains(lead), shown: shown)
+                                               anchored: growLeft.contains(lead), placedAside: placedAside, shown: shown)
                 }
                 for (lead, beside) in systemLeads {
                     guard let frame = shown(lead) else { continue }
                     input[lead] = frame
                     input = ResizeOnce.guarded(input, lead: lead, left: beside.left, right: beside.right, gap: guardGap,
-                                               shown: { $0 == lead ? frame : shown($0) })
+                                               placedAside: placedAside, shown: { $0 == lead ? frame : shown($0) })
                 }
                 self.orderWallCovers(key, workspace, strip: input, holding: false)
-                var placed = workspace.placeStrip(input, resting: strip)
+                var placed = workspace.placeStrip(input, resting: strip, from: starts)
+                if pins.left != nil || pins.right != nil {
+                    placedAside = [:]
+                    for (id, frame) in placed where workspace.pinSide(of: id) == nil {
+                        guard let at = input[id], abs(frame.minX - at.minX) > 0.5 else { continue }
+                        let under = pins.left.map { at.minX < $0.maxX } == true || pins.right.map { at.maxX > $0.minX } == true
+                        if under { placedAside[id] = frame.minX - at.minX }
+                    }
+                }
                 // Placed as the guard has it: hanging past the screen edge at its size, such a window is no window
                 // scrolled out to be parked. Not past a wall, though: one coming back into view from behind the column
                 // at a wall starts where the strip had it, off the screen, which there is on the other display, and

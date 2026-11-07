@@ -137,9 +137,14 @@ public enum ResizeOnce {
     /// pulls a window towards its neighbour, so the two never hold each other up. `left` and `right` are the columns
     /// either side, nearest first; `lead` in view, where strip and screen coordinates agree. An `anchored` lead, one
     /// resizing at an edge as it glides (see `anchored(_:to:edge:)`), is held by that edge alone, its other edge kept.
+    /// `placedAside` is how far a window was last placed from where the strip has it, as one sliding under a pin or
+    /// tucked there is (see `Workspace.parked`): where it shows is taken back by that into the strip's coordinates, so
+    /// the guard does not follow it off the screen.
     public static func guarded(_ frames: [WindowID: CGRect], lead: WindowID, left: [[WindowID]], right: [[WindowID]],
-                               gap: CGFloat, anchored: Bool = false, shown: (WindowID) -> CGRect?) -> [WindowID: CGRect] {
+                               gap: CGFloat, anchored: Bool = false, placedAside: [WindowID: CGFloat] = [:],
+                               shown seen: (WindowID) -> CGRect?) -> [WindowID: CGRect] {
         guard var leadFrame = frames[lead] else { return frames }
+        func shown(_ id: WindowID) -> CGRect? { seen(id).map { $0.offsetBy(dx: -(placedAside[id] ?? 0), dy: 0) } }
         var out = frames
         // The lead is read only for a side that is there, at the head of the first: a read is a call to the window
         // server.

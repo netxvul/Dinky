@@ -10,7 +10,7 @@ import CoreGraphics
 // the marks sleep, kept for when it scrolls again.
 
 /// A side of the screen a column can be pinned to.
-public enum PinSide: String, Equatable, Hashable, Sendable, CaseIterable {
+public enum PinSide: String, Codable, Equatable, Hashable, Sendable, CaseIterable {
     case left, right
 
     /// The direction from the band towards this side.

@@ -136,6 +136,18 @@ struct ResizeOnceTests {
         #expect(out[1] == rect(-100, 41, 895, 869))
     }
 
+    @Test func `A column tucked under a pin is read where the strip has it, not where it was put`() {
+        // At a glide's end beside a left pin, the column left of the window (1) rests a sliver beside the pin and is
+        // tucked off the screen under it; the window (2), growing by its left edge, reached over the room it left.
+        let frames: [WindowID: CGRect] = [1: rect(34, 41, 719, 869), 2: rect(760, 41, 744, 869)]
+        let shown: [WindowID: CGRect] = [1: rect(-717, 41, 719, 869), 2: rect(762, 41, 751, 869)]
+        let followed = ResizeOnce.guarded(frames, lead: 2, left: [[1]], right: [], gap: 11, anchored: true) { shown[$0] }
+        #expect(followed[2]!.minX == 13, "read where it was put, the window is pulled over the pin")
+        let held = ResizeOnce.guarded(frames, lead: 2, left: [[1]], right: [], gap: 11, anchored: true,
+                                      placedAside: [1: -751]) { shown[$0] }
+        #expect(held[2] == frames[2])
+    }
+
     @Test func `Columns beyond the nearest go along with it`() {
         let frames: [WindowID: CGRect] = [1: rect(-900, 41, 700, 869), 3: rect(-800, 41, 895, 869), 2: rect(150, 41, 1446, 869)]
         let shown: [WindowID: CGRect] = [3: rect(-300, 41, 895, 869), 2: rect(343, 41, 1446, 869)]
