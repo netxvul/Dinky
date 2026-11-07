@@ -11,6 +11,7 @@
 
 ### Fixes
 
+- A burst of workspace switches that comes back to the workspace it started from, such as `workspace 2` then `workspace 1` at once from 1, ends with `workspace-changed` too. It fired only `workspace-changing`, so a bar that showed the announced workspace was left showing it. A burst still reports a single `workspace-changed`, where it lands.
 - `focus-monitor next` and `prev` step through the displays in `list-monitors` order and wrap around, as `move-window-to-display next` and `prev` do. They went left to right and stopped at the last display, so with a display above the built-in one `focus-monitor next` from display 1 found no next display while `move-window-to-display next` went to display 2.
 - A rule's `cycle-size` no longer moves the windows of that app that float on their own. A rule sizing Dia's column took Dia's settings window, which cannot be resized, off centre to the corner of a 70% frame as it opened. A window a rule floats still takes the size, and `cycle-size` on a window that cannot be resized answers with an error and leaves it where it is.
 - With a floating window over a scrolling strip, `focus`, `move`, the window switcher and a click on a column that only partly shows put the whole strip in front of it first, as holding the strip does, rather than leaving some columns over it and others under it. The floating window stays behind till a click, Cmd-Tab or a focus brings it forward.

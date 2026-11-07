@@ -952,7 +952,7 @@ environment `exec-and-forget` gets.
 |---|---|
 | `startup` | Once, after Kex has read the windows and displays. |
 | `workspace-changing` | When a Kex switch starts, before it lands, and again when a burst of switches changes the target. |
-| `workspace-changed` | When a display's workspace changes, or a switch gives up. |
+| `workspace-changed` | When a display's workspace changes, or a switch gives up. A burst of switches on one display is one switch: each new target gets its own `workspace-changing`, and the burst ends with a single `workspace-changed` naming where the display landed, even when that is where it started, so every `workspace-changing` is followed by a `workspace-changed`, though not one each. |
 | `focus-changed` | When focus changes, debounced 50 ms. |
 | `mode-changed` | When the binding mode changes, including back to `main` when the config reloads. Sets `KEX_MODE` and `KEX_PREV_MODE`. |
 | `display-changed` | When a display connects or disconnects, once the displays have settled and Kex has arranged the workspaces on them (or tried to), about a second later. Sets `KEX_DISPLAYS` and `KEX_PREV_DISPLAYS`, how many displays there are now and were before. |
