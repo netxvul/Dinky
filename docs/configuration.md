@@ -127,9 +127,11 @@ layout = 'scrolling'
 
 `pin left` and `pin right` hold the focused window's column at a side of the
 screen while the others scroll in the band between, after SlideScroll; see
-[Pins](commands.md#pins). Pins are not kept across a restart of kex: a
-[rule](#rules) such as `run = 'pin right'` pins a window again: a rule's `pin`
-takes only a free side and leaves a window you unpinned alone.
+[Pins](commands.md#pins). Pins are kept across a restart of kex, with the
+strip's order and widths: each pinned window pins its column to the same side
+again as it comes back, unless its windows are gone or that side is taken by
+then. A [rule](#rules) such as `run = 'pin right'` pins a window too: a rule's
+`pin` takes only a free side and leaves a window you unpinned alone.
 
 `layout scrolling` switches the focused window's workspace to scrolling on the fly, and
 `layout tiles` or `accordion` switches it back to its tree. The switch holds
@@ -967,7 +969,7 @@ whatever its rules say.
 
 Windows already open when Kex starts are not new: `layout floating`,
 `layout tiling` and `grid` still float or tile them, and `pin` and `unpin` still
-run, since pins are not kept across a restart, but no other command runs, so
+run, after the pins kept from before the restart are back, but no other command runs, so
 restarting Kex moves, resizes and follows nothing else. A rule's `pin` takes
 only a free side, never moves or unpins a pinned column, and leaves a window you
 unpinned alone.
