@@ -6,7 +6,7 @@ import KexPrivate
 // "switch to a Space with open windows" setting is off. Only activations the user asked for are followed.
 // macOS also activates apps on its own, and chasing those throws the user off the Space they are on:
 // - Arriving on a Space activates whatever is there (Finder on an empty one). The first activation within
-//   `arrivalWindow` of a Space change is that one.
+//   `arrivalWindow` of a Space change is that one; for kex's own switch, of its posting or of its landing.
 // - When the active app quits, hides or loses its last window on the current Space, macOS activates another
 //   app. An activation within `goneWindow` of the previous app going away is that one.
 // - Opening a document activates the app before its new window exists. An app with no window on the
@@ -50,6 +50,12 @@ private func noteCurrentSpace() {
 // kex's own, so the activation it causes is not followed.
 func noteOwnSwitch(to target: UInt64, on uuid: String) {
     lastSeenSpaceIDs[uuid] = target
+    spaceChanged()
+}
+
+// Tells the activation follower that kex's own switch has landed. macOS activates an app on arrival, which can come a
+// while after the swipe was posted when the swipe is slow, so the arrival window starts again from here.
+func noteOwnArrival() {
     spaceChanged()
 }
 

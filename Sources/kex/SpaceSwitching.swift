@@ -140,6 +140,7 @@ final class SpaceSwitcher {
         fflush(stdout)
         guard let flight else { return }
         if landed {
+            noteOwnArrival()
             flight.landed?()
             onLanded?(uuid)
         } else {
