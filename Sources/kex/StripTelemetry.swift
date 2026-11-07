@@ -171,6 +171,9 @@ final class StripTelemetry {
             guard abs(got.minX - want.minX) > Self.slack || abs(got.minY - want.minY) > Self.slack
                     || abs(got.width - want.width) > Self.slack || abs(got.height - want.height) > Self.slack else { continue }
             let wantShown = Self.shown(want, on: screen), gotShown = Self.shown(got, on: screen)
+            // Parked by its right edge at the width AppKit gave it off the left edge (FrameScheduler's `park`): in place.
+            if wantShown <= Self.inView, got.minX < want.minX, abs(got.maxX - want.maxX) <= Self.slack,
+               abs(got.minY - want.minY) <= Self.slack, abs(got.height - want.height) <= Self.slack { continue }
             let what = wantShown > Self.inView && gotShown <= Self.inView ? "should be in view but is off screen"
                 : wantShown <= Self.inView && gotShown > Self.inView ? "should be parked but shows"
                 : "out of place"

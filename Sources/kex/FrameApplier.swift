@@ -63,8 +63,23 @@ final class FrameApplier {
             move: { [unowned self] job in
                 withElement(pid: job.pid, id: job.id, busy: false, gone: true) { move(job.frame.origin, to: $0, key: $1) }
             },
-            learns: { Self.isOnScreen($0) }
+            learns: { Self.isOnScreen($0) },
+            hangsLeft: { Self.hangsLeft($0) }
         )
+    }
+
+    /// Whether a frame hangs off a display's left edge into no display, its right edge on that display, as a column
+    /// parked at the left edge does.
+    static func hangsLeft(_ frame: CGRect) -> Bool {
+        var count: UInt32 = 0
+        guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else { return false }
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetActiveDisplayList(count, &ids, &count) == .success else { return false }
+        let bounds = ids.prefix(Int(count)).map { CGDisplayBounds($0) }
+        let y = frame.minY + 1
+        guard let display = bounds.first(where: { $0.contains(CGPoint(x: frame.maxX - 1, y: y)) }),
+              frame.minX < display.minX else { return false }
+        return !bounds.contains { $0.contains(CGPoint(x: frame.minX, y: y)) }
     }
 
     /// Whether a frame lies wholly on one display, top-left origin as Accessibility has it. A parked column partly off

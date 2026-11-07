@@ -66,6 +66,7 @@ public final class FrameScheduler: @unchecked Sendable {
     private let write: (FrameJob) -> Bool
     private let move: (FrameJob) -> Bool
     private let learns: (CGRect) -> Bool
+    private let hangsLeft: (CGRect) -> Bool
 
     /// Seconds an app may take to move its windows for one animation step before it counts as slow.
     public static let slowStep: TimeInterval = 0.05
@@ -82,6 +83,9 @@ public final class FrameScheduler: @unchecked Sendable {
     private var runStarts: Set<WindowID> = []
     private var apps: [Int32: App] = [:]
     private var minimums: [WindowID: CGSize] = [:]
+    /// Windows AppKit made wider than asked as they were sized hanging off a display's left edge: the size asked and
+    /// the width they came out at. See `parked(_:)`.
+    private var parkedWidths: [WindowID: (asked: CGSize, width: CGFloat)] = [:]
     /// Refusals seen once, by window, with the window's process: a minimum only when a later pass sees the same one.
     private var candidates: [WindowID: (size: CGSize, pid: Int32)] = [:]
     /// Bumped by `cancel`; writes queued under an older generation are dropped.
@@ -90,10 +94,12 @@ public final class FrameScheduler: @unchecked Sendable {
     /// `prepare` runs once per process before its first write; `read`, `write` and `move` (position only)
     /// run on that process's queue. `write` and `move` return false when the app did not answer in time.
     /// A process that does not answer is first left alone for `backoff` seconds, doubling up to eight times that.
-    /// Only a window asked for a frame `learns` accepts teaches a minimum size (see `recordMinimum`).
+    /// Only a window asked for a frame `learns` accepts teaches a minimum size (see `recordMinimum`). `hangsLeft` tells
+    /// a frame partly off a display's left edge, with its right part on it (see `parked(_:)`).
     public init(settle: TimeInterval = 0.1, backoff: TimeInterval = 1, prepare: @escaping (Int32) -> Void = { _ in },
                 read: @escaping (FrameJob) -> FrameRead, write: @escaping (FrameJob) -> Bool,
-                move: ((FrameJob) -> Bool)? = nil, learns: @escaping (CGRect) -> Bool = { _ in true }) {
+                move: ((FrameJob) -> Bool)? = nil, learns: @escaping (CGRect) -> Bool = { _ in true },
+                hangsLeft: @escaping (CGRect) -> Bool = { _ in false }) {
         self.settle = settle
         self.backoff = backoff
         self.prepare = prepare
@@ -101,6 +107,7 @@ public final class FrameScheduler: @unchecked Sendable {
         self.write = write
         self.move = move ?? write
         self.learns = learns
+        self.hangsLeft = hangsLeft
     }
 
     /// Sizes windows refused to go below, seen the same on two passes. Only dimensions that were refused are set.
@@ -219,6 +226,7 @@ public final class FrameScheduler: @unchecked Sendable {
         lock.withLock {
             minimums[id] = nil
             candidates[id] = nil
+            parkedWidths[id] = nil
             for app in apps.values { app.held.removeAll { $0.id == id } }
             // What steps wrote is the queue's alone, so it is cleared there, after anything already queued.
             for app in apps.values {
@@ -457,7 +465,8 @@ public final class FrameScheduler: @unchecked Sendable {
             // An unreadable window is written all the same: the write looks its element up afresh.
             let sized = result.got.map { abs($0.width - result.target.width) <= 1 && abs($0.height - result.target.height) <= 1 }
             result.written = true
-            if !(sized == true ? move(job) : write(job)) { busy = true; result.busy = true; result.got = nil }
+            let aimed = self.aimed(job)
+            if !(sized == true ? move(aimed) : write(aimed)) { busy = true; result.busy = true; result.got = nil }
             return result
         }
         let written = results.indices.filter { results[$0].written }
@@ -473,7 +482,7 @@ public final class FrameScheduler: @unchecked Sendable {
         for i in misses where !busy {
             results[i].retried = true
             missed[i] = results[i].got?.size
-            if write(results[i].job) { retried.append(i) } else { busy = true; results[i].busy = true; results[i].got = nil }
+            if write(aimed(results[i].job)) { retried.append(i) } else { busy = true; results[i].busy = true; results[i].got = nil }
         }
         wait()
         for i in retried { readBack(&results[i]) }
@@ -488,7 +497,44 @@ public final class FrameScheduler: @unchecked Sendable {
         for i in retried where !results[i].busy {
             recordMinimum(results[i], stepSizes: stepSizes[results[i].job.id] ?? [])
         }
+        for i in retried where !busy && live() {
+            park(&results[i], readBack: readBack)
+            if results[i].busy { busy = true }
+        }
         return results
+    }
+
+    /// A window sized hanging off a display's left edge with only a sliver on it, as a parked column tucked under
+    /// another, comes out wider than asked where it was put: AppKit keeps its shadow's width on the screen, so the sliver
+    /// shows some 24 points rather than 2, and every pass would write it again for the same answer. Such a window is
+    /// moved left by what it grew, keeping its right edge where the layout put it, and is asked for that width there
+    /// from now on (`reachable`), only moved, which AppKit leaves alone. On screen again it takes its width as asked.
+    private func park(_ result: inout FrameResult, readBack: (inout FrameResult) -> Void) {
+        let target = result.target
+        guard let got = result.got, hangsLeft(result.job.frame), got.width > target.width + 2,
+              abs(got.minX - target.minX) <= 2, abs(got.minY - target.minY) <= 2 else { return }
+        lock.withLock { parkedWidths[result.job.id] = (result.job.frame.size, got.width) }
+        var moved = result.job
+        moved.frame = parked(result.job)
+        result.target = moved.frame
+        guard move(moved) else { result.busy = true; result.got = nil; return }
+        wait()
+        readBack(&result)
+    }
+
+    /// The job, at the frame of a window AppKit widened hanging off the left edge.
+    private func aimed(_ job: FrameJob) -> FrameJob {
+        var job = job
+        job.frame = parked(job)
+        return job
+    }
+
+    /// The job's frame as a window AppKit widened hanging off the left edge (`park`) takes it there: at that width, its
+    /// right edge where the job puts it. The job's own frame for any other.
+    private func parked(_ job: FrameJob) -> CGRect {
+        guard let known = lock.withLock({ parkedWidths[job.id] }), hangsLeft(job.frame),
+              abs(known.asked.width - job.frame.width) <= 1, abs(known.asked.height - job.frame.height) <= 1 else { return job.frame }
+        return CGRect(x: job.frame.maxX - known.width, y: job.frame.minY, width: known.width, height: job.frame.height)
     }
 
     /// How long a window animating its own frame is waited on, at most, to hold still, before and after it is moved
@@ -519,6 +565,8 @@ public final class FrameScheduler: @unchecked Sendable {
 
     /// The job's frame grown to the window's recorded minimum size: as close as the window will come.
     private func reachable(_ job: FrameJob) -> CGRect {
+        let parked = parked(job)
+        guard parked == job.frame else { return parked }
         guard let minimum = minimumSizes[job.id] else { return job.frame }
         return CGRect(origin: job.frame.origin, size: job.frame.size.grown(to: minimum))
     }
