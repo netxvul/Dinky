@@ -57,10 +57,14 @@ enum ScriptingAddition {
         reinjecting = true
         DispatchQueue.global(qos: .utility).async {
             let ok = runLoader()
+            // The loader can succeed with a payload that never answers, as when its socket cannot be made: told apart
+            // a moment later, once a payload that does answer has started listening.
+            if ok { Thread.sleep(forTimeInterval: 0.5) }
+            let answers = ok && kex_sa_available()
             DispatchQueue.main.async {
                 reinjecting = false
                 cachedAt = -1
-                NSLog("kex: scripting-addition reinject %@", ok ? "ok" : "failed")
+                NSLog("kex: scripting-addition reinject %@", answers ? "ok" : ok ? "ran, but the payload does not answer" : "failed")
             }
         }
     }

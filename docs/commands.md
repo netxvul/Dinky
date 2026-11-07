@@ -233,7 +233,7 @@ workspace 1. CLI-only commands:
 | Command | |
 |---|---|
 | `app` | Run the app in the foreground, logging to the terminal. |
-| `doctor [--config <path>]` | Check the config and macOS settings, and that no other tiling window manager is running. |
+| `doctor [--config <path>]` | Check the config and macOS settings, that no other tiling window manager is running, and, with `scripting-addition = true`, that the Dock scripting addition answers. |
 | `recover` | Ask the running app to restore windows a crashed session left tiled. |
 | `debug events\|windows` | Print window events or windows, without the app. |
 | `version`, `-v`, `--version` | Print the version and build number. |

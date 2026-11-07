@@ -11,6 +11,7 @@
 
 ### Fixes
 
+- `kex doctor` warns when `scripting-addition = true` but the Dock scripting addition does not answer, as with SIP on, and says it is not installed when it is not; with it answering it says so, and what it can do. A re-injection whose payload still does not answer is logged as `reinject ran, but the payload does not answer` rather than `reinject ok`.
 - Kex's update window floats above the tiled windows, in the middle of its display, and takes the keyboard. Kex, which tiles none of its own windows and is not brought forward as one opens, left it where tiled windows could cover half of it.
 - A window dragged out of a stack in a strip keeps the keyboard once dropped. Making room for it, Kex raised the window it was stacked with into order, which its app made its key window; Kex kept focus on the dragged window, but typing went to the other one, parked off screen, and the next click on the dragged window took the strip to it and called off the resize the click began. Once such a raise settles and the button is up, the window Kex has focused is made key again, unless a click chose the other one meanwhile.
 - `move-window-to-workspace --follow` to another workspace of the same display no longer shows the workspace left behind without the window for a few frames. The window left its Space a moment before the switch took the display away, so the windows staying there showed over the desktop once more. It now switches first and moves the window as the display arrives, where it shows a moment later.
